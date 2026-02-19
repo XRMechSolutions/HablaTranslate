@@ -1,0 +1,36 @@
+# Core server
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+websockets>=13.0
+python-multipart>=0.0.12
+
+# ASR
+whisperx>=3.1.1
+faster-whisper>=1.1.0
+
+# Audio processing (ffmpeg binary required in PATH, called via subprocess)
+numpy>=1.26.0
+scipy>=1.11.0
+
+# LLM interaction
+httpx>=0.27.0
+
+# Database
+aiosqlite>=0.20.0
+
+# VAD
+silero-vad>=5.1
+
+# TTS (optional, Phase 2)
+# piper-tts>=1.2.0
+
+# Utilities
+pydantic>=2.10.0
+python-dotenv>=1.0.0
+
+# Testing
+pytest>=8.3.0
+pytest-asyncio>=0.24.0
+pytest-cov>=6.0.0
+pytest-mock>=3.14.0
+httpx>=0.27.0

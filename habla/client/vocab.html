@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0f1419">
+<title>Habla - Vocab</title>
+<style>
+:root{
+  --bg:#0f1419;--bg2:#1a2027;--bg3:#1e272f;--bg4:#253340;
+  --fg:#e7e9ea;--fg2:#8b98a5;--fg3:#536471;
+  --accent:#1d9bf0;--green:#00ba7c;--amber:#f59e0b;--red:#f4212e;
+  --idiom-bg:#1c2b1f;--idiom-bdr:#2d6a3e;
+  --corr-bg:#2b1c1c;--corr-bdr:#6a2d2d;
+  --r:12px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,system-ui,'Segoe UI',sans-serif;background:var(--bg);color:var(--fg);height:100dvh;display:flex;flex-direction:column;overflow:hidden;-webkit-tap-highlight-color:transparent}
+
+/* HEADER */
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg2);border-bottom:1px solid var(--bg4);flex-shrink:0}
+.hdr h1{font-size:18px;font-weight:700}
+.hdr-r{display:flex;gap:8px;align-items:center}
+.back-btn{padding:5px 10px;border-radius:8px;background:var(--bg4);color:var(--fg2);border:none;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:4px}
+.back-btn:active{transform:scale(.95)}
+
+/* TABS */
+.tabs{display:flex;background:var(--bg2);border-bottom:1px solid var(--bg4);flex-shrink:0;overflow-x:auto}
+.tab{flex:1;padding:10px 8px;text-align:center;font-size:12px;font-weight:600;color:var(--fg3);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;font-family:inherit;white-space:nowrap;min-width:0}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:active{background:var(--bg3)}
+
+/* STATS BAR */
+.stats-bar{display:flex;gap:8px;padding:10px 14px;background:var(--bg2);border-bottom:1px solid var(--bg4);flex-shrink:0;overflow-x:auto}
+.stat{background:var(--bg3);border-radius:var(--r);padding:8px 12px;min-width:80px;text-align:center;flex-shrink:0}
+.stat-val{font-size:20px;font-weight:700;color:var(--accent)}
+.stat-val.due{color:var(--amber)}
+.stat-label{font-size:10px;color:var(--fg3);margin-top:2px}
+
+/* MAIN CONTENT */
+.content{flex:1;overflow-y:auto;padding:10px 14px;-webkit-overflow-scrolling:touch}
+
+/* SEARCH BAR */
+.search-wrap{display:flex;gap:8px;margin-bottom:12px}
+.search-in{flex:1;background:var(--bg3);border:1px solid var(--bg4);border-radius:18px;padding:8px 14px;color:var(--fg);font-size:13px;outline:none;font-family:inherit}
+.search-in:focus{border-color:var(--accent)}
+.search-in::placeholder{color:var(--fg3)}
+.filter-btn{padding:6px 12px;border-radius:12px;background:var(--bg4);color:var(--fg2);border:none;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap}
+.filter-btn.active{background:rgba(29,155,240,.2);color:var(--accent)}
+
+/* FILTER CHIPS */
+.filters{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.chip{padding:4px 10px;border-radius:10px;background:var(--bg4);color:var(--fg2);border:none;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit}
+.chip.active{background:rgba(29,155,240,.2);color:var(--accent)}
+
+/* VOCAB CARD */
+.v-card{background:var(--bg3);border-radius:var(--r);padding:12px;margin-bottom:8px;border-left:3px solid var(--fg3);animation:up .2s ease-out}
+@keyframes up{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.v-card.idiom{border-left-color:var(--green)}
+.v-card.correction{border-left-color:var(--red)}
+.v-card.slang{border-left-color:var(--amber)}
+.v-card.false_friend{border-left-color:#a855f7}
+.v-card.grammar_note{border-left-color:var(--accent)}
+.v-term{font-size:15px;font-weight:700;margin-bottom:3px}
+.v-lit{font-size:11px;color:var(--fg3);font-style:italic;margin-bottom:3px}
+.v-meaning{font-size:13px;color:var(--fg2);margin-bottom:4px}
+.v-context{font-size:11px;color:var(--fg3);margin-bottom:6px;padding:4px 8px;background:var(--bg4);border-radius:6px}
+.v-meta{display:flex;gap:8px;font-size:10px;color:var(--fg3);align-items:center;flex-wrap:wrap}
+.v-cat{padding:2px 6px;border-radius:4px;font-weight:600;font-size:10px}
+.v-cat.idiom{background:rgba(0,186,124,.15);color:var(--green)}
+.v-cat.correction{background:rgba(244,33,46,.15);color:var(--red)}
+.v-cat.slang{background:rgba(245,158,11,.15);color:var(--amber)}
+.v-cat.false_friend{background:rgba(168,85,247,.15);color:#a855f7}
+.v-cat.grammar_note{background:rgba(29,155,240,.15);color:var(--accent)}
+.v-actions{display:flex;gap:6px;margin-top:8px}
+.v-actions button{padding:4px 10px;border-radius:6px;border:none;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit}
+.v-del{background:var(--bg4);color:var(--fg3)}
+.v-del:active{background:rgba(244,33,46,.2);color:var(--red)}
+
+/* REVIEW MODE */
+.review-card{background:var(--bg3);border-radius:var(--r);padding:20px;text-align:center;margin-bottom:16px}
+.review-progress{font-size:11px;color:var(--fg3);margin-bottom:12px}
+.review-term{font-size:22px;font-weight:700;margin-bottom:6px}
+.review-lit{font-size:13px;color:var(--fg3);font-style:italic;margin-bottom:8px}
+.review-context{font-size:12px;color:var(--fg3);margin-bottom:16px;padding:6px 10px;background:var(--bg4);border-radius:8px;display:inline-block;max-width:100%}
+.review-reveal{padding:10px 24px;border-radius:var(--r);background:var(--accent);color:#fff;border:none;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:12px}
+.review-reveal:active{transform:scale(.95)}
+.review-answer{font-size:16px;color:var(--fg);margin-bottom:16px;opacity:0;max-height:0;overflow:hidden;transition:all .3s ease}
+.review-answer.shown{opacity:1;max-height:200px;margin-top:12px}
+.review-btns{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;opacity:0;transition:opacity .3s}
+.review-btns.shown{opacity:1}
+.r-btn{padding:8px 14px;border-radius:8px;border:none;font-weight:600;font-size:12px;cursor:pointer;font-family:inherit;min-width:60px}
+.r-btn:active{transform:scale(.93)}
+.r-btn.again{background:rgba(244,33,46,.2);color:var(--red)}
+.r-btn.hard{background:rgba(245,158,11,.2);color:var(--amber)}
+.r-btn.good{background:rgba(0,186,124,.2);color:var(--green)}
+.r-btn.easy{background:rgba(29,155,240,.2);color:var(--accent)}
+
+/* EMPTY STATE */
+.empty{text-align:center;color:var(--fg3);padding:40px 20px;font-size:13px;line-height:1.6}
+
+/* CONFIRM DIALOG */
+.confirm-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center}
+.confirm-bg.vis{display:flex}
+.confirm{background:var(--bg3);border-radius:var(--r);padding:20px;width:280px;text-align:center}
+.confirm p{font-size:14px;margin-bottom:16px;line-height:1.4}
+.confirm-btns{display:flex;gap:8px;justify-content:center}
+.confirm-btns button{padding:8px 16px;border-radius:8px;border:none;font-weight:600;font-size:13px;cursor:pointer;font-family:inherit}
+.confirm-btns .yes{background:var(--red);color:#fff}
+.confirm-btns .no{background:var(--bg4);color:var(--fg2)}
+
+/* TOAST */
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg3);color:var(--fg);padding:10px 20px;border-radius:var(--r);font-size:13px;font-weight:600;border:1px solid var(--bg4);z-index:200;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.vis{opacity:1}
+
+/* BOTTOM BAR */
+.bottom-bar{display:flex;gap:8px;padding:10px 14px;background:var(--bg2);border-top:1px solid var(--bg4);flex-shrink:0;justify-content:center}
+.export-btn{padding:8px 16px;border-radius:8px;background:var(--bg4);color:var(--fg2);border:none;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
+.export-btn:active{transform:scale(.95)}
+
+/* LOAD MORE */
+.load-more{display:block;width:100%;padding:10px;border-radius:var(--r);background:var(--bg3);color:var(--accent);border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:8px}
+.load-more:active{transform:scale(.98)}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <h1>Vocab</h1>
+  <div class="hdr-r">
+    <a class="back-btn" href="/">< Habla</a>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" data-tab="review">Review</button>
+  <button class="tab" data-tab="browse">Browse</button>
+  <button class="tab" data-tab="search">Search</button>
+</div>
+
+<div class="stats-bar" id="statsBar">
+  <div class="stat"><div class="stat-val" id="statTotal">-</div><div class="stat-label">Total</div></div>
+  <div class="stat"><div class="stat-val due" id="statDue">-</div><div class="stat-label">Due</div></div>
+  <div class="stat" id="statCats"></div>
+</div>
+
+<div class="content" id="content"></div>
+
+<div class="bottom-bar" id="bottomBar">
+  <button class="export-btn" onclick="exportAnki()">Export Anki TSV</button>
+  <button class="export-btn" onclick="exportJson()">Export JSON</button>
+</div>
+
+<div class="confirm-bg" id="confirmDlg">
+  <div class="confirm">
+    <p id="confirmMsg">Delete this item?</p>
+    <div class="confirm-btns">
+      <button class="no" onclick="closeConfirm()">Cancel</button>
+      <button class="yes" id="confirmYes">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+const $$=s=>document.querySelectorAll(s);
+
+// --- State ---
+let currentTab='review';
+let browseOffset=0;
+let browseCategory=null;
+let browseItems=[];
+let reviewQueue=[];
+let reviewIndex=0;
+let deleteTargetId=null;
+
+// --- API helpers ---
+async function api(path,opts){
+  const r=await fetch('/api/vocab'+path,opts);
+  if(!r.ok) throw new Error(`API ${r.status}`);
+  const ct=r.headers.get('content-type')||'';
+  if(ct.includes('json')) return r.json();
+  return r.text();
+}
+
+// --- Stats ---
+async function loadStats(){
+  try{
+    const s=await api('/stats');
+    $('#statTotal').textContent=s.total;
+    $('#statDue').textContent=s.due_for_review;
+    const cats=Object.entries(s.by_category||{});
+    if(cats.length){
+      $('#statCats').innerHTML=cats.map(([c,n])=>`<span class="v-cat ${esc(c)}">${esc(c)}: ${n}</span>`).join(' ');
+    }
+  }catch(e){console.error('Stats error:',e)}
+}
+
+// --- Tabs ---
+$$('.tab').forEach(t=>{
+  t.onclick=()=>{
+    $$('.tab').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    currentTab=t.dataset.tab;
+    renderTab();
+  };
+});
+
+function renderTab(){
+  const c=$('#content');
+  c.scrollTop=0;
+  if(currentTab==='review') renderReview();
+  else if(currentTab==='browse') renderBrowse();
+  else if(currentTab==='search') renderSearch();
+}
+
+// --- REVIEW TAB ---
+async function renderReview(){
+  const c=$('#content');
+  c.innerHTML='<div class="empty">Loading...</div>';
+  try{
+    const items=await api('/due?limit=50');
+    reviewQueue=items;
+    reviewIndex=0;
+    if(!items.length){
+      c.innerHTML='<div class="empty">No vocab due for review.<br><span style="font-size:11px;color:var(--fg3)">Items will appear here based on spaced repetition schedule.</span></div>';
+      return;
+    }
+    showReviewCard();
+  }catch(e){
+    c.innerHTML=`<div class="empty">Failed to load review items.</div>`;
+  }
+}
+
+function showReviewCard(){
+  const c=$('#content');
+  if(reviewIndex>=reviewQueue.length){
+    c.innerHTML='<div class="empty">Review complete!<br><span style="font-size:11px;color:var(--fg3)">All due items reviewed this session.</span></div>';
+    loadStats();
+    return;
+  }
+  const item=reviewQueue[reviewIndex];
+  const total=reviewQueue.length;
+  const num=reviewIndex+1;
+  const lit=item.literal?`<div class="review-lit">lit: "${esc(item.literal)}"</div>`:'';
+  const ctx=item.source_sentence?`<div class="review-context">${esc(item.source_sentence)}</div>`:'';
+  const catClass=item.category||'idiom';
+
+  c.innerHTML=`
+    <div class="review-card">
+      <div class="review-progress">${num} / ${total} <span class="v-cat ${esc(catClass)}">${esc(item.category||'idiom')}</span></div>
+      <div class="review-term">${esc(item.term)}</div>
+      ${lit}
+      ${ctx}
+      <button class="review-reveal" id="revealBtn" onclick="revealAnswer()">Show Answer</button>
+      <div class="review-answer" id="reviewAnswer">
+        <div style="font-size:16px;font-weight:600;margin-bottom:4px">${esc(item.meaning)}</div>
+        ${item.region&&item.region!=='universal'?`<div style="font-size:11px;color:var(--fg3)">Region: ${esc(item.region)}</div>`:''}
+      </div>
+      <div class="review-btns" id="reviewBtns">
+        <button class="r-btn again" onclick="rateReview(${item.id},0)">Again<br><span style="font-size:10px;font-weight:400">1d</span></button>
+        <button class="r-btn hard" onclick="rateReview(${item.id},3)">Hard<br><span style="font-size:10px;font-weight:400">${fmtInterval(item,3)}</span></button>
+        <button class="r-btn good" onclick="rateReview(${item.id},4)">Good<br><span style="font-size:10px;font-weight:400">${fmtInterval(item,4)}</span></button>
+        <button class="r-btn easy" onclick="rateReview(${item.id},5)">Easy<br><span style="font-size:10px;font-weight:400">${fmtInterval(item,5)}</span></button>
+      </div>
+    </div>`;
+}
+
+function revealAnswer(){
+  $('#reviewAnswer').classList.add('shown');
+  $('#reviewBtns').classList.add('shown');
+  const btn=$('#revealBtn');
+  if(btn) btn.style.display='none';
+}
+
+async function rateReview(id,quality){
+  try{
+    await fetch(`/api/vocab/${id}/review`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({quality})
+    });
+    reviewIndex++;
+    showReviewCard();
+  }catch(e){
+    toast('Review failed');
+  }
+}
+
+function fmtInterval(item,quality){
+  let ease=item.ease_factor||2.5;
+  let interval=item.interval_days||1;
+  let reps=item.repetitions||0;
+  if(quality<3){return '1d'}
+  if(reps===0) interval=1;
+  else if(reps===1) interval=6;
+  else interval=Math.round(interval*ease);
+  if(interval===1) return '1d';
+  if(interval<30) return interval+'d';
+  if(interval<365) return Math.round(interval/30)+'mo';
+  return Math.round(interval/365)+'y';
+}
+
+// --- BROWSE TAB ---
+async function renderBrowse(){
+  browseOffset=0;
+  browseItems=[];
+  const c=$('#content');
+  c.innerHTML='';
+
+  // Filter chips
+  const filterDiv=document.createElement('div');
+  filterDiv.className='filters';
+  filterDiv.innerHTML=`
+    <button class="chip ${browseCategory===null?'active':''}" onclick="setBrowseFilter(null)">All</button>
+    <button class="chip ${browseCategory==='idiom'?'active':''}" onclick="setBrowseFilter('idiom')">Idioms</button>
+    <button class="chip ${browseCategory==='correction'?'active':''}" onclick="setBrowseFilter('correction')">Corrections</button>
+    <button class="chip ${browseCategory==='slang'?'active':''}" onclick="setBrowseFilter('slang')">Slang</button>
+    <button class="chip ${browseCategory==='false_friend'?'active':''}" onclick="setBrowseFilter('false_friend')">False Friends</button>
+    <button class="chip ${browseCategory==='grammar_note'?'active':''}" onclick="setBrowseFilter('grammar_note')">Grammar</button>
+  `;
+  c.appendChild(filterDiv);
+
+  const listDiv=document.createElement('div');
+  listDiv.id='browseList';
+  c.appendChild(listDiv);
+
+  await loadBrowsePage();
+}
+
+async function setBrowseFilter(cat){
+  browseCategory=cat;
+  renderBrowse();
+}
+
+async function loadBrowsePage(){
+  try{
+    const params=new URLSearchParams({limit:'30',offset:String(browseOffset)});
+    if(browseCategory) params.set('category',browseCategory);
+    const items=await api('?'+params);
+    const list=$('#browseList');
+    if(!items.length&&browseOffset===0){
+      list.innerHTML='<div class="empty">No vocab items yet.</div>';
+      return;
+    }
+    items.forEach(item=>{
+      list.insertAdjacentHTML('beforeend',vocabCardHTML(item));
+    });
+    browseItems.push(...items);
+    browseOffset+=items.length;
+
+    // Remove old load-more if exists
+    const old=list.querySelector('.load-more');
+    if(old) old.remove();
+
+    if(items.length>=30){
+      list.insertAdjacentHTML('beforeend',
+        '<button class="load-more" onclick="loadBrowsePage()">Load more</button>');
+    }
+  }catch(e){
+    console.error('Browse error:',e);
+  }
+}
+
+// --- SEARCH TAB ---
+function renderSearch(){
+  const c=$('#content');
+  c.innerHTML=`
+    <div class="search-wrap">
+      <input class="search-in" id="searchInput" placeholder="Search vocab..." autofocus />
+    </div>
+    <div id="searchResults"></div>`;
+  const inp=$('#searchInput');
+  let timer=null;
+  inp.oninput=()=>{
+    clearTimeout(timer);
+    timer=setTimeout(()=>doSearch(inp.value.trim()),300);
+  };
+  inp.onkeydown=e=>{if(e.key==='Enter'){clearTimeout(timer);doSearch(inp.value.trim())}};
+}
+
+async function doSearch(q){
+  const res=$('#searchResults');
+  if(!q){res.innerHTML='<div class="empty">Type to search across all vocab.</div>';return}
+  try{
+    const items=await api('/search?q='+encodeURIComponent(q)+'&limit=30');
+    if(!items.length){
+      res.innerHTML='<div class="empty">No results for "'+esc(q)+'"</div>';
+      return;
+    }
+    res.innerHTML=items.map(i=>vocabCardHTML(i)).join('');
+  }catch(e){
+    res.innerHTML='<div class="empty">Search failed. Try simpler terms.</div>';
+  }
+}
+
+// --- Shared vocab card ---
+function vocabCardHTML(item){
+  const catClass=item.category||'idiom';
+  const lit=item.literal?`<div class="v-lit">lit: "${esc(item.literal)}"</div>`:'';
+  const ctx=item.source_sentence?`<div class="v-context">${esc(item.source_sentence)}</div>`:'';
+  const region=item.region&&item.region!=='universal'?`<span>${esc(item.region)}</span>`:'';
+  const reps=item.repetitions||0;
+  const enc=item.times_encountered||1;
+  const nextRev=item.next_review?fmtDate(item.next_review):'never';
+  const ease=(item.ease_factor||2.5).toFixed(2);
+
+  return `<div class="v-card ${esc(catClass)}" id="vc-${item.id}">
+    <div class="v-term">${esc(item.term)}</div>
+    ${lit}
+    <div class="v-meaning">${esc(item.meaning)}</div>
+    ${ctx}
+    <div class="v-meta">
+      <span class="v-cat ${esc(catClass)}">${esc(item.category||'idiom')}</span>
+      ${region}
+      <span>seen ${enc}x</span>
+      <span>${reps} reviews</span>
+      <span>next: ${nextRev}</span>
+      <span>ease: ${ease}</span>
+    </div>
+    <div class="v-actions">
+      <button class="v-del" onclick="confirmDelete(${item.id},'${escA(item.term)}')">Delete</button>
+    </div>
+  </div>`;
+}
+
+// --- Delete ---
+function confirmDelete(id,term){
+  deleteTargetId=id;
+  $('#confirmMsg').textContent=`Delete "${term}"?`;
+  $('#confirmDlg').classList.add('vis');
+  $('#confirmYes').onclick=async()=>{
+    closeConfirm();
+    try{
+      await fetch(`/api/vocab/${id}`,{method:'DELETE'});
+      const el=document.getElementById('vc-'+id);
+      if(el) el.remove();
+      toast('Deleted');
+      loadStats();
+    }catch(e){toast('Delete failed')}
+  };
+}
+function closeConfirm(){$('#confirmDlg').classList.remove('vis');deleteTargetId=null}
+
+// --- Export ---
+function exportAnki(){
+  const a=document.createElement('a');
+  a.href='/api/vocab/export/anki';
+  a.download='habla-vocab.tsv';
+  a.click();
+  toast('Downloading Anki TSV...');
+}
+function exportJson(){
+  const a=document.createElement('a');
+  a.href='/api/vocab/export/json';
+  a.download='habla-vocab.json';
+  a.click();
+  toast('Downloading JSON...');
+}
+
+// --- Toast ---
+function toast(msg){
+  const t=$('#toast');
+  t.textContent=msg;
+  t.classList.add('vis');
+  setTimeout(()=>t.classList.remove('vis'),3000);
+}
+
+// --- Helpers ---
+function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML}
+function escA(s){return(s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}
+function fmtDate(d){
+  if(!d) return 'never';
+  const dt=new Date(d);
+  const now=new Date();
+  const diff=dt-now;
+  const days=Math.round(diff/(1000*60*60*24));
+  if(days<0) return 'overdue';
+  if(days===0) return 'today';
+  if(days===1) return 'tomorrow';
+  if(days<7) return days+'d';
+  if(days<30) return Math.round(days/7)+'w';
+  return dt.toLocaleDateString();
+}
+
+// --- Init ---
+loadStats();
+renderTab();
+</script>
+</body>
+</html>
