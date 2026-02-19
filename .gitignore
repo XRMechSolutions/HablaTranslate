@@ -1,0 +1,111 @@
+# =============================================================================
+# Habla Translate - .gitignore
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Secrets - never commit
+# -----------------------------------------------------------------------------
+.env
+.env.local
+*.env
+
+# TLS certificates and private keys (Tailscale HTTPS)
+*.crt
+*.key
+*.pem
+
+# -----------------------------------------------------------------------------
+# Python artifacts
+# -----------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# -----------------------------------------------------------------------------
+# Runtime data - generated at runtime, not source
+# -----------------------------------------------------------------------------
+
+# SQLite database and WAL files
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+
+# Logs
+*.log
+*.log.*
+
+# Session state (saved on shutdown, not source)
+habla/data/last_session.json
+
+# Audio recordings (may contain voice samples, often large)
+habla/data/audio/recordings/
+habla/data/audio/*.wav
+habla/data/audio/*.opus
+habla/data/audio/*.webm
+habla/data/audio/*.mp3
+
+# Benchmark audio samples
+habla/tests/benchmark/audio_samples/
+habla/tests/benchmark/results/
+
+# -----------------------------------------------------------------------------
+# IDE and editor files
+# -----------------------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# -----------------------------------------------------------------------------
+# Claude Code local settings (machine-specific, not for sharing)
+# -----------------------------------------------------------------------------
+.claude/
+
+# -----------------------------------------------------------------------------
+# OS artifacts
+# -----------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Windows NUL device artifacts (created by bash redirect accidents)
+/nul
+habla/nul
+
+# -----------------------------------------------------------------------------
+# Temporary files
+# -----------------------------------------------------------------------------
+*.tmp
+temp/
+tmp/

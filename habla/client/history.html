@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0f1419">
+<title>Habla - History</title>
+<style>
+:root{
+  --bg:#0f1419;--bg2:#1a2027;--bg3:#1e272f;--bg4:#253340;
+  --fg:#e7e9ea;--fg2:#8b98a5;--fg3:#536471;
+  --accent:#1d9bf0;--green:#00ba7c;--amber:#f59e0b;--red:#f4212e;
+  --r:12px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,system-ui,'Segoe UI',sans-serif;background:var(--bg);color:var(--fg);height:100dvh;display:flex;flex-direction:column;overflow:hidden;-webkit-tap-highlight-color:transparent}
+
+/* HEADER */
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg2);border-bottom:1px solid var(--bg4);flex-shrink:0}
+.hdr h1{font-size:18px;font-weight:700}
+.hdr-r{display:flex;gap:8px;align-items:center}
+.back-btn{padding:5px 10px;border-radius:8px;background:var(--bg4);color:var(--fg2);border:none;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:4px}
+.back-btn:active{transform:scale(.95)}
+
+/* MAIN CONTENT */
+.content{flex:1;overflow-y:auto;padding:10px 14px;-webkit-overflow-scrolling:touch}
+
+/* SESSION CARD */
+.s-card{background:var(--bg3);border-radius:var(--r);padding:12px;margin-bottom:8px;cursor:pointer;border-left:3px solid var(--fg3);animation:up .2s ease-out}
+@keyframes up{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.s-card.saved{border-left-color:var(--green)}
+.s-card.active{border-left-color:var(--accent)}
+.s-card:active{background:var(--bg4)}
+.s-date{font-size:13px;font-weight:700;margin-bottom:2px}
+.s-meta{display:flex;gap:8px;font-size:11px;color:var(--fg3);flex-wrap:wrap;margin-bottom:4px}
+.s-notes{font-size:12px;color:var(--fg2);margin-bottom:4px}
+.s-topic{font-size:11px;color:var(--fg3);font-style:italic}
+.s-tag{padding:2px 6px;border-radius:4px;font-weight:600;font-size:10px}
+.s-tag.saved{background:rgba(0,186,124,.15);color:var(--green)}
+.s-tag.mode{background:rgba(29,155,240,.15);color:var(--accent)}
+
+/* EXPANDED EXCHANGES */
+.s-exchanges{max-height:0;overflow:hidden;transition:max-height .3s ease}
+.s-card.expanded .s-exchanges{max-height:5000px}
+.ex-item{background:var(--bg4);border-radius:8px;padding:10px;margin-top:8px}
+.ex-speaker{font-size:11px;font-weight:600;color:var(--accent);margin-bottom:3px}
+.ex-src{font-size:13px;margin-bottom:3px}
+.ex-tgt{font-size:13px;color:var(--fg2)}
+.ex-time{font-size:10px;color:var(--fg3);margin-top:4px}
+.ex-correction{font-size:11px;color:var(--red);margin-top:3px}
+
+/* ACTIONS ROW */
+.s-actions{display:flex;gap:6px;margin-top:8px}
+.s-actions button{padding:4px 10px;border-radius:6px;border:none;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--bg4);color:var(--fg2)}
+.s-actions button:active{transform:scale(.95)}
+
+/* EMPTY STATE */
+.empty{text-align:center;color:var(--fg3);padding:40px 20px;font-size:13px;line-height:1.6}
+
+/* LOAD MORE */
+.load-more{display:block;width:100%;padding:10px;border-radius:var(--r);background:var(--bg3);color:var(--accent);border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:8px}
+.load-more:active{transform:scale(.98)}
+
+/* TOAST */
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg3);color:var(--fg);padding:10px 20px;border-radius:var(--r);font-size:13px;font-weight:600;border:1px solid var(--bg4);z-index:200;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.vis{opacity:1}
+
+/* DIRECTION INDICATOR */
+.dir-arrow{font-size:10px;color:var(--fg3)}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <h1>History</h1>
+  <div class="hdr-r">
+    <a class="back-btn" href="/">< Habla</a>
+  </div>
+</div>
+
+<div class="content" id="content">
+  <div class="empty">Loading...</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+
+let offset=0;
+let expandedId=null;
+let exchangeCache={};
+
+async function api(path){
+  const r=await fetch('/api/sessions'+path);
+  if(!r.ok) throw new Error(`API ${r.status}`);
+  const ct=r.headers.get('content-type')||'';
+  if(ct.includes('json')) return r.json();
+  return r.text();
+}
+
+async function loadSessions(){
+  const c=$('#content');
+  if(offset===0) c.innerHTML='';
+
+  try{
+    const sessions=await api(`?limit=20&offset=${offset}`);
+    if(!sessions.length&&offset===0){
+      c.innerHTML='<div class="empty">No sessions yet.<br><span style="font-size:11px;color:var(--fg3)">Conversations will appear here automatically.</span></div>';
+      return;
+    }
+    sessions.forEach(s=>c.insertAdjacentHTML('beforeend',sessionCardHTML(s)));
+    offset+=sessions.length;
+
+    // Remove old load-more
+    const old=c.querySelector('.load-more');
+    if(old) old.remove();
+
+    if(sessions.length>=20){
+      c.insertAdjacentHTML('beforeend',
+        '<button class="load-more" onclick="loadMore()">Load more</button>');
+    }
+  }catch(e){
+    console.error('Load error:',e);
+    if(offset===0) c.innerHTML='<div class="empty">Failed to load sessions.</div>';
+  }
+}
+
+function loadMore(){
+  loadSessions();
+}
+
+function sessionCardHTML(s){
+  const date=fmtDate(s.started_at);
+  const count=s.exchange_count||0;
+  const dir=s.direction==='es_to_en'?'ES > EN':'EN > ES';
+  const mode=s.mode||'conversation';
+  const saved=s.notes?'saved':'';
+  const notesHtml=s.notes?`<div class="s-notes">${esc(s.notes)}</div>`:'';
+  const topicHtml=s.topic_summary?`<div class="s-topic">${esc(s.topic_summary)}</div>`:'';
+  const tags=[];
+  if(s.notes) tags.push('<span class="s-tag saved">Saved</span>');
+  tags.push(`<span class="s-tag mode">${esc(mode)}</span>`);
+
+  return `<div class="s-card ${saved}" id="sc-${s.id}" onclick="toggleSession(${s.id})">
+    <div class="s-date">${date}</div>
+    <div class="s-meta">
+      ${tags.join('')}
+      <span>${count} exchange${count!==1?'s':''}</span>
+      <span class="dir-arrow">${dir}</span>
+      ${s.speaker_count?`<span>${s.speaker_count} speaker${s.speaker_count!==1?'s':''}</span>`:''}
+    </div>
+    ${notesHtml}
+    ${topicHtml}
+    <div class="s-exchanges" id="ex-${s.id}"></div>
+    <div class="s-actions" onclick="event.stopPropagation()">
+      <button onclick="downloadSession(${s.id})">Download</button>
+    </div>
+  </div>`;
+}
+
+async function toggleSession(id){
+  const card=document.getElementById('sc-'+id);
+  const exDiv=document.getElementById('ex-'+id);
+  if(!card||!exDiv) return;
+
+  if(expandedId===id){
+    card.classList.remove('expanded');
+    expandedId=null;
+    return;
+  }
+
+  // Collapse previous
+  if(expandedId!==null){
+    const prev=document.getElementById('sc-'+expandedId);
+    if(prev) prev.classList.remove('expanded');
+  }
+
+  expandedId=id;
+  card.classList.add('expanded');
+
+  // Load exchanges if not cached
+  if(!exchangeCache[id]){
+    exDiv.innerHTML='<div class="ex-item" style="color:var(--fg3)">Loading...</div>';
+    try{
+      const exchanges=await api(`/${id}/exchanges?limit=200`);
+      exchangeCache[id]=exchanges;
+    }catch(e){
+      exDiv.innerHTML='<div class="ex-item" style="color:var(--red)">Failed to load exchanges.</div>';
+      return;
+    }
+  }
+
+  const exchanges=exchangeCache[id];
+  if(!exchanges.length){
+    exDiv.innerHTML='<div class="ex-item" style="color:var(--fg3)">No exchanges in this session.</div>';
+    return;
+  }
+
+  exDiv.innerHTML=exchanges.map(ex=>{
+    const speaker=ex.speaker_id||'Speaker';
+    const src=ex.corrected_source||ex.raw_transcript||'';
+    const tgt=ex.translation||'';
+    const ts=ex.timestamp?fmtTime(ex.timestamp):'';
+    const dir=ex.direction==='es_to_en'?'ES > EN':'EN > ES';
+    let corrHtml='';
+    if(ex.is_correction&&ex.correction_json){
+      try{
+        const cd=typeof ex.correction_json==='string'?JSON.parse(ex.correction_json):ex.correction_detail;
+        if(cd) corrHtml=`<div class="ex-correction">Correction: ${esc(cd.wrong||'')} -> ${esc(cd.right||'')}</div>`;
+      }catch{}
+    }
+    return `<div class="ex-item">
+      <div class="ex-speaker">${esc(speaker)}</div>
+      <div class="ex-src">${esc(src)}</div>
+      <div class="ex-tgt">${esc(tgt)}</div>
+      ${corrHtml}
+      <div class="ex-time">${ts} ${dir}</div>
+    </div>`;
+  }).join('');
+}
+
+function downloadSession(id){
+  const a=document.createElement('a');
+  a.href=`/api/sessions/${id}/export`;
+  a.download=`habla_session_${id}.txt`;
+  a.click();
+  toast('Downloading transcript...');
+}
+
+// --- Helpers ---
+function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML}
+
+function fmtDate(d){
+  if(!d) return 'Unknown date';
+  // Parse ISO datetime - SQLite CURRENT_TIMESTAMP returns UTC in format: YYYY-MM-DD HH:MM:SS
+  const dt=new Date(d.includes('T')?d:d.replace(' ','T')+'Z');
+  if(isNaN(dt.getTime())) return 'Invalid date';
+
+  const now=new Date();
+  const diffMs=now-dt;
+  const diffDays=Math.floor(diffMs/(1000*60*60*24));
+
+  const time=dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  if(diffDays===0) return 'Today '+time;
+  if(diffDays===1) return 'Yesterday '+time;
+  if(diffDays<7) return dt.toLocaleDateString([],{weekday:'short'})+' '+time;
+  return dt.toLocaleDateString([],{month:'short',day:'numeric'})+' '+time;
+}
+
+function fmtTime(d){
+  if(!d) return '';
+  const dt=new Date(d.includes('T')?d:d.replace(' ','T')+'Z');
+  if(isNaN(dt.getTime())) return '';
+  return dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+
+function toast(msg){
+  const t=$('#toast');
+  t.textContent=msg;
+  t.classList.add('vis');
+  setTimeout(()=>t.classList.remove('vis'),3000);
+}
+
+// --- Init ---
+loadSessions();
+</script>
+</body>
+</html>

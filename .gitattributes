@@ -1,0 +1,13 @@
+# Normalize line endings to LF on commit (works on Linux/Docker deployment)
+* text=auto eol=lf
+
+# Binaries - no line ending conversion
+*.png binary
+*.ico binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webm binary
+*.opus binary
+*.wav binary
+*.mp3 binary

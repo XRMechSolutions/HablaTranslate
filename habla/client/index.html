@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0f1419">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<title>Habla</title>
+<link rel="stylesheet" href="/static/styles.css?v=25">
+</head>
+<body>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<div class="hdr">
+  <h1>Habla</h1>
+  <div class="hdr-r">
+    <button class="dir-btn" id="dirBtn">
+      <span id="srcLang">ES</span>
+      <span class="arr">&harr;</span>
+      <span id="tgtLang">EN</span>
+    </button>
+    <button class="mode-btn" id="modeBtn">conversation</button>
+    <button class="icon-btn" id="saveBtn" title="Save Transcript">&#128190;</button>
+    <button class="icon-btn" id="clearBtn" title="New Session">&#8635;</button>
+    <button class="gear-btn" id="gearBtn" title="LLM Settings">&#9881;</button>
+    <div class="dot" id="statusDot"></div>
+  </div>
+</div>
+
+<div class="transcript" id="transcript">
+  <div class="placeholder" id="placeholder">
+    Tap the microphone to start listening<br>
+    <span style="font-size:11px;color:var(--fg3)">Audio streams continuously -- no need to hold the button</span>
+  </div>
+</div>
+
+<div class="listen-bar" id="listenBar">
+  <div class="bars"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>
+  <span>Listening...</span>
+  <span class="timer" id="timer">0:00</span>
+</div>
+
+<div class="svc-notice" id="svcNotice"></div>
+<div class="conn-lost" id="connLost">
+  <span>Connection lost</span>
+  <span class="info" id="connInfo"></span>
+  <button id="connRetry">Retry</button>
+</div>
+
+<div class="spk-bar" id="spkBar"></div>
+
+<div class="ctrl">
+  <button class="listen-btn" id="listenBtn" title="Start / Stop listening">
+    <svg class="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+      <line x1="12" y1="19" x2="12" y2="22"/>
+    </svg>
+    <svg class="stop-icon" viewBox="0 0 24 24" fill="currentColor">
+      <rect x="6" y="6" width="12" height="12" rx="2"/>
+    </svg>
+  </button>
+
+  <div class="txt-area">
+    <input class="txt-in" id="txtIn" placeholder="Or type to translate..." />
+    <button class="send" id="sendBtn">&rarr;</button>
+  </div>
+
+  <button class="nav-btn" id="historyBtn">History</button>
+  <button class="nav-btn" id="vocabBtn">Vocab</button>
+</div>
+
+<button class="sel-save" id="selSave">Save to Vocab</button>
+
+<div class="modal-bg" id="renameModal">
+  <div class="modal">
+    <h3>Name this speaker</h3>
+    <input id="renameInput" placeholder="e.g. Profesor, Maria..." />
+    <div class="modal-btns">
+      <button class="cancel" id="renameCancel">Cancel</button>
+      <button class="ok" id="renameOk">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="saveModal">
+  <div class="modal">
+    <h3>Save Transcript</h3>
+    <input id="saveNotesInput" placeholder="Session name (optional)..." />
+    <div class="modal-btns">
+      <button class="cancel" id="saveCancel">Cancel</button>
+      <button class="ok" id="saveOk">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="settingsModal">
+  <div class="modal settings">
+    <h3>LLM Settings</h3>
+    <div class="set-section">
+      <div class="set-label">Provider</div>
+      <div class="set-row">
+        <div class="set-status unknown" id="provStatus"></div>
+        <select class="set-select" id="provSelect">
+          <option value="ollama">Ollama (local)</option>
+          <option value="lmstudio">LM Studio (local)</option>
+          <option value="openai">OpenAI (cloud)</option>
+        </select>
+      </div>
+    </div>
+    <div class="set-section">
+      <div class="set-label">Model</div>
+      <div class="set-row">
+        <select class="set-select" id="modelSelect">
+          <option value="">Loading...</option>
+        </select>
+        <button class="set-refresh" id="refreshModels">Refresh</button>
+      </div>
+    </div>
+    <div class="set-section">
+      <div class="set-label">Quick Model (partials)</div>
+      <div class="set-row">
+        <select class="set-select" id="quickModelSelect">
+          <option value="">(use main model)</option>
+        </select>
+      </div>
+    </div>
+    <div class="set-section" id="costSection" style="display:none">
+      <div class="set-label">Session Cost</div>
+      <div class="set-cost">
+        <span>Tokens: <span class="val" id="costTokens">0</span></span>
+        &nbsp;&middot;&nbsp;
+        <span>Cost: $<span class="val" id="costUsd">0.00</span></span>
+      </div>
+    </div>
+    <div class="set-section">
+      <div class="set-label">Metrics</div>
+      <div class="set-metric"><span>Requests</span><span class="val" id="metRequests">0</span></div>
+      <div class="set-metric"><span>Avg latency</span><span class="val" id="metLatency">-</span></div>
+      <div class="set-metric"><span>Failures</span><span class="val" id="metFailures">0</span></div>
+    </div>
+    <div class="set-section">
+      <div class="set-label">Audio Input</div>
+      <div class="set-row">
+        <label class="set-toggle">
+          <input type="checkbox" id="audioCompression">
+          <span>Boost quiet speech (AGC)</span>
+        </label>
+      </div>
+      <div class="set-info" style="font-size: 11px; color: var(--fg3); margin-top: 4px;">
+        Automatically boosts quiet speakers. May amplify background noise.
+      </div>
+    </div>
+    <div class="set-section">
+      <div class="set-label">Offline Audio Buffer</div>
+      <div class="set-row">
+        <input class="set-input" id="audioSpoolMinutes" type="number" min="1" max="120" step="1">
+        <span class="set-hint">minutes</span>
+      </div>
+      <div class="set-row">
+        <input class="set-input" id="audioSpoolMb" type="number" min="5" max="500" step="5">
+        <span class="set-hint">MB max</span>
+      </div>
+      <div class="set-info" style="font-size: 11px; color: var(--fg3); margin-top: 4px;">
+        Audio keeps recording during blips. Oldest audio drops if limits are exceeded.
+      </div>
+    </div>
+    <div class="set-section">
+      <div class="set-label">ASR</div>
+      <div class="set-row">
+        <label class="set-toggle">
+          <input type="checkbox" id="asrAutoLang">
+          <span>Auto-detect language</span>
+        </label>
+      </div>
+    </div>
+    <div class="set-section">
+      <div class="set-label">Recording (for benchmarks)</div>
+      <div class="set-row">
+        <label class="set-toggle">
+          <input type="checkbox" id="saveAudioToggle">
+          <span>Save audio to server</span>
+        </label>
+      </div>
+      <div class="set-info" id="recordingInfo" style="display:none; font-size: 11px; color: var(--fg3); margin-top: 4px;">
+        Audio will be saved to server for testing
+      </div>
+    </div>
+    <div class="modal-btns">
+      <button class="cancel" id="settingsClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/static/js/app.js?v=25"></script>
+</body>
+</html>

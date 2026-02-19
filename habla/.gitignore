@@ -1,0 +1,78 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Data and databases
+data/habla.db
+data/habla.db-shm
+data/habla.db-wal
+*.db
+*.db-journal
+
+# Logs
+*.log
+data/habla.log*
+data/habla_errors.log*
+
+# Audio recordings (test data, may contain voice samples)
+data/audio/recordings/
+data/audio/*.wav
+data/audio/*.opus
+data/audio/*.webm
+data/audio/*.mp3
+tests/benchmark/audio_samples/*.wav
+tests/benchmark/audio_samples/*.opus
+tests/benchmark/audio_samples/*.webm
+tests/benchmark/audio_samples/*.mp3
+
+# Benchmark results
+tests/benchmark/results/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets — never commit
+.env
+.env.local
+
+# Temporary files
+*.tmp
+temp/
+tmp/
