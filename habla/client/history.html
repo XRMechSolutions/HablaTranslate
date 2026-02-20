@@ -92,6 +92,7 @@ const $=s=>document.querySelector(s);
 let offset=0;
 let expandedId=null;
 let exchangeCache={};
+let speakerCache={};
 
 async function api(path){
   const r=await fetch('/api/sessions'+path);
@@ -157,6 +158,7 @@ function sessionCardHTML(s){
     <div class="s-exchanges" id="ex-${s.id}"></div>
     <div class="s-actions" onclick="event.stopPropagation()">
       <button onclick="downloadSession(${s.id})">Download</button>
+      <button onclick="deleteSession(${s.id},this)">Delete</button>
     </div>
   </div>`;
 }
@@ -181,12 +183,20 @@ async function toggleSession(id){
   expandedId=id;
   card.classList.add('expanded');
 
-  // Load exchanges if not cached
+  // Load exchanges and speaker labels if not cached
   if(!exchangeCache[id]){
     exDiv.innerHTML='<div class="ex-item" style="color:var(--fg3)">Loading...</div>';
     try{
-      const exchanges=await api(`/${id}/exchanges?limit=200`);
+      const [exchanges,session]=await Promise.all([
+        api(`/${id}/exchanges?limit=200`),
+        api(`/${id}`)
+      ]);
       exchangeCache[id]=exchanges;
+      const spMap={};
+      (session.speakers||[]).forEach(s=>{
+        spMap[s.id]=s.custom_name||s.auto_label||s.id;
+      });
+      speakerCache[id]=spMap;
     }catch(e){
       exDiv.innerHTML='<div class="ex-item" style="color:var(--red)">Failed to load exchanges.</div>';
       return;
@@ -199,8 +209,9 @@ async function toggleSession(id){
     return;
   }
 
+  const spMap=speakerCache[id]||{};
   exDiv.innerHTML=exchanges.map(ex=>{
-    const speaker=ex.speaker_id||'Speaker';
+    const speaker=spMap[ex.speaker_id]||ex.speaker_id||'Speaker';
     const src=ex.corrected_source||ex.raw_transcript||'';
     const tgt=ex.translation||'';
     const ts=ex.timestamp?fmtTime(ex.timestamp):'';
@@ -228,6 +239,37 @@ function downloadSession(id){
   a.download=`habla_session_${id}.txt`;
   a.click();
   toast('Downloading transcript...');
+}
+
+async function deleteSession(id,btn){
+  if(btn.dataset.confirm!=='1'){
+    btn.dataset.confirm='1';
+    btn.textContent='Confirm?';
+    btn.style.color='var(--red)';
+    setTimeout(()=>{
+      if(btn.dataset.confirm==='1'){
+        btn.dataset.confirm='';
+        btn.textContent='Delete';
+        btn.style.color='';
+      }
+    },3000);
+    return;
+  }
+  try{
+    const r=await fetch(`/api/sessions/${id}`,{method:'DELETE'});
+    if(r.ok){
+      const card=document.getElementById('sc-'+id);
+      if(card) card.remove();
+      delete exchangeCache[id];
+      delete speakerCache[id];
+      if(expandedId===id) expandedId=null;
+      toast('Session deleted');
+    }else{
+      toast('Failed to delete session');
+    }
+  }catch{
+    toast('Failed to delete — server unreachable');
+  }
 }
 
 // --- Helpers ---

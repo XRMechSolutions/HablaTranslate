@@ -16,7 +16,7 @@ from server.models.schemas import (
     Exchange, FlaggedPhrase, SpeakerProfile, TranslationResult,
     WSTranslation, WSPartialTranscript, WSSpeakersUpdate,
 )
-from server.services.speaker_tracker import SpeakerTracker
+from server.services.speaker_tracker import SpeakerTracker, SPEAKER_COLORS
 from server.services.idiom_scanner import IdiomScanner, IdiomMatch
 from server.pipeline.translator import Translator
 
@@ -61,6 +61,7 @@ class PipelineOrchestrator:
         self._on_partial = None  # async callback(WSPartialTranscript)
         self._on_speakers = None  # async callback(WSSpeakersUpdate)
         self._on_final_transcript = None  # async callback(dict) — source text locked, translation pending
+        self._on_error = None  # async callback(str) — translation or pipeline error
 
         # Streaming partials state
         self._last_partial_text = ""
@@ -120,6 +121,7 @@ class PipelineOrchestrator:
 
                 self._diarize_pipeline = PyannotePipeline.from_pretrained(
                     "pyannote/speaker-diarization-3.1",
+                    use_auth_token=self.config.diarization.hf_token,
                 )
                 import torch
                 if self._diarize_pipeline is None:
@@ -139,6 +141,9 @@ class PipelineOrchestrator:
         await self.translator.auto_detect_model()
 
         self._ready = True
+
+        # Restore previous session context (topic, exchanges, speakers) if available
+        await self._restore_shutdown_state()
 
         # Start background worker
         self._worker_task = asyncio.create_task(self._process_queue())
@@ -215,6 +220,41 @@ class PipelineOrchestrator:
         except Exception as e:
             logger.warning(f"Failed to save session state: {e}")
 
+    async def _restore_shutdown_state(self):
+        """Restore conversation context from last shutdown if the file exists."""
+        state_path = self.config.data_dir / "last_session.json"
+        if not state_path.exists():
+            return
+        try:
+            state = json.loads(state_path.read_text())
+            shutdown_time = state.get("shutdown_time", "unknown")
+
+            if state.get("topic_summary"):
+                self.topic_summary = state["topic_summary"]
+
+            for ex in state.get("recent_exchanges", []):
+                self.recent_exchanges.append(ex)
+
+            for sid, sp_data in state.get("speakers", {}).items():
+                idx = len(self.speaker_tracker.speakers)
+                self.speaker_tracker.speakers[sid] = SpeakerProfile(
+                    id=sid,
+                    label=sp_data.get("auto_label", f"Speaker {chr(65 + idx)}"),
+                    custom_name=sp_data.get("custom_name"),
+                    role_hint=sp_data.get("role_hint"),
+                    color=SPEAKER_COLORS[idx % len(SPEAKER_COLORS)],
+                    utterance_count=sp_data.get("utterance_count", 0),
+                )
+
+            logger.info(
+                f"Restored session state from {shutdown_time}: "
+                f"{len(self.recent_exchanges)} exchanges, "
+                f"{len(self.speaker_tracker.speakers)} speakers, "
+                f"topic='{self.topic_summary[:60] if self.topic_summary else '(none)'}'"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to restore session state: {e}")
+
     @property
     def _source_language(self) -> str:
         return "es" if self.direction == "es_to_en" else "en"
@@ -223,12 +263,13 @@ class PipelineOrchestrator:
     def ready(self) -> bool:
         return self._ready
 
-    def set_callbacks(self, on_translation=None, on_partial=None, on_speakers=None, on_final_transcript=None):
+    def set_callbacks(self, on_translation=None, on_partial=None, on_speakers=None, on_final_transcript=None, on_error=None):
         """Set async callbacks for pipeline events."""
         self._on_translation = on_translation
         self._on_partial = on_partial
         self._on_speakers = on_speakers
         self._on_final_transcript = on_final_transcript
+        self._on_error = on_error
 
     def reset_partial_state(self):
         """Reset streaming partial state between speech segments."""
@@ -707,6 +748,11 @@ class PipelineOrchestrator:
                 logger.info(f"Translation done in {exchange.processing_ms}ms: '{transcript[:60]}'")
         except Exception as e:
             logger.error(f"Translation error: {e}")
+            if self._on_error:
+                try:
+                    await self._on_error(f"Translation failed: {e}")
+                except Exception:
+                    pass
 
     def _run_asr_and_diarize(self, wav_path: str) -> tuple[str, list[dict]]:
         """Run WhisperX ASR and Pyannote diarization (blocking, runs in thread)."""
@@ -848,12 +894,14 @@ class PipelineOrchestrator:
     async def _update_topic(self, result: TranslationResult, speaker_name: str):
         """Update topic summary asynchronously."""
         try:
-            self.topic_summary = await self.translator.update_topic_summary(
+            new_summary = await self.translator.update_topic_summary(
                 previous_summary=self.topic_summary,
                 latest_source=result.corrected,
                 latest_translation=result.translated,
                 speaker_label=speaker_name,
             )
+            if new_summary:
+                self.topic_summary = new_summary
         except Exception as e:
             logger.debug(f"Topic update failed (non-critical): {e}")
 

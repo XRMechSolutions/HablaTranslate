@@ -387,6 +387,24 @@ async def export_session(session_id: int):
     )
 
 
+@session_router.delete("/{session_id}")
+async def delete_session(session_id: int):
+    """Delete a session and all its associated data."""
+    db = await get_db()
+    rows = await db.execute_fetchall(
+        "SELECT id FROM sessions WHERE id = ?", (session_id,)
+    )
+    if not rows:
+        raise HTTPException(404, "Session not found")
+
+    await db.execute("DELETE FROM quality_metrics WHERE session_id = ?", (session_id,))
+    await db.execute("DELETE FROM exchanges WHERE session_id = ?", (session_id,))
+    await db.execute("DELETE FROM speakers WHERE session_id = ?", (session_id,))
+    await db.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+    await db.commit()
+    return {"deleted": True, "session_id": session_id}
+
+
 # --- Idiom Pattern Routes ---
 
 idiom_router = APIRouter(prefix="/api/idioms", tags=["idioms"])
