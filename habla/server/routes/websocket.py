@@ -429,11 +429,15 @@ async def websocket_endpoint(websocket: WebSocket):
         async def on_final_transcript(msg: dict):
             await session._send(msg)
 
+        async def on_error(msg: str):
+            await session._send({"type": "error", "message": msg})
+
         session._wire_callbacks = lambda: session.pipeline.set_callbacks(
             on_translation=on_translation,
             on_partial=on_partial,
             on_speakers=on_speakers,
             on_final_transcript=on_final_transcript,
+            on_error=on_error,
         )
         session._wire_callbacks()
 

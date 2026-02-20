@@ -1,7 +1,10 @@
 """Async SQLite database for Habla."""
 
+import logging
 import aiosqlite
 from pathlib import Path
+
+logger = logging.getLogger("habla.db")
 
 _db: aiosqlite.Connection | None = None
 
@@ -13,8 +16,18 @@ async def init_db(db_path: Path) -> aiosqlite.Connection:
     _db.row_factory = aiosqlite.Row
     await _db.execute("PRAGMA journal_mode=WAL")
     await _db.execute("PRAGMA foreign_keys=ON")
+    await _db.execute("PRAGMA busy_timeout=30000")
     await _create_tables(_db)
     await _db.commit()
+
+    # Integrity check on startup — warns but does not abort
+    rows = await _db.execute_fetchall("PRAGMA integrity_check")
+    result = rows[0][0] if rows else "unknown"
+    if result != "ok":
+        logger.warning("Database integrity check FAILED: %s", result)
+    else:
+        logger.debug("Database integrity check passed")
+
     return _db
 
 
