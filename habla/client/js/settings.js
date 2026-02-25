@@ -1,6 +1,7 @@
-// Habla — LLM provider/model settings panel
+// Habla — LLM provider/model settings panel + playback controls
 
-import { $, state, toast } from './core.js';
+import { $, state, send, toast } from './core.js';
+import { clearTranscript, setGroundTruth, clearGroundTruth } from './ui.js';
 
 const AUDIO_SPOOL_DEFAULT_MINUTES = 10;
 const AUDIO_SPOOL_DEFAULT_MB = 50;
@@ -179,6 +180,178 @@ function updateRecordingInfo(enabled) {
   }
 }
 
+// --- Playback ---
+
+// Track recording metadata for audio player
+let _recordingHasRaw = {};
+let _recordingSegCount = {};
+
+async function loadRecordings() {
+  const sel = $('#pbRecording');
+  sel.innerHTML = '<option value="">Loading...</option>';
+  _recordingHasRaw = {};
+  _recordingSegCount = {};
+  try {
+    const r = await fetch('/api/recordings');
+    const data = await r.json();
+    if (!data.length) {
+      sel.innerHTML = '<option value="">No recordings found</option>';
+      updateAudioPlayer('');
+      return;
+    }
+    data.forEach(rec => {
+      _recordingHasRaw[rec.id] = !!rec.has_raw_stream;
+      _recordingSegCount[rec.id] = rec.segment_count || 0;
+    });
+    sel.innerHTML = '<option value="">Select recording...</option>' +
+      data.map(rec => {
+        const date = rec.started_at ? new Date(rec.started_at).toLocaleString() : rec.id;
+        const dur = rec.total_duration_seconds ? ` (${Math.round(rec.total_duration_seconds)}s)` : '';
+        const segs = rec.segment_count ? `, ${rec.segment_count} segs` : '';
+        const gt = rec.has_ground_truth ? ' [GT]' : '';
+        const raw = rec.has_raw_stream ? '' : ' [no raw]';
+        return `<option value="${rec.id}">${date}${dur}${segs}${gt}${raw}</option>`;
+      }).join('');
+    updateAudioPlayer(sel.value);
+  } catch (e) {
+    sel.innerHTML = '<option value="">Failed to load</option>';
+    updateAudioPlayer('');
+  }
+}
+
+function updateAudioPlayer(recordingId) {
+  const section = $('#pbAudioSection');
+  const audio = $('#pbAudio');
+  const segSel = $('#pbSegSelect');
+  const hasRaw = recordingId && _recordingHasRaw[recordingId];
+  const segCount = (recordingId && _recordingSegCount[recordingId]) || 0;
+
+  if (!recordingId || (!hasRaw && !segCount)) {
+    audio.pause();
+    audio.removeAttribute('src');
+    section.style.display = 'none';
+    return;
+  }
+
+  // Build segment selector options
+  let opts = '';
+  if (hasRaw) opts += '<option value="full">Full recording</option>';
+  for (let i = 1; i <= segCount; i++) {
+    const num = String(i).padStart(3, '0');
+    opts += `<option value="segment_${num}">Segment ${i}</option>`;
+  }
+  segSel.innerHTML = opts;
+  section.style.display = 'block';
+
+  // Load the first available option
+  _loadSegmentAudio(recordingId, segSel.value);
+}
+
+function _loadSegmentAudio(recordingId, segValue) {
+  const audio = $('#pbAudio');
+  const enc = encodeURIComponent(recordingId);
+  if (segValue === 'full') {
+    audio.src = `/api/recordings/${enc}/audio`;
+  } else {
+    audio.src = `/api/recordings/${enc}/audio/${segValue}.wav`;
+  }
+  audio.load();
+}
+
+async function startPlayback() {
+  const recording = $('#pbRecording').value;
+  if (!recording) { toast('Select a recording first', 'warn'); return; }
+
+  const speed = parseFloat($('#pbSpeed').value);
+  const mode = $('#pbMode').value;
+
+  // Clear current transcript before playback
+  send({ type: 'new_session' });
+  clearTranscript();
+
+  // Load ground truth if available for this recording
+  clearGroundTruth();
+  try {
+    const gtResp = await fetch(`/api/recordings/${encodeURIComponent(recording)}`);
+    if (gtResp.ok) {
+      const recData = await gtResp.json();
+      if (recData.ground_truth) {
+        setGroundTruth(recording, recData.ground_truth);
+        toast('Ground truth loaded for comparison', 'ok', 2000);
+      }
+    }
+  } catch (e) { /* no ground truth, that's fine */ }
+
+  try {
+    const r = await fetch('/api/playback/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recording_id: recording, speed, mode }),
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      toast(data.detail || 'Playback failed', 'error');
+      return;
+    }
+    toast(`Playback started (${speed}x, ${mode})`, 'ok');
+    $('#pbPlay').style.display = 'none';
+    $('#pbStop').style.display = '';
+    updatePlaybackStatus('Starting playback...');
+  } catch (e) {
+    toast('Failed to start playback', 'error');
+  }
+}
+
+async function stopPlayback() {
+  try {
+    await fetch('/api/playback/stop', { method: 'POST' });
+    toast('Playback stopped', 'ok');
+  } catch (e) {
+    toast('Failed to stop playback', 'error');
+  }
+  playbackEnded();
+}
+
+function playbackEnded() {
+  $('#pbPlay').style.display = '';
+  $('#pbStop').style.display = 'none';
+  updatePlaybackStatus('');
+  $('#listenBtn').disabled = false;
+  clearGroundTruth();
+}
+
+function updatePlaybackStatus(text) {
+  const el = $('#pbStatus');
+  if (text) {
+    el.style.display = 'block';
+    el.textContent = text;
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+/** Called from websocket.js message handler */
+export function handlePlaybackMessage(m) {
+  switch (m.type) {
+    case 'playback_started':
+      $('#pbPlay').style.display = 'none';
+      $('#pbStop').style.display = '';
+      updatePlaybackStatus(`Playing: ${m.total_chunks} chunks at ${m.speed}x (${m.mode})`);
+      $('#listenBtn').disabled = true;
+      break;
+    case 'playback_progress':
+      updatePlaybackStatus(`Progress: ${m.chunk_index} / ${m.total_chunks}`);
+      break;
+    case 'playback_finished':
+      playbackEnded();
+      toast(`Playback complete: ${m.chunks_processed} chunks`, 'ok');
+      break;
+    case 'playback_stopped':
+      playbackEnded();
+      break;
+  }
+}
+
 async function switchLLM() {
   const prov = $('#provSelect').value;
   const model = $('#modelSelect').value;
@@ -224,6 +397,17 @@ export function initSettings() {
     }).catch(() => {});
   }
 
+  // Playback controls
+  $('#pbRefresh').onclick = loadRecordings;
+  $('#pbRecording').onchange = () => updateAudioPlayer($('#pbRecording').value);
+  $('#pbSegSelect').onchange = () => {
+    const rec = $('#pbRecording').value;
+    if (rec) _loadSegmentAudio(rec, $('#pbSegSelect').value);
+  };
+  $('#pbPlay').onclick = startPlayback;
+  $('#pbStop').onclick = stopPlayback;
+
   loadAsrSettings();
   loadAudioSpoolSettings();
+  loadRecordings();
 }

@@ -10,7 +10,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
 <title>Habla</title>
-<link rel="stylesheet" href="/static/styles.css?v=25">
+<link rel="stylesheet" href="/static/styles.css?v=26">
 </head>
 <body>
 
@@ -191,12 +191,47 @@
         Audio will be saved to server for testing
       </div>
     </div>
+    <div class="set-section">
+      <div class="set-label">Playback (reprocess recordings)</div>
+      <div class="set-row">
+        <select class="set-select" id="pbRecording">
+          <option value="">Select recording...</option>
+        </select>
+        <button class="set-refresh" id="pbRefresh">Refresh</button>
+      </div>
+      <div id="pbAudioSection" style="display:none">
+        <div class="set-row" style="margin-top:6px">
+          <select class="set-select" id="pbSegSelect" style="flex:1">
+            <option value="full">Full recording</option>
+          </select>
+        </div>
+        <audio id="pbAudio" controls class="pb-audio"></audio>
+      </div>
+      <div class="set-row" style="margin-top:6px">
+        <select class="set-select" id="pbSpeed" style="width:auto;flex:0">
+          <option value="1">1x (real-time)</option>
+          <option value="2">2x</option>
+          <option value="4" selected>4x</option>
+          <option value="8">8x</option>
+          <option value="0">Instant</option>
+        </select>
+        <select class="set-select" id="pbMode" style="width:auto;flex:0">
+          <option value="full">Full pipeline</option>
+          <option value="segments">Segments only</option>
+        </select>
+      </div>
+      <div class="set-row" style="margin-top:6px">
+        <button class="set-btn" id="pbPlay">Play</button>
+        <button class="set-btn" id="pbStop" style="display:none">Stop</button>
+      </div>
+      <div class="set-info" id="pbStatus" style="display:none; font-size:11px; color:var(--fg3); margin-top:4px;"></div>
+    </div>
     <div class="modal-btns">
       <button class="cancel" id="settingsClose">Close</button>
     </div>
   </div>
 </div>
 
-<script type="module" src="/static/js/app.js?v=25"></script>
+<script type="module" src="/static/js/app.js?v=27"></script>
 </body>
 </html>

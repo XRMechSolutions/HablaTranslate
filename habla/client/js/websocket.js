@@ -5,6 +5,7 @@ import { $, state, send, toast, showSvcNotice, hideSvcNotice,
          flushAudioSpool } from './core.js';
 import { clearPartial, clearTranscript, showPartialSource, showPartialTranslation,
          lockTranscript, finalizeExchange, updateSpeakers, updateDirUI, updateModeUI } from './ui.js';
+import { handlePlaybackMessage } from './settings.js';
 
 export function connect() {
   if (state.ws && (state.ws.readyState === 0 || state.ws.readyState === 1)) return;
@@ -109,6 +110,12 @@ function handleMsg(m) {
       state.mode = m.mode || state.mode;
       clearTranscript();
       updateDirUI(); updateModeUI();
+      break;
+    case 'playback_started':
+    case 'playback_progress':
+    case 'playback_finished':
+    case 'playback_stopped':
+      handlePlaybackMessage(m);
       break;
     case 'error':
       toast(m.message || 'Server error', 'error');

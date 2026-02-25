@@ -41,7 +41,7 @@ export const state = {
   _startingListen: false,
   selSaveBtn: null,
   selSaveData: null,
-  pendingTranscriptCard: null,
+  pendingCards: new Set(),
   sessionId: null,
   wsAttempt: 0,
   wsReconnTimer: null,
