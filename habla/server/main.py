@@ -15,8 +15,15 @@ from fastapi.responses import FileResponse
 from server.config import load_config
 from server.db.database import init_db, close_db
 from server.pipeline.orchestrator import PipelineOrchestrator
-from server.routes.websocket import websocket_endpoint, set_ws_pipeline, set_recording_config
-from server.routes.api import vocab_router, system_router, session_router, idiom_router, llm_router, lmstudio_router, set_pipeline, set_lmstudio_manager
+from server.routes.websocket import websocket_endpoint, set_ws_pipeline, set_recording_config, set_ws_playback_service
+from server.routes._state import set_pipeline, set_lmstudio_manager, set_playback_service
+from server.routes.api_vocab import vocab_router
+from server.routes.api_system import system_router
+from server.routes.api_sessions import session_router
+from server.routes.api_idioms import idiom_router
+from server.routes.api_llm import llm_router, lmstudio_router
+from server.routes.api_playback import playback_router
+from server.services.playback import PlaybackService
 from server.services.health import run_startup_checks, run_runtime_checks, ComponentStatus
 from server.services.lmstudio_manager import LMStudioManager
 
@@ -117,6 +124,12 @@ async def lifespan(app: FastAPI):
     if config.recording.enabled:
         logger.info(f"Audio recording enabled: {config.recording.output_dir}")
 
+    # Initialize playback service (works even if recording is disabled — reads existing recordings)
+    playback_service = PlaybackService(config.recording.output_dir)
+    set_playback_service(playback_service)
+    set_ws_playback_service(playback_service)
+    logger.info(f"Playback service ready: {len(playback_service.list_recordings())} recordings available")
+
     await pipeline.startup()
 
     # Post-pipeline health checks (verify models loaded)
@@ -175,12 +188,11 @@ async def lifespan(app: FastAPI):
                 else:
                     logger.warning("Console: pipeline not ready")
             elif cmd == "quit":
-                logger.info("Console: quitting...")
-                try:
-                    if pipeline:
-                        await pipeline.shutdown()
-                finally:
-                    os._exit(0)
+                logger.info("Console: initiating graceful shutdown...")
+                # Send SIGINT to trigger uvicorn's graceful shutdown,
+                # which runs the full lifespan teardown (DB close, LM Studio stop, etc.)
+                os.kill(os.getpid(), signal.SIGINT)
+                return
             else:
                 logger.info(f"Console: unknown command '{cmd}'")
 
@@ -214,6 +226,7 @@ app.include_router(session_router)
 app.include_router(idiom_router)
 app.include_router(llm_router)
 app.include_router(lmstudio_router)
+app.include_router(playback_router)
 
 
 # WebSocket endpoint
