@@ -111,6 +111,7 @@ async def _create_tables(db: aiosqlite.Connection):
             interval_days       INTEGER DEFAULT 1,
             next_review         DATETIME,
             repetitions         INTEGER DEFAULT 0,
+            lapse_count         INTEGER DEFAULT 0,
             times_encountered   INTEGER DEFAULT 1
         )
     """)
@@ -195,6 +196,12 @@ async def _create_tables(db: aiosqlite.Connection):
             await db.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typ}")
         except Exception:
             pass  # Column already exists
+
+    # Add lapse_count to vocab for enhanced SRS (migration for existing DBs)
+    try:
+        await db.execute("ALTER TABLE vocab ADD COLUMN lapse_count INTEGER DEFAULT 0")
+    except Exception:
+        pass  # Column already exists
 
     # Indexes
     await db.execute("""

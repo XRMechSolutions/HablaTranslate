@@ -215,7 +215,7 @@ class TestTableSchema:
             "id", "exchange_id", "speaker_id", "term", "literal",
             "meaning", "category", "source_sentence", "region",
             "save_worthy", "created_at", "ease_factor", "interval_days",
-            "next_review", "repetitions", "times_encountered",
+            "next_review", "repetitions", "lapse_count", "times_encountered",
         }
         assert col_names == expected
 

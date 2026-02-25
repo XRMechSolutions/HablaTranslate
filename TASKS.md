@@ -260,12 +260,12 @@ Fix backend gaps that cause silent data loss or incorrect behavior.
 
 > **Reference:** `C:\Users\clint\AndroidStudioProjects\ConjugationGameKMM` — `SrsAlgorithm`, `SrsModels`, `SrsScheduler`
 
-- [ ] Cap ease factor upper bound at 5.0 (currently unbounded — can grow infinitely)
-- [ ] Add lapse tracking — count how many times a card was forgotten after being learned (ConjugationGameKMM tracks this)
-- [ ] Add mature card detection — cards with interval > N days get different handling
-- [ ] Smart session planning from `SrsScheduler`: compose review sessions as 70% due, 20% new, 10% struggling
-- [ ] Add `GET /api/vocab/review-session` endpoint that returns a planned session mix (not just raw due cards)
-- [ ] Handle timezone for users in Spain (next_review dates should respect user's local time or store UTC with clear documentation)
+- [x] Cap ease factor upper bound at 5.0 (currently unbounded — can grow infinitely)
+- [x] Add lapse tracking — count how many times a card was forgotten after being learned (ConjugationGameKMM tracks this)
+- [x] Add mature card detection — cards with interval > N days get different handling
+- [x] Smart session planning from `SrsScheduler`: compose review sessions as 70% due, 20% new, 10% struggling
+- [x] Add `GET /api/vocab/review-session` endpoint that returns a planned session mix (not just raw due cards)
+- [x] Handle timezone for users in Spain (all next_review dates stored as UTC ISO strings)
 
 ### 3.2 Missing Vocab API Endpoints
 - [x] `POST /api/vocab/` — Manually create vocab item (with duplicate detection + encounter counting)
@@ -274,19 +274,19 @@ Fix backend gaps that cause silent data loss or incorrect behavior.
 - [ ] `PATCH /api/vocab/{id}` — Edit existing vocab item (term, meaning, notes)
 
 ### 3.3 Database Safety
-- [ ] Add `PRAGMA busy_timeout=30000` for lock contention handling
-- [ ] Add `PRAGMA integrity_check` on startup (log warning if corruption detected)
-- [ ] Ensure FTS triggers exist before first vocab insert
+- [x] Add `PRAGMA busy_timeout=30000` for lock contention handling
+- [x] Add `PRAGMA integrity_check` on startup (log warning if corruption detected)
+- [x] Ensure FTS triggers exist before first vocab insert
 
 ### 3.4 Dead Code Cleanup
 - [x] Remove unused `import subprocess` from `orchestrator.py`
-- [ ] Remove or document unused `decode_chunk()` method in `vad_buffer.py`
-- [ ] Fix topic summary prompt condition — orchestrator initializes `topic_summary = ""` but prompt checks for `None`
+- [x] Remove or document unused `decode_chunk()` method in `vad_buffer.py`
+- [x] Fix topic summary prompt condition — orchestrator initializes `topic_summary = ""` but prompt checks for `None`
 
 ### 3.5 Pipeline Error Reporting
-- [ ] Send error callback to client when `_process_audio_segment()` fails silently
+- [ ] Send error callback to client when `_process_audio_segment()` fails at ASR stage (translation-stage errors already reach client)
 - [ ] Send error callback when partial transcription fails (currently swallowed in orchestrator)
-- [ ] Log and notify when ffmpeg subprocess crashes
+- [ ] Log and notify when ffmpeg subprocess crashes (currently causes silent audio loss)
 
 ### 3.6 Translation Quality Metrics (from GeneralizedServiceChatbot RAGMetrics)
 
@@ -331,7 +331,7 @@ Get the project production-ready for self-hosted use over Tailscale.
 ### 4.5 Health & Monitoring
 - [x] Add dedicated `GET /health` endpoint (checks Ollama, ffmpeg, DB, WhisperX, diarization)
 - [x] Add structured logging with rotating file handlers (10MB x 5 + separate error log)
-- [ ] Add request timing middleware (log slow requests > 5s)
+- [x] Add request timing middleware (log slow requests > 5s)
 
 ### 4.6 HTTPS Setup
 - [ ] Document Tailscale HTTPS setup for secure mic access on Android

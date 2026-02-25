@@ -81,6 +81,16 @@ async def vocab_due(limit: int = Query(default=20, ge=1, le=200)):
     return await _vocab_service.get_due_for_review(limit=limit)
 
 
+@vocab_router.get("/review-session")
+async def review_session(size: int = Query(default=20, ge=1, le=100)):
+    """Return a planned review session: 70% due, 20% new, 10% struggling.
+
+    All next_review timestamps are UTC ISO strings.
+    Returns {due: [...], new: [...], struggling: [...], total: int}.
+    """
+    return await _vocab_service.get_review_session(session_size=size)
+
+
 @vocab_router.get("/stats")
 async def vocab_stats():
     """Return aggregate vocab statistics (total, due_for_review, by_category counts)."""

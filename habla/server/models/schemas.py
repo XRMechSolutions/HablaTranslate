@@ -82,6 +82,7 @@ class VocabItem(BaseModel):
     interval_days: int = 1
     next_review: Optional[datetime] = None
     repetitions: int = 0
+    lapse_count: int = 0
     times_encountered: int = 1
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
