@@ -168,8 +168,7 @@ async def check_lmstudio(url: str) -> HealthCheck:
 def check_openai_key(api_key: str) -> HealthCheck:
     """Check if OpenAI API key is configured."""
     if api_key:
-        masked = api_key[:8] + "..." + api_key[-4:]
-        return HealthCheck("openai", ComponentStatus.OK, f"Key set ({masked})")
+        return HealthCheck("openai", ComponentStatus.OK, "Configured")
     return HealthCheck("openai", ComponentStatus.DEGRADED,
                        "OPENAI_API_KEY not set - cloud translation unavailable")
 
@@ -226,8 +225,20 @@ async def run_startup_checks(config) -> SystemHealth:
     return health
 
 
+_runtime_cache: dict = {"result": None, "timestamp": 0.0}
+_RUNTIME_CACHE_TTL = 15.0  # seconds
+
+
 async def run_runtime_checks(pipeline) -> SystemHealth:
-    """Run health checks against the live pipeline (for /health endpoint)."""
+    """Run health checks against the live pipeline (for /health endpoint).
+
+    Expensive checks (ffmpeg subprocess, LLM network calls) are cached for
+    15 seconds to avoid per-request overhead under frequent probing.
+    """
+    now = time.monotonic()
+    if _runtime_cache["result"] and (now - _runtime_cache["timestamp"]) < _RUNTIME_CACHE_TTL:
+        return _runtime_cache["result"]
+
     health = SystemHealth()
 
     llm = await _check_active_llm(pipeline.config.translator)
@@ -241,5 +252,8 @@ async def run_runtime_checks(pipeline) -> SystemHealth:
 
     health.add(check_whisperx(pipeline._whisperx_model))
     health.add(check_diarization(pipeline._diarize_pipeline))
+
+    _runtime_cache["result"] = health
+    _runtime_cache["timestamp"] = now
 
     return health
