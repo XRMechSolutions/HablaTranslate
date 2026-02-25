@@ -3,13 +3,22 @@
 import csv
 import io
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from server.db.database import get_db
 from server.models.schemas import VocabItem, FlaggedPhrase
 
 
 class VocabService:
-    """Manages vocabulary items with spaced repetition scheduling."""
+    """Manages vocabulary items with spaced repetition scheduling.
+
+    Error contract:
+    - record_review returns {"error": "not found"} for missing IDs (route maps to 404).
+    - search raises ValueError on malformed FTS queries (route maps to 400).
+    - delete returns False for missing IDs (route maps to 404).
+    - All other methods assume valid inputs; DB errors propagate as exceptions.
+
+    Side effects: all mutating methods call get_db() and commit within the call.
+    """
 
     async def save_from_phrase(
         self,
@@ -51,7 +60,7 @@ class VocabService:
                 source_sentence,
                 phrase.region or "universal",
                 phrase.save_worthy,
-                datetime.utcnow().isoformat(),
+                datetime.now(UTC).isoformat(),
             ),
         )
         await db.commit()
@@ -76,7 +85,7 @@ class VocabService:
     async def get_due_for_review(self, limit: int = 20) -> list[dict]:
         """Get vocab items due for spaced repetition review."""
         db = await get_db()
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(UTC).isoformat()
         rows = await db.execute_fetchall(
             """SELECT * FROM vocab
                WHERE next_review <= ? OR next_review IS NULL
@@ -119,7 +128,7 @@ class VocabService:
         # Update ease factor
         ease = max(1.3, ease + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)))
 
-        next_review = (datetime.utcnow() + timedelta(days=interval)).isoformat()
+        next_review = (datetime.now(UTC) + timedelta(days=interval)).isoformat()
 
         await db.execute(
             """UPDATE vocab SET ease_factor = ?, interval_days = ?,
@@ -137,21 +146,26 @@ class VocabService:
         }
 
     async def delete(self, vocab_id: int) -> bool:
+        """Delete a vocab item by ID. Returns True if deleted, False if not found."""
         db = await get_db()
         cursor = await db.execute("DELETE FROM vocab WHERE id = ?", (vocab_id,))
         await db.commit()
         return cursor.rowcount > 0
 
     async def search(self, query: str, limit: int = 20) -> list[dict]:
-        """Full-text search across vocab."""
+        """Full-text search across vocab. Raises ValueError on malformed FTS syntax."""
+        import sqlite3
         db = await get_db()
-        rows = await db.execute_fetchall(
-            """SELECT v.* FROM vocab v
-               JOIN vocab_fts fts ON v.id = fts.rowid
-               WHERE vocab_fts MATCH ?
-               LIMIT ?""",
-            (query, limit),
-        )
+        try:
+            rows = await db.execute_fetchall(
+                """SELECT v.* FROM vocab v
+                   JOIN vocab_fts fts ON v.id = fts.rowid
+                   WHERE vocab_fts MATCH ?
+                   LIMIT ?""",
+                (query, limit),
+            )
+        except sqlite3.OperationalError as e:
+            raise ValueError(f"Invalid search query: {e}")
         return [dict(r) for r in rows]
 
     async def export_anki_csv(self) -> str:
@@ -190,7 +204,7 @@ class VocabService:
         total = await db.execute_fetchall("SELECT COUNT(*) as c FROM vocab")
         due = await db.execute_fetchall(
             "SELECT COUNT(*) as c FROM vocab WHERE next_review <= ?",
-            (datetime.utcnow().isoformat(),),
+            (datetime.now(UTC).isoformat(),),
         )
         by_cat = await db.execute_fetchall(
             "SELECT category, COUNT(*) as c FROM vocab GROUP BY category"

@@ -28,7 +28,15 @@ class IdiomPattern:
 
 
 class IdiomScanner:
-    """Scans transcripts for known idioms using compiled regex patterns."""
+    """Scans transcripts for known idioms using compiled regex patterns.
+
+    Patterns are loaded from two sources:
+    - JSON files in data/idioms/ (loaded at startup via load_from_json)
+    - Database idiom_patterns table (loaded via load_from_db)
+
+    Both load methods silently skip entries with invalid regex (re.error).
+    scan() is CPU-only and runs in <10ms. Deduplicates by canonical form.
+    """
 
     def __init__(self):
         self.patterns: list[IdiomPattern] = []
