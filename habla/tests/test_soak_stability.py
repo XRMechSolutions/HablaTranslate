@@ -4,12 +4,14 @@ These tests run N cycles of connect/listen/stop/disconnect and
 playback start/stop to verify no leaked tasks, stale state, or
 resource drift across repeated operations.
 
-Marked as 'soak' for optional CI gating — run with:
-    pytest tests/test_soak_stability.py -v
+Marked as 'slow' for optional CI gating — run with:
+    pytest -m slow -v
 """
 
 import asyncio
 import pytest
+
+pytestmark = pytest.mark.slow
 from unittest.mock import AsyncMock, MagicMock
 from pathlib import Path
 

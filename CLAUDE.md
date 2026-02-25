@@ -56,44 +56,33 @@ pip install -r requirements.txt
 
 All code lives under `habla/`. The project is a Python FastAPI server with a static HTML client.
 
+See **[ARCHITECTURE.md](ARCHITECTURE.md)** for the complete file tree, line counts, module dependency graph, and technology table. The summary below covers the essentials.
+
 ### Pipeline Flow
 ```
 Browser Audio (Opus/WebM) → WebSocket → AudioDecoder (ffmpeg) → StreamingVADBuffer (Silero VAD)
   → WhisperX ASR → Pyannote Diarization → Ollama LLM Translation → WebSocket → Browser
 ```
 
-### Server Structure (`habla/server/`)
-
-- **`main.py`** — FastAPI app with lifespan startup/shutdown. Loads all models, initializes DB, mounts client static files.
-- **`config.py`** — All configuration via Pydantic models. Environment variable overrides: `HF_TOKEN`, `OLLAMA_URL`, `OLLAMA_MODEL`, `WHISPER_MODEL`, `WHISPER_DEVICE`.
-
-#### `pipeline/`
-- **`orchestrator.py`** — Central coordinator. Manages the processing queue, runs ASR+diarization in threads, coordinates translation, merges idiom matches (pattern DB + LLM), maintains conversation context (rolling deque of 10 exchanges) and topic summary. Also handles streaming partial transcription during ongoing speech.
-- **`translator.py`** — Ollama LLM client (`httpx.AsyncClient`). Sends structured JSON prompts, parses JSON responses. Handles translation, correction detection, and topic summary updates.
-- **`vad_buffer.py`** — `StreamingVADBuffer`: Silero VAD-based speech segmenter that detects utterance boundaries in continuous audio. `AudioDecoder`: ffmpeg subprocess wrapper for WebM/Opus to PCM conversion. Emits partial audio snapshots every ~1s for streaming transcription.
-
-#### `routes/`
-- **`websocket.py`** — WebSocket handler with `ClientSession` per connection. Supports continuous listening (VAD-based auto-segmentation) and push-to-talk. Handles binary audio frames and JSON control messages (`start_listening`, `stop_listening`, `text_input`, `toggle_direction`, `set_mode`, `rename_speaker`).
-- **`api.py`** — REST endpoints under `/api/vocab/` (CRUD, spaced repetition review, Anki TSV export, search via FTS5) and `/api/system/` (status, direction/mode control, speaker rename).
-
-#### `services/`
-- **`idiom_scanner.py`** — Regex-based idiom detector. Loads patterns from JSON files in `data/idioms/`. Runs in <10ms. Matches are merged with LLM-detected idioms (pattern DB takes priority for dedup).
-- **`speaker_tracker.py`** — In-memory speaker identity tracker. Auto-labels speakers (A, B, C...), supports custom naming and LLM-inferred role hints.
-- **`vocab.py`** — Vocabulary CRUD with SM-2 spaced repetition algorithm. Tracks encounter counts, supports Anki export.
-
-#### `models/`
-- **`schemas.py`** — All Pydantic models: `SpeakerProfile`, `FlaggedPhrase`, `TranslationResult`, `Exchange`, `VocabItem`, and WebSocket message types (`WSTranslation`, `WSPartialTranscript`, `WSSpeakersUpdate`, `WSStatus`).
-- **`prompts.py`** — LLM prompt templates. Translation prompt requests JSON output with corrected text, translation, flagged phrases, confidence, and speaker hints. Classroom mode adds grammar correction detection.
-
-#### `db/`
-- **`database.py`** — Async SQLite via `aiosqlite` with WAL mode. Tables: `sessions`, `speakers`, `exchanges`, `vocab`, `idiom_patterns`. FTS5 virtual table `vocab_fts` for full-text vocab search.
+### Server (`habla/server/`) — Key Modules
+- **`main.py`** — FastAPI app, lifespan startup/shutdown, model loading, static mount
+- **`config.py`** — Pydantic settings, env overrides (`HF_TOKEN`, `OLLAMA_*`, `WHISPER_*`)
+- **`pipeline/`** — `orchestrator.py` (central coordinator, queue, context), `translator.py` (LLM client), `vad_buffer.py` (VAD + ffmpeg decoder)
+- **`routes/`** — `websocket.py` (audio/control WS), `api.py` (base router), plus `api_vocab.py`, `api_idioms.py`, `api_llm.py`, `api_playback.py`, `api_sessions.py`, `api_system.py`
+- **`services/`** — `health.py`, `idiom_scanner.py`, `speaker_tracker.py`, `vocab.py`, `audio_recorder.py`, `playback.py`, `lmstudio_manager.py`
+- **`models/`** — `schemas.py` (Pydantic models), `prompts.py` (LLM templates)
+- **`db/`** — `database.py` (async SQLite, WAL, FTS5)
 
 ### Client (`habla/client/`)
-- **`index.html`** — Single-file web client served as static files at `/`. Connects via WebSocket at `/ws/translate`.
+- **Pages**: `index.html` (translator), `vocab.html` (study), `history.html` (sessions)
+- **JS modules**: `app.js`, `websocket.js`, `audio.js`, `core.js`, `settings.js`, `ui.js`
+- **PWA**: `manifest.json`, `sw.js`, `styles.css`
 
-### Data (`habla/data/`)
-- **`idioms/`** — JSON files of regex idiom patterns (e.g., `spain.json`). Loaded at startup by the orchestrator.
-- **`habla.db`** — SQLite database (created automatically).
+### Data & Tooling
+- **`data/`** — `idioms/spain.json`, `audio/recordings/`, `habla.db`, `last_session.json`
+- **`scripts/`** — `auto_tune_parameters.py`, `compare_wer.py`
+- **`tools/`** — `generate_ground_truth.py`, `test_recording.py`
+- **`tests/`** — ~639 tests across `pipeline/`, `routes/`, `services/`, `db/`, `benchmark/`
 
 ## Key Design Decisions
 

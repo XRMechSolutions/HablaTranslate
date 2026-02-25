@@ -191,6 +191,7 @@ class TestTableSchema:
         expected = {
             "id", "started_at", "ended_at", "mode",
             "direction", "speaker_count", "topic_summary", "notes",
+            "llm_provider", "llm_input_tokens", "llm_output_tokens", "llm_cost_usd",
         }
         assert col_names == expected
 
@@ -572,3 +573,82 @@ class TestConcurrency:
         rows = await primary.execute_fetchall("SELECT COUNT(*) FROM vocab")
         assert rows[0][0] == 15
         await close_db()
+
+
+# ---------------------------------------------------------------------------
+# TestSessionCostPersistence
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestSessionCostPersistence:
+    """Tests for LLM cost columns on the sessions table."""
+
+    async def test_session_cost_columns_exist(self, db):
+        """Sessions table has llm cost columns after init."""
+        rows = await db.execute_fetchall(
+            "SELECT llm_provider, llm_input_tokens, llm_output_tokens, llm_cost_usd "
+            "FROM sessions LIMIT 0"
+        )
+        # Query succeeds without error — columns exist
+        assert rows == []  # no rows, but columns are valid
+
+    async def test_session_cost_defaults_to_zero(self, db):
+        """New session rows default to zero cost."""
+        await db.execute("INSERT INTO sessions (mode, direction) VALUES ('conversation', 'es_to_en')")
+        await db.commit()
+        rows = await db.execute_fetchall("SELECT llm_input_tokens, llm_output_tokens, llm_cost_usd FROM sessions WHERE id = 1")
+        row = rows[0]
+        assert row["llm_input_tokens"] == 0
+        assert row["llm_output_tokens"] == 0
+        assert row["llm_cost_usd"] == 0.0
+
+    async def test_session_cost_persistence_round_trip(self, db):
+        """Costs written to a session can be read back."""
+        await db.execute("INSERT INTO sessions (mode, direction) VALUES ('conversation', 'es_to_en')")
+        await db.commit()
+        await db.execute(
+            """UPDATE sessions SET llm_provider = ?, llm_input_tokens = ?,
+               llm_output_tokens = ?, llm_cost_usd = ? WHERE id = 1""",
+            ("openai", 1500, 800, 0.0023),
+        )
+        await db.commit()
+        rows = await db.execute_fetchall("SELECT llm_provider, llm_input_tokens, llm_output_tokens, llm_cost_usd FROM sessions WHERE id = 1")
+        row = rows[0]
+        assert row["llm_provider"] == "openai"
+        assert row["llm_input_tokens"] == 1500
+        assert row["llm_output_tokens"] == 800
+        assert abs(row["llm_cost_usd"] - 0.0023) < 1e-6
+
+    async def test_all_time_cost_aggregation(self, db):
+        """SUM query across multiple sessions returns correct totals."""
+        for i, (tokens_in, tokens_out, cost) in enumerate([
+            (1000, 500, 0.001),
+            (2000, 1000, 0.003),
+            (500, 200, 0.0005),
+        ]):
+            await db.execute("INSERT INTO sessions (mode, direction) VALUES ('conversation', 'es_to_en')")
+            await db.commit()
+            await db.execute(
+                """UPDATE sessions SET llm_provider = 'openai',
+                   llm_input_tokens = ?, llm_output_tokens = ?, llm_cost_usd = ?
+                   WHERE id = ?""",
+                (tokens_in, tokens_out, cost, i + 1),
+            )
+        # Also add a non-openai session that should be excluded
+        await db.execute("INSERT INTO sessions (mode, direction) VALUES ('conversation', 'es_to_en')")
+        await db.execute(
+            "UPDATE sessions SET llm_provider = 'ollama', llm_input_tokens = 9999 WHERE id = 4"
+        )
+        await db.commit()
+
+        rows = await db.execute_fetchall(
+            """SELECT COALESCE(SUM(llm_input_tokens), 0) as total_input,
+                      COALESCE(SUM(llm_output_tokens), 0) as total_output,
+                      COALESCE(SUM(llm_cost_usd), 0.0) as total_cost
+               FROM sessions WHERE llm_provider = 'openai'"""
+        )
+        row = rows[0]
+        assert row["total_input"] == 3500
+        assert row["total_output"] == 1700
+        assert abs(row["total_cost"] - 0.0045) < 1e-6

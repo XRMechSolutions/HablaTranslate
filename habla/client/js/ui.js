@@ -403,7 +403,13 @@ async function saveIdiom(btn) {
     const r = await fetch('/api/vocab', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ term: idiom.phrase, literal: idiom.literal || '', meaning: idiom.meaning,
         category: idiom.type || 'idiom', source_sentence: ex.corrected || ex.source, region: idiom.region || 'universal' }) });
-    if (r.ok) { btn.textContent = 'Saved'; }
+    if (r.ok) {
+      btn.textContent = 'Saved';
+      // Also add to pattern DB for future regex matching (fire-and-forget)
+      fetch('/api/idioms', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phrase: idiom.phrase, meaning: idiom.meaning,
+          literal: idiom.literal || '', region: idiom.region || 'universal' }) }).catch(() => {});
+    }
     else { btn.textContent = origText; btn.disabled = false; toast('Failed to save idiom', 'error'); }
   } catch (e) { btn.textContent = origText; btn.disabled = false; toast('Failed to save idiom \u2014 server unreachable', 'error'); }
 }
