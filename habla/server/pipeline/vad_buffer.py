@@ -274,7 +274,6 @@ class AudioDecoder:
     def __init__(self, sample_rate: int = 16000):
         self.sample_rate = sample_rate
         self._process: asyncio.subprocess.Process | None = None
-        self._accumulated = bytearray()
         self._read_task: asyncio.Task | None = None
         self._pcm_chunks: list[bytes] = []
         self._pcm_lock = asyncio.Lock()
@@ -363,33 +362,6 @@ class AudioDecoder:
         self._process = None
         return remaining_pcm
 
-    async def decode_blob(self, webm_bytes: bytes) -> bytes:
-        """One-shot decode of a complete WebM blob to PCM."""
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "ffmpeg", "-y",
-                "-i", "pipe:0",
-                "-ar", str(self.sample_rate),
-                "-ac", "1",
-                "-f", "s16le",
-                "pipe:1",
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            pcm_data, _ = await proc.communicate(input=webm_bytes)
-            return pcm_data
-        except Exception as e:
-            logger.error(f"ffmpeg decode error: {e}")
-            return b""
-
-    async def flush(self) -> bytes:
-        """Decode all accumulated audio and return PCM."""
-        if not self._accumulated:
-            return b""
-        pcm = await self.decode_blob(bytes(self._accumulated))
-        self._accumulated.clear()
-        return pcm
-
     def reset(self):
-        self._accumulated.clear()
+        """Reset decoder state."""
+        self._pcm_chunks.clear()
