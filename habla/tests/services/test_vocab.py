@@ -310,6 +310,92 @@ class TestRecordReview:
             result = await vocab_service.record_review(vocab_id=1, quality=0)
             assert result["ease_factor"] >= 1.3
 
+    @pytest.mark.asyncio
+    async def test_record_review_ease_factor_ceiling(self, vocab_service, mock_db):
+        """Ease factor should not exceed 5.0."""
+        with patch("server.services.vocab.get_db", return_value=mock_db):
+            existing = {
+                "id": 1,
+                "ease_factor": 4.95,
+                "interval_days": 6,
+                "repetitions": 2,
+                "lapse_count": 0,
+            }
+            mock_db.execute_fetchall = AsyncMock(return_value=[existing])
+            mock_db.execute = AsyncMock(return_value=MockDBCursor())
+
+            result = await vocab_service.record_review(vocab_id=1, quality=5)
+            assert result["ease_factor"] <= 5.0
+
+    @pytest.mark.asyncio
+    async def test_record_review_lapse_increments_on_failure(self, vocab_service, mock_db):
+        """Failing a previously learned card (reps > 0) should increment lapse_count."""
+        with patch("server.services.vocab.get_db", return_value=mock_db):
+            existing = {
+                "id": 1,
+                "ease_factor": 2.5,
+                "interval_days": 15,
+                "repetitions": 5,
+                "lapse_count": 2,
+            }
+            mock_db.execute_fetchall = AsyncMock(return_value=[existing])
+            mock_db.execute = AsyncMock(return_value=MockDBCursor())
+
+            result = await vocab_service.record_review(vocab_id=1, quality=1)
+            assert result["lapse_count"] == 3
+
+    @pytest.mark.asyncio
+    async def test_record_review_lapse_no_increment_for_new_card(self, vocab_service, mock_db):
+        """Failing a never-learned card (reps == 0) should not increment lapse_count."""
+        with patch("server.services.vocab.get_db", return_value=mock_db):
+            existing = {
+                "id": 1,
+                "ease_factor": 2.5,
+                "interval_days": 1,
+                "repetitions": 0,
+                "lapse_count": 0,
+            }
+            mock_db.execute_fetchall = AsyncMock(return_value=[existing])
+            mock_db.execute = AsyncMock(return_value=MockDBCursor())
+
+            result = await vocab_service.record_review(vocab_id=1, quality=1)
+            assert result["lapse_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_record_review_mature_flag(self, vocab_service, mock_db):
+        """Cards with interval >= 21 days should be flagged as mature."""
+        with patch("server.services.vocab.get_db", return_value=mock_db):
+            existing = {
+                "id": 1,
+                "ease_factor": 2.5,
+                "interval_days": 15,
+                "repetitions": 3,
+                "lapse_count": 0,
+            }
+            mock_db.execute_fetchall = AsyncMock(return_value=[existing])
+            mock_db.execute = AsyncMock(return_value=MockDBCursor())
+
+            result = await vocab_service.record_review(vocab_id=1, quality=4)
+            # 15 * 2.5 = 37 days, well above mature threshold of 21
+            assert result["is_mature"] is True
+
+    @pytest.mark.asyncio
+    async def test_record_review_not_mature_flag(self, vocab_service, mock_db):
+        """Cards with interval < 21 days should not be flagged as mature."""
+        with patch("server.services.vocab.get_db", return_value=mock_db):
+            existing = {
+                "id": 1,
+                "ease_factor": 2.5,
+                "interval_days": 1,
+                "repetitions": 0,
+                "lapse_count": 0,
+            }
+            mock_db.execute_fetchall = AsyncMock(return_value=[existing])
+            mock_db.execute = AsyncMock(return_value=MockDBCursor())
+
+            result = await vocab_service.record_review(vocab_id=1, quality=4)
+            assert result["is_mature"] is False
+
 
 class TestDelete:
     """Test vocab deletion."""

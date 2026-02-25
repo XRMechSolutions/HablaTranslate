@@ -94,10 +94,15 @@ class VocabService:
         )
         return [dict(r) for r in rows]
 
+    # Mature card threshold — cards with interval above this are "mature"
+    MATURE_INTERVAL_DAYS = 21
+
     async def record_review(self, vocab_id: int, quality: int) -> dict:
         """
         Record a spaced repetition review using SM-2 algorithm.
         quality: 0-5 (0=forgot, 3=hard, 5=easy)
+
+        All next_review timestamps are stored as UTC ISO strings.
         """
         db = await get_db()
         rows = await db.execute_fetchall(
@@ -110,10 +115,13 @@ class VocabService:
         ease = item["ease_factor"]
         interval = item["interval_days"]
         reps = item["repetitions"]
+        lapse_count = item.get("lapse_count", 0) or 0
 
         # SM-2 algorithm
         if quality < 3:
-            # Failed — reset
+            # Failed — track lapse if card was previously learned (reps > 0)
+            if reps > 0:
+                lapse_count += 1
             reps = 0
             interval = 1
         else:
@@ -125,15 +133,15 @@ class VocabService:
                 interval = int(interval * ease)
             reps += 1
 
-        # Update ease factor
-        ease = max(1.3, ease + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)))
+        # Update ease factor — capped to [1.3, 5.0]
+        ease = min(5.0, max(1.3, ease + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02))))
 
         next_review = (datetime.now(UTC) + timedelta(days=interval)).isoformat()
 
         await db.execute(
             """UPDATE vocab SET ease_factor = ?, interval_days = ?,
-               repetitions = ?, next_review = ? WHERE id = ?""",
-            (ease, interval, reps, next_review, vocab_id),
+               repetitions = ?, next_review = ?, lapse_count = ? WHERE id = ?""",
+            (ease, interval, reps, next_review, lapse_count, vocab_id),
         )
         await db.commit()
 
@@ -143,6 +151,8 @@ class VocabService:
             "interval_days": interval,
             "next_review": next_review,
             "repetitions": reps,
+            "lapse_count": lapse_count,
+            "is_mature": interval >= self.MATURE_INTERVAL_DAYS,
         }
 
     async def delete(self, vocab_id: int) -> bool:
@@ -197,6 +207,74 @@ class VocabService:
     async def export_json(self) -> list[dict]:
         """Export all vocab as JSON."""
         return await self.get_all(limit=10000)
+
+    async def get_review_session(self, session_size: int = 20) -> dict:
+        """Plan a review session: 70% due, 20% new (never reviewed), 10% struggling.
+
+        Struggling = lapse_count > 0 or (repetitions == 0 and times_encountered > 1).
+        New = never reviewed (repetitions == 0 and next_review is past/null, no lapses).
+        Due = next_review <= now and repetitions > 0.
+
+        Returns {"due": [...], "new": [...], "struggling": [...], "total": int}.
+        All next_review timestamps are UTC.
+        """
+        db = await get_db()
+        now = datetime.now(UTC).isoformat()
+
+        due_count = int(session_size * 0.70)
+        new_count = int(session_size * 0.20)
+        struggling_count = session_size - due_count - new_count  # remainder ~10%
+
+        # Due items: reviewed before (reps > 0), next_review has passed
+        due_rows = await db.execute_fetchall(
+            """SELECT * FROM vocab
+               WHERE repetitions > 0 AND next_review <= ?
+               ORDER BY next_review ASC LIMIT ?""",
+            (now, due_count),
+        )
+        due = [dict(r) for r in due_rows]
+
+        # Struggling items: have lapsed, or stuck at reps=0 after multiple encounters
+        struggling_rows = await db.execute_fetchall(
+            """SELECT * FROM vocab
+               WHERE (lapse_count > 0 AND next_review <= ?)
+                  OR (repetitions = 0 AND times_encountered > 1 AND (next_review <= ? OR next_review IS NULL))
+               ORDER BY lapse_count DESC, next_review ASC LIMIT ?""",
+            (now, now, struggling_count),
+        )
+        struggling = [dict(r) for r in struggling_rows]
+        struggling_ids = {r["id"] for r in struggling}
+
+        # New items: never reviewed, not struggling
+        new_rows = await db.execute_fetchall(
+            """SELECT * FROM vocab
+               WHERE repetitions = 0 AND lapse_count = 0
+                 AND (next_review <= ? OR next_review IS NULL)
+               ORDER BY created_at ASC LIMIT ?""",
+            (now, new_count),
+        )
+        new = [dict(r) for r in new_rows if r["id"] not in struggling_ids]
+
+        # Fill remaining slots if any category came up short
+        used_ids = {r["id"] for r in due} | struggling_ids | {r["id"] for r in new}
+        total_planned = len(due) + len(new) + len(struggling)
+        if total_planned < session_size:
+            fill_limit = session_size - total_planned
+            fill_rows = await db.execute_fetchall(
+                """SELECT * FROM vocab
+                   WHERE next_review <= ? OR next_review IS NULL
+                   ORDER BY next_review ASC LIMIT ?""",
+                (now, fill_limit + len(used_ids)),
+            )
+            fill = [dict(r) for r in fill_rows if r["id"] not in used_ids][:fill_limit]
+            due.extend(fill)
+
+        return {
+            "due": due,
+            "new": new,
+            "struggling": struggling,
+            "total": len(due) + len(new) + len(struggling),
+        }
 
     async def get_stats(self) -> dict:
         """Get vocab statistics."""
