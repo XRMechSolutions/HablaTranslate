@@ -1,6 +1,32 @@
-// Habla — UI rendering, interactions, vocab saving
+// Habla — UI rendering, interactions, vocab saving, ground truth comparison
 
 import { $, esc, escA, escRx, state, send, toast } from './core.js';
+
+// --- Smart auto-scroll ---
+// Only auto-scroll if user is near the bottom; pause when they scroll up to read.
+const SCROLL_THRESHOLD = 80; // px from bottom to consider "at bottom"
+
+function scrollIfAtBottom() {
+  const area = $('#transcript');
+  if (!area || state.userScrolledUp) return;
+  requestAnimationFrame(() => area.scrollTop = area.scrollHeight);
+}
+
+// --- Stale pending card cleanup ---
+const PENDING_TIMEOUT_MS = 30000; // 30s before marking translation as unavailable
+
+function expirePending(el) {
+  if (!el || !el.parentNode || !el.classList.contains('pending-translation')) return;
+  el.classList.remove('pending-translation');
+  el.style.opacity = '0.5';
+  const tgtEl = el.querySelector('.ex-tgt');
+  if (tgtEl) {
+    const tgtFlag = state.direction === 'es_to_en' ? '\u{1F1EC}\u{1F1E7}' : '\u{1F1EA}\u{1F1F8}';
+    tgtEl.innerHTML = `${tgtFlag} <em style="color:var(--fg3)">[Translation unavailable]</em>`;
+    tgtEl.style.opacity = '1';
+  }
+  state.pendingCards.delete(el);
+}
 
 // --- Streaming partials ---
 export function ensurePartialCard() {
@@ -21,7 +47,7 @@ export function ensurePartialCard() {
     <div class="ex-tgt partial-tgt" style="min-height:18px;opacity:0.6"><span class="loading">Translating</span></div>
   `;
   area.appendChild(state.partialEl);
-  requestAnimationFrame(() => area.scrollTop = area.scrollHeight);
+  scrollIfAtBottom();
   return state.partialEl;
 }
 
@@ -34,7 +60,7 @@ export function showPartialSource(text) {
   srcEl.scrollTop = srcEl.scrollHeight;
   const area = $('#transcript');
   if (area.lastElementChild !== card) area.appendChild(card);
-  requestAnimationFrame(() => area.scrollTop = area.scrollHeight);
+  scrollIfAtBottom();
 
   // No watchdog — partials persist until replaced by transcript_final or new exchange.
   // User requirement: displayed content must never be auto-cleared.
@@ -56,7 +82,8 @@ export function clearPartial() {
 
 export function clearTranscript() {
   clearPartial();
-  state.pendingTranscriptCard = null;
+  for (const card of state.pendingCards) clearTimeout(card._pendingTimeout);
+  state.pendingCards.clear();
   state.exchanges = [];
   const area = $('#transcript');
   area.innerHTML = '';
@@ -99,18 +126,25 @@ export function lockTranscript(msg) {
   el._pendingDirection = msg.direction;
 
   area.appendChild(el);
-  state.pendingTranscriptCard = el;
-  requestAnimationFrame(() => area.scrollTop = area.scrollHeight);
+  state.pendingCards.add(el);
+  el._pendingTimeout = setTimeout(() => expirePending(el), PENDING_TIMEOUT_MS);
+  scrollIfAtBottom();
 }
 
 export function finalizeExchange(msg) {
   // Dedup: skip if we already have this exchange
   if (msg.exchange_id && state.exchanges.some(e => e.exchange_id === msg.exchange_id)) return;
 
-  // Check for a pending transcript card (created by lockTranscript) — fill in translation
-  if (state.pendingTranscriptCard && state.pendingTranscriptCard.parentNode) {
-    const pending = state.pendingTranscriptCard;
-    state.pendingTranscriptCard = null;
+  // Check for a pending transcript card (created by lockTranscript) — fill in translation.
+  // Pick the oldest pending card (FIFO) since translations arrive in pipeline order.
+  let pending = null;
+  for (const card of state.pendingCards) {
+    if (card.parentNode) { pending = card; break; }
+    state.pendingCards.delete(card); // stale orphan, clean up
+  }
+  if (pending) {
+    clearTimeout(pending._pendingTimeout);
+    state.pendingCards.delete(pending);
 
     // Use the locked source text from the pending card, not from the translation msg
     msg.source = msg.source || pending._pendingSource || '';
@@ -138,6 +172,8 @@ export function finalizeExchange(msg) {
       if (last._el) {
         last._el.innerHTML = buildExchangeHTML(last);
         last._el._exData = last;
+        // Attach ground truth if available during playback
+        if (_gtCache) attachNextGroundTruth(last._el);
       }
     } else {
       // New card — upgrade the pending element
@@ -147,6 +183,9 @@ export function finalizeExchange(msg) {
       msg._el = pending;
       state.exchanges.push(msg);
 
+      // Attach ground truth if available during playback
+      if (_gtCache) attachNextGroundTruth(pending);
+
       // Prune oldest
       while (state.exchanges.length > MAX_EXCHANGES) {
         const old = state.exchanges.shift();
@@ -154,8 +193,7 @@ export function finalizeExchange(msg) {
       }
     }
 
-    const area = $('#transcript');
-    requestAnimationFrame(() => area.scrollTop = area.scrollHeight);
+    scrollIfAtBottom();
     return;
   }
 
@@ -213,8 +251,7 @@ export function addExchange(msg, insertBefore = null) {
       // Scroll source text to show latest within its capped area
       const srcDiv = last._el.querySelector('.ex-src:not(.corrected)');
       if (srcDiv) srcDiv.scrollTop = srcDiv.scrollHeight;
-      // Scroll transcript area to keep latest translation visible
-      requestAnimationFrame(() => area.scrollTop = area.scrollHeight);
+      scrollIfAtBottom();
     }
     return;
   }
@@ -241,7 +278,9 @@ export function addExchange(msg, insertBefore = null) {
   } else {
     area.appendChild(el);
   }
-  requestAnimationFrame(() => area.scrollTop = area.scrollHeight);
+  // Attach ground truth if available during playback
+  if (_gtCache) attachNextGroundTruth(el);
+  scrollIfAtBottom();
 }
 
 function buildExchangeHTML(msg) {
@@ -382,6 +421,151 @@ async function saveCorr(btn, w, r, exp) {
 }
 window.saveCorr = saveCorr;
 
+// --- Ground truth comparison ---
+
+/** Cache ground truth data for the active playback recording */
+let _gtCache = null;  // { recording_id, segments: [...] }
+let _gtUsed = new Set();  // Track which GT segments have been matched
+
+export function setGroundTruth(recordingId, gtData) {
+  if (gtData && gtData.segments) {
+    _gtCache = { recording_id: recordingId, segments: gtData.segments };
+    _gtUsed = new Set();
+  } else {
+    _gtCache = null;
+    _gtUsed = new Set();
+  }
+}
+
+export function clearGroundTruth() {
+  _gtCache = null;
+  _gtUsed = new Set();
+}
+
+/**
+ * Find the best matching ground truth segment for a pipeline output.
+ * Uses word overlap similarity rather than sequential index assignment,
+ * so VAD re-segmentation doesn't cause misaligned comparisons.
+ */
+function _findBestGTMatch(pipelineText) {
+  if (!_gtCache || !pipelineText) return null;
+  const pWords = new Set(pipelineText.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean));
+  if (!pWords.size) return null;
+
+  let bestIdx = -1, bestScore = 0;
+  for (let i = 0; i < _gtCache.segments.length; i++) {
+    if (_gtUsed.has(i)) continue;
+    const gt = _gtCache.segments[i];
+    const gWords = new Set((gt.transcript || '').toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean));
+    if (!gWords.size) continue;
+    // Jaccard similarity
+    let overlap = 0;
+    for (const w of pWords) { if (gWords.has(w)) overlap++; }
+    const score = overlap / (pWords.size + gWords.size - overlap);
+    if (score > bestScore) { bestScore = score; bestIdx = i; }
+  }
+  // Require at least 20% similarity to match
+  if (bestIdx < 0 || bestScore < 0.2) return null;
+  _gtUsed.add(bestIdx);
+  return _gtCache.segments[bestIdx];
+}
+
+/**
+ * Attach ground truth comparison to an exchange card.
+ * Called after finalizeExchange when in playback mode.
+ */
+export function attachNextGroundTruth(exchangeEl) {
+  if (!_gtCache) return;
+
+  const exData = exchangeEl._exData;
+  const pipelineTranscript = exData?.source || exData?.corrected || '';
+  const gt = _findBestGTMatch(pipelineTranscript);
+  if (!gt) return;
+
+  const refDiv = document.createElement('div');
+  refDiv.className = 'gt-ref';
+
+  const pipelineTranslation = exData?.translated || '';
+
+  const transcriptDiff = wordDiff(gt.transcript || '', pipelineTranscript);
+  const translationDiff = wordDiff(gt.translation || '', pipelineTranslation);
+
+  refDiv.innerHTML = `
+    <div class="gt-ref-header" onclick="this.parentElement.classList.toggle('gt-open')">
+      Reference (${esc(_gtCache.recording_id ? 'large-v3' : 'GT')}) - Seg ${gt.segment_id}
+    </div>
+    <div class="gt-ref-body">
+      <div class="gt-row">
+        <div class="gt-label">GT Transcript:</div>
+        <div class="gt-text">${esc(gt.transcript || '')}</div>
+      </div>
+      <div class="gt-row">
+        <div class="gt-label">Transcript Diff:</div>
+        <div class="gt-diff">${transcriptDiff}</div>
+      </div>
+      <div class="gt-row">
+        <div class="gt-label">GT Translation:</div>
+        <div class="gt-text">${esc(gt.translation || '')}</div>
+      </div>
+      <div class="gt-row">
+        <div class="gt-label">Translation Diff:</div>
+        <div class="gt-diff">${translationDiff}</div>
+      </div>
+      ${gt.asr_corrections ? `<div class="gt-row"><div class="gt-label">ASR Notes:</div><div class="gt-text gt-note">${esc(gt.asr_corrections)}</div></div>` : ''}
+    </div>
+  `;
+
+  exchangeEl.appendChild(refDiv);
+}
+
+/**
+ * Simple word-level diff between two strings.
+ * Returns HTML with deletions (red) and insertions (green).
+ */
+function wordDiff(reference, actual) {
+  const refWords = reference.trim().split(/\s+/).filter(Boolean);
+  const actWords = actual.trim().split(/\s+/).filter(Boolean);
+
+  if (!refWords.length && !actWords.length) return '<span class="diff-eq">(empty)</span>';
+
+  // LCS-based diff
+  const m = refWords.length, n = actWords.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (refWords[i-1].toLowerCase() === actWords[j-1].toLowerCase()) {
+        dp[i][j] = dp[i-1][j-1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i-1][j], dp[i][j-1]);
+      }
+    }
+  }
+
+  // Backtrack to build diff
+  const parts = [];
+  let i = m, j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && refWords[i-1].toLowerCase() === actWords[j-1].toLowerCase()) {
+      parts.unshift({ type: 'eq', word: actWords[j-1] });
+      i--; j--;
+    } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
+      parts.unshift({ type: 'add', word: actWords[j-1] });
+      j--;
+    } else {
+      parts.unshift({ type: 'del', word: refWords[i-1] });
+      i--;
+    }
+  }
+
+  return parts.map(p => {
+    const w = esc(p.word);
+    if (p.type === 'del') return `<span class="diff-del">${w}</span>`;
+    if (p.type === 'add') return `<span class="diff-add">${w}</span>`;
+    return `<span class="diff-eq">${w}</span>`;
+  }).join(' ');
+}
+
 // --- Text selection save ---
 function hideSelSave() {
   state.selSaveBtn.classList.remove('vis');
@@ -389,6 +573,15 @@ function hideSelSave() {
 }
 
 export function initUI() {
+  // Smart auto-scroll: track when user scrolls up to read earlier content.
+  // Auto-scroll resumes only when the user scrolls back near the bottom — no timer.
+  state.userScrolledUp = false;
+  const transcript = $('#transcript');
+  transcript.addEventListener('scroll', () => {
+    const atBottom = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < SCROLL_THRESHOLD;
+    state.userScrolledUp = !atBottom;
+  });
+
   // Rename modal handlers
   $('#renameCancel').onclick = () => { $('#renameModal').classList.remove('vis'); state.renamingSpeakerId = null; };
   $('#renameOk').onclick = () => {
