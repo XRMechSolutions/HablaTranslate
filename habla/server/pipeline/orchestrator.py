@@ -8,7 +8,7 @@ import tempfile
 import threading
 from pathlib import Path
 from collections import deque
-from datetime import datetime
+from datetime import datetime, UTC
 
 from server.config import AppConfig
 from server.db.database import get_db
@@ -26,11 +26,28 @@ logger = logging.getLogger("habla.pipeline")
 
 
 class PipelineOrchestrator:
-    """
-    Manages the full translation pipeline:
-    Audio → ASR (WhisperX) → Diarization (Pyannote) → Translation (Ollama) → Output
-    
-    All models stay loaded. ASR + diarization on GPU+CPU, translator on GPU.
+    """Manages the full translation pipeline:
+    Audio -> ASR (WhisperX) -> Diarization (Pyannote) -> Translation (LLM) -> Output
+
+    Lifecycle:
+    - Created once during app lifespan (main.py). Stored in routes._state._pipeline.
+    - startup() loads WhisperX, Pyannote, idiom patterns; starts worker task.
+    - shutdown() drains queue, saves state to JSON, cancels worker.
+    - On console restart: old instance shutdown(), new instance created and startup().
+
+    Ownership:
+    - Owns speaker_tracker, idiom_scanner, translator instances.
+    - Owns processing queue and worker task.
+    - Session lifecycle (create_session/close_session) is DB-backed; session_id is
+      set per WebSocket connection and cleared on disconnect.
+    - Callbacks are set by ClientSession (websocket.py) and cleared on disconnect.
+
+    Error contract:
+    - create_session returns 0 on DB error (logged, non-fatal).
+    - process_audio/process_text queue work; errors are delivered via _on_error callback.
+    - ASR/diarization failures are logged and skipped (degraded output, not crash).
+
+    All models stay loaded. ASR + diarization on GPU+CPU, translator uses configured provider.
     """
 
     def __init__(self, config: AppConfig):
@@ -68,9 +85,37 @@ class PipelineOrchestrator:
         self._partial_lock = asyncio.Lock()
         self._last_detected_language: str | None = None
 
+        # Language detection voting: track recent detections to prevent snowball
+        # from a single bad detection poisoning all subsequent segments
+        self._language_votes: deque[str] = deque(maxlen=5)
+        self._language_confidence_threshold = 0.7  # require 70%+ confidence to switch
+
+        # Track in-flight translation tasks for clean shutdown
+        self._inflight_translations: set[asyncio.Task] = set()
+
+        # Runtime metrics (lightweight, log-based)
+        self._metrics = {
+            "segments_processed": 0,
+            "translations_completed": 0,
+            "translation_errors": 0,
+            "peak_queue_depth": 0,
+            "sessions_created": 0,
+            "sessions_closed": 0,
+        }
+
         # Thread safety: WhisperX model is not thread-safe.
         # Serialize all transcribe() calls between partial and final ASR.
         self._asr_lock = threading.Lock()
+
+    @property
+    def metrics(self) -> dict:
+        """Return a snapshot of runtime metrics including current queue state."""
+        return {
+            **self._metrics,
+            "queue_depth": self._queue.qsize(),
+            "inflight_translations": len(self._inflight_translations),
+            "worker_alive": self._worker_task is not None and not self._worker_task.done(),
+        }
 
     async def startup(self):
         """Load all models and prepare the pipeline."""
@@ -151,7 +196,7 @@ class PipelineOrchestrator:
 
     async def shutdown(self):
         """Graceful shutdown: drain queue, save state, close resources."""
-        logger.info("Pipeline shutting down...")
+        logger.info(f"Pipeline shutting down... metrics={self.metrics}")
 
         # 1. Stop accepting new work
         self._ready = False
@@ -187,10 +232,22 @@ class PipelineOrchestrator:
             except asyncio.QueueEmpty:
                 break
 
-        # 5. Save session state for potential resume
+        # 5. Wait for in-flight translations to complete (max 15s)
+        if self._inflight_translations:
+            pending = len(self._inflight_translations)
+            logger.info(f"Waiting for {pending} in-flight translation(s)...")
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._inflight_translations, return_exceptions=True),
+                    timeout=15.0,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Timed out waiting for in-flight translations")
+
+        # 6. Save session state for potential resume
         await self._save_shutdown_state()
 
-        # 6. Close resources
+        # 7. Close resources
         await self.translator.close()
         logger.info("Pipeline shut down")
 
@@ -198,7 +255,7 @@ class PipelineOrchestrator:
         """Persist conversation context and metrics so state survives restarts."""
         try:
             state = {
-                "shutdown_time": datetime.utcnow().isoformat(),
+                "shutdown_time": datetime.now(UTC).isoformat(),
                 "direction": self.direction,
                 "mode": self.mode,
                 "topic_summary": self.topic_summary,
@@ -297,10 +354,11 @@ class PipelineOrchestrator:
             )
             await db.commit()
             self.session_id = cursor.lastrowid
+            self._metrics["sessions_created"] += 1
             logger.info(f"Session {self.session_id} created")
             return self.session_id
         except Exception as e:
-            logger.error(f"Failed to create session: {e}")
+            logger.error(f"Failed to create session: {e}", exc_info=True)
             return 0
 
     async def close_session(self):
@@ -329,9 +387,10 @@ class PipelineOrchestrator:
                      sp.role_hint, sp.color, sp.utterance_count),
                 )
             await db.commit()
+            self._metrics["sessions_closed"] += 1
             logger.info(f"Session {self.session_id} closed ({len(self.speaker_tracker.speakers)} speakers)")
         except Exception as e:
-            logger.error(f"Failed to close session: {e}")
+            logger.error(f"Failed to close session: {e}", exc_info=True)
 
     async def reset_session(self) -> int:
         """Close current session and start a fresh one. Returns new session ID."""
@@ -376,22 +435,8 @@ class PipelineOrchestrator:
             exchange.id = cursor.lastrowid
             return exchange.id
         except Exception as e:
-            logger.error(f"Failed to save exchange: {e}")
+            logger.error(f"Failed to save exchange: {e}", exc_info=True)
             return None
-
-    async def process_audio(self, audio_bytes: bytes) -> Exchange | None:
-        """
-        Process an audio segment through the full pipeline.
-        Called when VAD detects end of speech.
-        Returns the completed Exchange.
-        """
-        if not self._ready:
-            logger.warning("Pipeline not ready, dropping audio")
-            return None
-
-        future = asyncio.get_event_loop().create_future()
-        await self._queue.put(("raw", audio_bytes, future))
-        return await future
 
     async def process_wav(self, wav_path: str) -> Exchange | None:
         """
@@ -475,7 +520,7 @@ class PipelineOrchestrator:
                 is_correction=result.is_correction,
                 correction_detail=result.correction_detail,
                 confidence=result.confidence,
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.now(UTC).isoformat(),
             )
             await self._on_translation(ws_msg)
 
@@ -493,7 +538,7 @@ class PipelineOrchestrator:
             wav_path = None
             try:
                 # Bandpass filter + normalize PCM volume for partial ASR
-                import tempfile, struct as _struct
+                import struct as _struct
                 from scipy.signal import butter, sosfilt
                 audio = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32)
 
@@ -503,9 +548,8 @@ class PipelineOrchestrator:
 
                 # RMS normalization
                 rms = np.sqrt(np.mean(audio ** 2))
-                target_rms = 3000.0  # ~-16.5 dBFS for 16-bit audio
                 if rms > 10:  # skip near-silence
-                    gain = min(target_rms / rms, 10.0)  # cap at 20dB boost
+                    gain = min(_PARTIAL_TARGET_RMS / rms, _PARTIAL_MAX_GAIN)
                     audio = np.clip(audio * gain, -32768, 32767)
                 normalized_bytes = audio.astype(np.int16).tobytes()
 
@@ -571,7 +615,7 @@ class PipelineOrchestrator:
                 )
                 detected = result.get("language")
                 if detected:
-                    self._last_detected_language = detected
+                    self._update_detected_language(detected)
             segments = result.get("segments", [])
             text = " ".join(seg.get("text", "").strip() for seg in segments).strip()
             return "" if _is_bad_transcript(text) else text
@@ -618,11 +662,18 @@ class PipelineOrchestrator:
             try:
                 item = await self._queue.get()
                 kind, payload, future = item
+                # Track peak queue depth
+                depth = self._queue.qsize() + 1  # +1 for the item we just took
+                if depth > self._metrics["peak_queue_depth"]:
+                    self._metrics["peak_queue_depth"] = depth
                 try:
                     if kind == "wav":
                         result = await self._process_audio_segment_from_wav(payload)
                     else:
                         result = await self._process_audio_segment(payload)
+                    self._metrics["segments_processed"] += 1
+                    if result:
+                        self._metrics["translations_completed"] += 1
                     if not future.done():
                         future.set_result(result)
                 except asyncio.CancelledError:
@@ -630,12 +681,13 @@ class PipelineOrchestrator:
                         future.cancel()
                     raise
                 except Exception as e:
+                    self._metrics["translation_errors"] += 1
                     if not future.done():
                         future.set_exception(e)
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Queue worker error: {e}")
+                logger.error(f"Queue worker error: {e}", exc_info=True)
 
     async def _process_audio_segment(self, audio_bytes: bytes) -> Exchange | None:
         """Run full pipeline on one audio segment (from raw Opus/WebM bytes)."""
@@ -735,7 +787,9 @@ class PipelineOrchestrator:
             })
 
         # Fire translation concurrently — don't block the ASR queue waiting for LLM
-        asyncio.create_task(self._translate_and_notify(transcript, speaker_id, start_time))
+        task = asyncio.create_task(self._translate_and_notify(transcript, speaker_id, start_time))
+        self._inflight_translations.add(task)
+        task.add_done_callback(self._inflight_translations.discard)
 
         return None  # Translation result sent via callback, not via future
 
@@ -772,7 +826,7 @@ class PipelineOrchestrator:
             )
             detected = result.get("language")
             if detected:
-                self._last_detected_language = detected
+                self._update_detected_language(detected)
 
         # Extract text
         segments = result.get("segments", [])
@@ -891,6 +945,45 @@ class PipelineOrchestrator:
         await self._load_db_idiom_patterns()
         logger.info(f"Reloaded {self.idiom_scanner.count} idiom patterns")
 
+    def _update_detected_language(self, detected: str):
+        """Update language detection using voting to prevent snowball from one bad detection.
+
+        Only switches _last_detected_language when a supermajority of recent
+        detections agree. This prevents a single misdetection (e.g. Spanish
+        audio detected as English at 40% confidence) from poisoning all
+        subsequent segments.
+        """
+        self._language_votes.append(detected)
+
+        if not self._last_detected_language:
+            # First detection — accept it but only if we have no prior language
+            self._last_detected_language = detected
+            return
+
+        # Count votes for each language
+        vote_counts: dict[str, int] = {}
+        for vote in self._language_votes:
+            vote_counts[vote] = vote_counts.get(vote, 0) + 1
+
+        # Find the majority language
+        majority_lang = max(vote_counts, key=vote_counts.get)
+        majority_ratio = vote_counts[majority_lang] / len(self._language_votes)
+
+        # Only switch if the new language has a strong majority AND it differs
+        if majority_lang != self._last_detected_language:
+            if majority_ratio >= self._language_confidence_threshold:
+                logger.info(
+                    f"Language switch: {self._last_detected_language} -> {majority_lang} "
+                    f"({majority_ratio:.0%} of last {len(self._language_votes)} detections)"
+                )
+                self._last_detected_language = majority_lang
+            else:
+                logger.debug(
+                    f"Language detection '{detected}' disagrees with current "
+                    f"'{self._last_detected_language}' but only {majority_ratio:.0%} "
+                    f"majority — keeping current language"
+                )
+
     async def _update_topic(self, result: TranslationResult, speaker_name: str):
         """Update topic summary asynchronously."""
         try:
@@ -907,14 +1000,26 @@ class PipelineOrchestrator:
 
 
 
+# Thresholds for rejecting garbage ASR output
+_MIN_LETTERS = 3           # At least this many alphabetic chars required
+_MIN_LETTER_RATIO = 0.5    # At least this fraction of alnum chars must be letters
+
+# Target RMS for partial audio normalization (~-16.5 dBFS for 16-bit)
+_PARTIAL_TARGET_RMS = 3000.0
+_PARTIAL_MAX_GAIN = 10.0   # Cap at 20dB boost
+
+
 def _is_bad_transcript(text: str) -> bool:
-    if not text:
+    if not text or not text.strip():
         return True
-    words = text.split()
-    if len(words) < 2 and len(text) < 10:
+    stripped = text.strip()
+    # Count actual alphabetic characters
+    letters = sum(ch.isalpha() for ch in stripped)
+    # Reject if too few letters (noise, punctuation-only, numbers)
+    if letters < _MIN_LETTERS:
         return True
-    letters = sum(ch.isalpha() for ch in text)
-    alnum = sum(ch.isalnum() for ch in text)
-    if alnum and letters / alnum < 0.5:
+    # Reject if mostly non-alphabetic (timestamps, garbage)
+    alnum = sum(ch.isalnum() for ch in stripped)
+    if alnum and letters / alnum < _MIN_LETTER_RATIO:
         return True
     return False
