@@ -1,0 +1,148 @@
+04:48:32 [INFO] test_recording: Starting pipeline (loading models)...
+Loading models (WhisperX + Pyannote + LLM)...
+04:48:32 [INFO] habla.pipeline: Loading pipeline models...
+04:48:32 [INFO] habla.pipeline: Loaded 24 idiom patterns (24 from files, 0 from DB)
+2026-02-22 04:48:35.295189: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-02-22 04:48:36.762957: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+04:48:39 [DEBUG] speechbrain.utils.checkpoints: Registered checkpoint save hook for _speechbrain_save
+04:48:39 [DEBUG] speechbrain.utils.checkpoints: Registered checkpoint load hook for _speechbrain_load
+04:48:39 [DEBUG] speechbrain.utils.checkpoints: Registered checkpoint save hook for save
+04:48:39 [DEBUG] speechbrain.utils.checkpoints: Registered checkpoint load hook for load
+04:48:39 [INFO] speechbrain.utils.quirks: Applied quirks (see `speechbrain.utils.quirks`): [disable_jit_profiling, allow_tf32]
+04:48:39 [INFO] speechbrain.utils.quirks: Excluded quirks specified by the `SB_DISABLE_QUIRKS` environment (comma-separated list): []
+04:48:39 [DEBUG] speechbrain.utils.checkpoints: Registered checkpoint save hook for _save
+04:48:39 [DEBUG] speechbrain.utils.checkpoints: Registered checkpoint load hook for _recover
+2026-02-22 04:48:41 - whisperx.asr - INFO - No language specified, language will be detected for each audio file (increases inference time)
+2026-02-22 04:48:41 - whisperx.vads.pyannote - INFO - Performing voice activity detection using Pyannote...
+C:\Users\clint\AppData\Roaming\Python\Python312\site-packages\lightning_fabric\utilities\cloud_io.py:73: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+C:\Python312\Lib\inspect.py:1000: UserWarning: Module 'speechbrain.pretrained' was deprecated, redirecting to 'speechbrain.inference'. Please update your script. This is a change from SpeechBrain 1.0. See: https://github.com/speechbrain/speechbrain/releases/tag/v1.0.0
+  if ismodule(module) and hasattr(module, '__file__'):
+04:48:41 [INFO] pytorch_lightning.utilities.migration.utils: Lightning automatically upgraded your loaded checkpoint from v1.5.4 to v2.6.1. To apply the upgrade to your files permanently, run `python -m pytorch_lightning.utilities.upgrade_checkpoint C:\Users\clint\AppData\Roaming\Python\Python312\site-packages\whisperx\assets\pytorch_model.bin`
+Model was trained with pyannote.audio 0.0.1, yours is 3.4.0. Bad things might happen unless you revert pyannote.audio to 0.x.
+Model was trained with torch 1.10.0+cu102, yours is 2.5.1+cu121. Bad things might happen unless you revert torch to 1.x.
+04:48:41 [INFO] habla.pipeline: WhisperX small loaded on cuda
+04:48:41 [WARNING] habla.pipeline: No HF_TOKEN — diarization disabled. Set HF_TOKEN env var.
+04:48:41 [INFO] habla.translator: Auto-detected LM Studio model: towerinstruct-mistral-7b-v0.2
+04:48:41 [INFO] habla.pipeline: Restored session state from 2026-02-22T12:39:27.720306: 10 exchanges, 1 speakers, topic='Speaker A said "You'll see."'
+04:48:41 [INFO] habla.pipeline: Pipeline ready
+Pipeline ready in 8.9s
+04:48:41 [INFO] test_recording: Testing 2358345005104_20260222_013306: 12 segments
+
+======================================================================
+Recording: 2358345005104_20260222_013306
+Segments:  12
+Date:      2026-02-22T01:33:06
+======================================================================
+04:48:41 [INFO] habla.pipeline: Session 156 created
+C:\Users\clint\AppData\Roaming\Python\Python312\site-packages\pyannote\audio\utils\reproducibility.py:74: ReproducibilityWarning: TensorFloat-32 (TF32) has been disabled as it might lead to reproducibility issues and lower accuracy.
+It can be re-enabled by calling
+   >>> import torch
+   >>> torch.backends.cuda.matmul.allow_tf32 = True
+   >>> torch.backends.cudnn.allow_tf32 = True
+See https://github.com/pyannote/pyannote-audio/issues/1370 for more details.
+
+  warnings.warn(
+C:\Users\clint\AppData\Roaming\Python\Python312\site-packages\torch\nn\modules\rnn.py:1123: UserWarning: RNN module weights are not part of single contiguous chunk of memory. This means they need to be compacted at every call, possibly greatly increasing memory usage. To compact weights again call flatten_parameters(). (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\builder\windows\pytorch\aten\src\ATen\native\cudnn\RNN.cpp:1410.)
+  result = _VF.lstm(
+2026-02-22 04:48:41 - whisperx.asr - WARNING - Audio is shorter than 30s, language detection may be inaccurate
+2026-02-22 04:48:42 - whisperx.asr - INFO - Detected language: en (0.40) in first 30s of audio
+04:48:42 [INFO] habla.pipeline: Final transcript: What do you have in mind?
+04:48:44 [INFO] habla.pipeline: Translation done in 2343ms: 'What do you have in mind?'
+
+  Segment 1/12 (4.3s audio, 0.6s proc, RTF=0.1, 95%)
+    SRC: What do you have in mind?
+    TGT: What do you have in mind?
+    SPEAKER: Speaker A
+04:48:44 [INFO] habla.pipeline: Final transcript: At our conference in Barrio. I hope you all have a good day.
+04:48:46 [INFO] habla.pipeline: Translation done in 2546ms: 'At our conference in Barrio. I hope you all have a good day.'
+
+  Segment 2/12 (8.8s audio, 0.6s proc, RTF=0.1, 95%)
+    SRC: At our conference in Barrio. I hope you all have a good day.
+    TGT: I hope you all have a good day at our conference in Barrio.
+    SPEAKER: Speaker A
+04:48:47 [INFO] habla.pipeline: Final transcript: This is a little bit hard.
+04:48:49 [INFO] habla.pipeline: Translation done in 2358ms: 'This is a little bit hard.'
+
+  Segment 3/12 (4.6s audio, 0.5s proc, RTF=0.1, 95%)
+    SRC: This is a little bit hard.
+    TGT: This is a little bit difficult.
+    SPEAKER: Speaker A
+04:48:49 [INFO] habla.pipeline: Final transcript: Thank you very much.
+04:48:51 [INFO] habla.pipeline: Translation done in 2453ms: 'Thank you very much.'
+
+  Segment 4/12 (3.0s audio, 0.5s proc, RTF=0.2, 95%)
+    SRC: Thank you very much.
+    TGT: You're welcome.
+    SPEAKER: Speaker A
+04:48:52 [INFO] habla.pipeline: Final transcript: I've been a president for a long time.
+04:48:52 [INFO] habla.pipeline: Translation done in 1046ms: 'I've been a president for a long time.'
+
+  Segment 5/12 (2.9s audio, 0.5s proc, RTF=0.1, 50%)
+    SRC: I've been a president for a long time.
+    TGT: I have been a president for a long time.
+    SPEAKER: Speaker A
+04:48:53 [WARNING] habla.pipeline: ASR produced bad/empty transcript (1 segments, text='Bravo.')
+04:48:53 [WARNING] habla.pipeline: Full ASR returned empty transcript — WhisperX VAD may have rejected the audio
+04:49:08 [WARNING] test_recording: Segment 6: translation timed out after 15s
+
+  Segment 6/12 (1.0s audio, 0.3s proc, RTF=0.3, ?%)
+04:49:08 [INFO] habla.pipeline: Final transcript: and also the difference of the presidential election of the CACA.
+04:49:11 [INFO] habla.pipeline: Translation done in 2875ms: 'and also the difference of the presidential election of the '
+
+  Segment 7/12 (8.0s audio, 0.8s proc, RTF=0.1, 95%)
+    SRC: and also the difference of the presidential election of the CACA.
+    TGT: and also the difference in the presidential election of the CACA.
+    SPEAKER: Speaker A
+04:49:11 [INFO] habla.pipeline: Final transcript: Como anunció el 8 de marzo,
+04:49:13 [INFO] habla.pipeline: Translation done in 2750ms: 'Como anunció el 8 de marzo,'
+
+  Segment 8/12 (2.1s audio, 0.7s proc, RTF=0.3, 10%)
+    SRC: Como anunció el 8 de marzo,
+    TGT: As announced on March 8th,
+    SPEAKER: Speaker A
+04:49:15 [INFO] habla.pipeline: Final transcript: as well as the members of the General Union of San Fernandocio.
+04:49:16 [INFO] habla.pipeline: Translation done in 2735ms: 'as well as the members of the General Union of San Fernandoc'
+
+  Segment 9/12 (7.0s audio, 0.9s proc, RTF=0.1, 95%)
+    SRC: as well as the members of the General Union of San Fernandocio.
+    TGT: as well as the members of the General Union of San Ferdinando.
+    SPEAKER: Speaker A
+04:49:17 [INFO] habla.pipeline: Final transcript: to assist to this problem.
+04:49:19 [INFO] habla.pipeline: Translation done in 2500ms: 'to assist to this problem.'
+
+  Segment 10/12 (2.7s audio, 0.6s proc, RTF=0.2, 95%)
+    SRC: to assist to this problem.
+    TGT: I will attend to this problem.
+    SPEAKER: Speaker A
+04:49:20 [INFO] habla.pipeline: Final transcript: and the first prayer will be...
+04:49:20 [WARNING] habla.translator: LLM JSON parsed to non-object; using raw text translation
+04:49:20 [INFO] habla.pipeline: Translation done in 1140ms: 'and the first prayer will be...'
+
+  Segment 11/12 (6.4s audio, 0.7s proc, RTF=0.1, 10%)
+    SRC: and the first prayer will be...
+    TGT: "and the first prayer will be"
+    SPEAKER: Speaker A
+04:49:21 [INFO] habla.pipeline: Final transcript: You will see that.
+04:49:23 [INFO] habla.pipeline: Translation done in 2343ms: 'You will see that.'
+
+  Segment 12/12 (1.0s audio, 0.5s proc, RTF=0.5, 95%)
+    SRC: You will see that.
+    TGT: You will see.
+    SPEAKER: Speaker A
+
+======================================================================
+SUMMARY: 2358345005104_20260222_013306
+  Segments:    12 tested, 0 errors
+  Audio:       51.8s total
+  Processing:  41.9s total (RTF=0.81)
+  Confidence:  75.5% avg
+  Idioms:      0 detected
+======================================================================
+04:49:23 [INFO] test_recording: Results saved to data\audio\recordings\2358345005104_20260222_013306\test_results.json
+
+Results: data\audio\recordings\2358345005104_20260222_013306\test_results.json
+04:49:23 [INFO] habla.pipeline: Session 156 closed (1 speakers)
+04:49:23 [INFO] test_recording: Waiting for in-flight translations to complete...
+04:49:25 [INFO] habla.pipeline: Pipeline shutting down...
+04:49:25 [INFO] habla.pipeline: Session state saved to data\last_session.json
+04:49:25 [INFO] habla.pipeline: Pipeline shut down

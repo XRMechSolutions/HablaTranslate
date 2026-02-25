@@ -120,19 +120,6 @@ Before auditing, reviewing, or creating tests for any module, **read the relevan
 
 These documents define the project's quality bar. Do not skip them.
 
-## Context Efficiency and Session Continuity
-
-To reduce token waste and preserve continuity across sessions:
-
-- **Context budget first**: Start with the smallest relevant file set, then expand only through direct dependencies/callers/imports.
-- **Session memory file**: Maintain `.dev/docs/SESSION_MEMORY.md` with:
-  - Confirmed architecture facts
-  - Open questions
-  - Known pitfalls/regressions
-  - `file + last_verified` markers for each item
-- **Closeout protocol**: At the end of substantial work, append what changed, what was learned, and what should be rechecked next session.
-- **Staleness rule**: If a memory item references files that changed, treat it as stale until revalidated.
-- **Thrash guard**: If the same file is edited more than 3 times in one task, pause and restate the plan before continuing.
 ## Reusable Code from Other Projects
 
 Reference paths for patterns that can be ported into Habla. Do not copy blindly — adapt to Python/FastAPI conventions.
@@ -185,4 +172,3 @@ React/TypeScript PWA client.
 - **Rust audio processing library** — Potential shared library for audio capture/encode/VAD that compiles for both Android NDK and Linux server.
 - **Piper TTS** — CPU-based text-to-speech to optionally speak translations aloud. Scaffolded in config but not yet wired up.
 - **Vocab review page** — `vocab.html` route exists but the page needs building.
-
