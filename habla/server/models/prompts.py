@@ -63,11 +63,12 @@ def build_translator_user_prompt(
     speaker_label: str,
     context_exchanges: list[dict],
     topic_summary: str = "",
+    max_context: int = 5,
 ) -> str:
     """Build the user message for a translation request."""
 
     context_lines = []
-    for ex in context_exchanges[-5:]:
+    for ex in context_exchanges[-max_context:]:
         spk = ex.get("speaker_label", "Unknown")
         src = ex.get("corrected", ex.get("source", ""))
         tgt = ex.get("translated", "")

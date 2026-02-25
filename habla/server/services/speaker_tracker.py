@@ -16,7 +16,13 @@ SPEAKER_COLORS = [
 
 
 class SpeakerTracker:
-    """Tracks speaker identities within a session."""
+    """Tracks speaker identities within a session.
+
+    In-memory only (not persisted to DB directly). Auto-labels speakers A, B, C...
+    with rotating colors from SPEAKER_COLORS. rename/set_role_hint return None for
+    unknown speaker IDs (route maps to 404). State is saved/restored via
+    orchestrator shutdown/startup for session continuity.
+    """
 
     def __init__(self):
         self.speakers: dict[str, SpeakerProfile] = {}

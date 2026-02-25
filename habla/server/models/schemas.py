@@ -1,7 +1,7 @@
 """Data schemas for Habla."""
 
 from pydantic import BaseModel, Field
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 
 
@@ -63,7 +63,7 @@ class Exchange(BaseModel):
     is_correction: bool = False
     correction_detail: Optional[CorrectionDetail] = None
     processing_ms: int = 0
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 # --- Vocab Item ---
@@ -83,7 +83,7 @@ class VocabItem(BaseModel):
     next_review: Optional[datetime] = None
     repetitions: int = 0
     times_encountered: int = 1
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 # --- WebSocket Messages ---
