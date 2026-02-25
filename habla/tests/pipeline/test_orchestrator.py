@@ -849,8 +849,9 @@ class TestStatePersistence:
 # TestShutdown
 # ---------------------------------------------------------------------------
 
+@pytest.mark.slow
 class TestShutdown:
-    """Test graceful shutdown behavior."""
+    """Test graceful shutdown behavior (30s queue drain timeout)."""
 
     @pytest.mark.asyncio
     async def test_shutdown_sets_not_ready(self, orchestrator, app_config):

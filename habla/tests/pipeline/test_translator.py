@@ -637,3 +637,54 @@ class TestTopicSummary:
         )
 
         assert result == "Previous summary"
+
+
+class TestSessionCosts:
+    """Test session cost snapshot and DB loading."""
+
+    def test_get_session_costs_returns_snapshot(self, translator_config):
+        """get_session_costs returns current session cost values."""
+        translator = Translator(translator_config)
+        translator._costs["session_input_tokens"] = 1500
+        translator._costs["session_output_tokens"] = 800
+        translator._costs["session_cost_usd"] = 0.0023
+        costs = translator.get_session_costs()
+        assert costs["session_input_tokens"] == 1500
+        assert costs["session_output_tokens"] == 800
+        assert abs(costs["session_cost_usd"] - 0.0023) < 1e-6
+
+    def test_get_session_costs_does_not_include_all_time(self, translator_config):
+        """get_session_costs only returns session fields, not all-time."""
+        translator = Translator(translator_config)
+        translator._costs["all_time_cost_usd"] = 99.99
+        costs = translator.get_session_costs()
+        assert "all_time_cost_usd" not in costs
+        assert len(costs) == 3
+
+    async def test_load_all_time_costs_from_db(self, translator_config, tmp_path):
+        """load_all_time_costs populates all-time fields from DB."""
+        from server.db.database import init_db, close_db
+
+        db = await init_db(tmp_path / "cost_test.db")
+        # Insert sessions with OpenAI costs
+        for tokens_in, tokens_out, cost in [(1000, 500, 0.001), (2000, 1000, 0.003)]:
+            await db.execute("INSERT INTO sessions (mode, direction) VALUES ('conversation', 'es_to_en')")
+            await db.commit()
+            cursor = await db.execute("SELECT last_insert_rowid()")
+            row = await cursor.fetchone()
+            sid = row[0]
+            await db.execute(
+                """UPDATE sessions SET llm_provider = 'openai',
+                   llm_input_tokens = ?, llm_output_tokens = ?, llm_cost_usd = ?
+                   WHERE id = ?""",
+                (tokens_in, tokens_out, cost, sid),
+            )
+        await db.commit()
+
+        translator = Translator(translator_config)
+        await translator.load_all_time_costs()
+
+        assert translator._costs["all_time_input_tokens"] == 3000
+        assert translator._costs["all_time_output_tokens"] == 1500
+        assert abs(translator._costs["all_time_cost_usd"] - 0.004) < 1e-6
+        await close_db()

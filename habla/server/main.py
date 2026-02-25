@@ -132,6 +132,9 @@ async def lifespan(app: FastAPI):
 
     await pipeline.startup()
 
+    # Load cumulative OpenAI costs from DB
+    await pipeline.translator.load_all_time_costs()
+
     # Post-pipeline health checks (verify models loaded)
     from server.services.health import check_whisperx, check_diarization
     asr_check = check_whisperx(pipeline._whisperx_model)

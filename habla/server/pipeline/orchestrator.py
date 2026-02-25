@@ -367,13 +367,22 @@ class PipelineOrchestrator:
             return
         try:
             db = await get_db()
+            # Get cost data from translator for persistence
+            costs = self.translator.get_session_costs()
+
             await db.execute(
                 """UPDATE sessions SET ended_at = CURRENT_TIMESTAMP,
-                   topic_summary = ?, speaker_count = ?
+                   topic_summary = ?, speaker_count = ?,
+                   llm_provider = ?, llm_input_tokens = ?,
+                   llm_output_tokens = ?, llm_cost_usd = ?
                    WHERE id = ?""",
                 (
                     self.topic_summary or None,
                     len(self.speaker_tracker.speakers),
+                    self.translator.config.provider,
+                    costs["session_input_tokens"],
+                    costs["session_output_tokens"],
+                    costs["session_cost_usd"],
                     self.session_id,
                 ),
             )

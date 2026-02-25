@@ -184,6 +184,18 @@ async def _create_tables(db: aiosqlite.Connection):
         if vocab_count > 0:
             await db.execute("INSERT INTO vocab_fts(vocab_fts) VALUES ('rebuild')")
 
+    # Add cost columns to sessions if they don't exist (migration for existing DBs)
+    for col, typ in [
+        ("llm_provider", "TEXT"),
+        ("llm_input_tokens", "INTEGER DEFAULT 0"),
+        ("llm_output_tokens", "INTEGER DEFAULT 0"),
+        ("llm_cost_usd", "REAL DEFAULT 0.0"),
+    ]:
+        try:
+            await db.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typ}")
+        except Exception:
+            pass  # Column already exists
+
     # Indexes
     await db.execute("""
         CREATE INDEX IF NOT EXISTS idx_exchanges_session

@@ -202,6 +202,39 @@ class Translator:
     def costs(self) -> dict:
         return dict(self._costs)
 
+    def get_session_costs(self) -> dict:
+        """Return current session cost snapshot for persistence."""
+        return {
+            "session_input_tokens": self._costs["session_input_tokens"],
+            "session_output_tokens": self._costs["session_output_tokens"],
+            "session_cost_usd": self._costs["session_cost_usd"],
+        }
+
+    async def load_all_time_costs(self):
+        """Load cumulative cost totals from all past sessions in the DB."""
+        from server.db.database import get_db
+        try:
+            db = await get_db()
+            rows = await db.execute_fetchall(
+                """SELECT COALESCE(SUM(llm_input_tokens), 0) as total_input,
+                          COALESCE(SUM(llm_output_tokens), 0) as total_output,
+                          COALESCE(SUM(llm_cost_usd), 0.0) as total_cost
+                   FROM sessions
+                   WHERE llm_provider = 'openai'"""
+            )
+            row = rows[0] if rows else None
+            if row:
+                self._costs["all_time_input_tokens"] = row["total_input"]
+                self._costs["all_time_output_tokens"] = row["total_output"]
+                self._costs["all_time_cost_usd"] = row["total_cost"]
+                if row["total_cost"] > 0:
+                    logger.info(
+                        f"Loaded all-time OpenAI costs: ${row['total_cost']:.4f} "
+                        f"({row['total_input'] + row['total_output']} tokens)"
+                    )
+        except Exception as e:
+            logger.warning(f"Could not load all-time costs from DB: {e}")
+
     def switch_provider(self, provider: str, model: str = "", url: str = ""):
         """Switch LLM provider and model at runtime."""
         if provider not in ("ollama", "lmstudio", "openai"):

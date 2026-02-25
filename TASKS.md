@@ -2,6 +2,28 @@
 
 Comprehensive roadmap from current state to fully functional app. Tasks are ordered by priority within each phase. Check off items as completed.
 
+## Related Documents
+
+Detailed plans, standards, and audit results that support the tasks below.
+
+| Document | Status | Contents |
+|----------|--------|----------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Current | Full file tree, line counts, module dependency graph, tech table |
+| [.dev/docs/Audit-Checklist.md](.dev/docs/Audit-Checklist.md) | Reference | Code audit checklist (read before any audit) |
+| [.dev/docs/Testing-Standards.md](.dev/docs/Testing-Standards.md) | Reference | Test quality bar, naming conventions, anti-trivial-pass rules |
+| [.dev/docs/Test-Audit-Review-2026-02-24.md](.dev/docs/Test-Audit-Review-2026-02-24.md) | Complete | Audit of test suite against testing standards |
+| [.dev/docs/TMP-FIX-PLAN-01-Lifecycle-State-Management.md](.dev/docs/TMP-FIX-PLAN-01-Lifecycle-State-Management.md) | Complete | Lifecycle & state management fixes |
+| [.dev/docs/TMP-FIX-PLAN-02-API-Contract-Consistency.md](.dev/docs/TMP-FIX-PLAN-02-API-Contract-Consistency.md) | Complete | API contract consistency & input validation |
+| [.dev/docs/TMP-FIX-PLAN-03-Error-Handling-and-Degradation.md](.dev/docs/TMP-FIX-PLAN-03-Error-Handling-and-Degradation.md) | Not started | Error handling & graceful degradation (P1) |
+| [.dev/docs/TMP-FIX-PLAN-04-Operational-Hardening-and-Safety.md](.dev/docs/TMP-FIX-PLAN-04-Operational-Hardening-and-Safety.md) | Not started | Operational hardening & safety (P2) |
+| [.dev/docs/TMP-FIX-PLAN-05-Code-Organization-and-Documentation.md](.dev/docs/TMP-FIX-PLAN-05-Code-Organization-and-Documentation.md) | Partial | Route split + docstrings done; other steps pending (P2) |
+| [.dev/docs/TMP-FIX-PLAN-06-Performance-and-Soak-Stability.md](.dev/docs/TMP-FIX-PLAN-06-Performance-and-Soak-Stability.md) | Complete | Performance & soak stability fixes |
+| [habla/tests/TEST_STATUS.md](habla/tests/TEST_STATUS.md) | Current | Test suite status: 648 tests, 639 passing, 9 skipped benchmarks |
+| [habla/tests/EDGE_CASES.md](habla/tests/EDGE_CASES.md) | Reference | Idiom detection edge case catalog |
+| [docs/AUDIO_TUNING_GUIDE.md](docs/AUDIO_TUNING_GUIDE.md) | Reference | Audio parameter tuning guide |
+| [docs/WHISPER_FINE_TUNING_PLAN.md](docs/WHISPER_FINE_TUNING_PLAN.md) | Reference | WhisperX fine-tuning plan |
+| [.dev/docs/PLAN-Phase1-Remaining.md](.dev/docs/PLAN-Phase1-Remaining.md) | Complete | Idiom client wiring + OpenAI cost persistence |
+
 ## Reusable Code References
 
 Other projects on this machine with patterns to draw from:
@@ -30,6 +52,8 @@ Other projects on this machine with patterns to draw from:
 
 These are missing features that block primary use cases.
 
+> **Phase 1 complete.** Implementation details: [PLAN-Phase1-Remaining.md](.dev/docs/PLAN-Phase1-Remaining.md).
+
 ### 1.1 Build Vocab Review Page (`vocab.html`)
 - [x] Create `habla/client/vocab.html` with mobile-first dark theme matching `index.html`
 - [x] Due-for-review view — fetch `/api/vocab/due`, display flashcard-style review UI
@@ -51,7 +75,8 @@ These are missing features that block primary use cases.
 - [x] Expose session history via REST endpoint (`GET /api/sessions/`, `GET /api/sessions/{id}/exchanges`)
 
 ### 1.3 Idiom Feedback Loop
-- [x] When user saves an LLM-detected idiom from the client, generate a regex pattern from it
+- [x] Wire client `saveIdiom()` in `ui.js` to also `POST /api/idioms` (fire-and-forget after vocab save)
+- [x] Backend: generate regex pattern from idiom phrase (`api_idioms.py:_generate_pattern`)
 - [x] Insert generated pattern into `idiom_patterns` DB table
 - [x] Reload idiom scanner patterns after new pattern is added (or on next startup)
 - [x] Add REST endpoint to manage user-contributed idiom patterns (`GET/POST/DELETE /api/idioms/`)
@@ -122,7 +147,7 @@ Three provider types, each with different API formats:
 - [x] Show current session cost in settings panel (only when OpenAI provider is active)
 - [x] Add `GET /api/llm/costs` endpoint — session cost, all-time cost, breakdown by model
 - [x] Local providers (Ollama, LM Studio) show "Free (local)" instead of cost
-- [ ] Persist cumulative cost to DB (per-session and all-time)
+- [x] Persist cumulative cost to DB (per-session on close, all-time loaded from DB on startup)
 
 #### Health Check Integration
 - [x] Update `health.py` to check active LLM provider (Ollama, LM Studio, OpenAI key check)
