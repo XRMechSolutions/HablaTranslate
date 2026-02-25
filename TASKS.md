@@ -18,7 +18,7 @@ Detailed plans, standards, and audit results that support the tasks below.
 | [.dev/docs/TMP-FIX-PLAN-04-Operational-Hardening-and-Safety.md](.dev/docs/TMP-FIX-PLAN-04-Operational-Hardening-and-Safety.md) | Not started | Operational hardening & safety (P2) |
 | [.dev/docs/TMP-FIX-PLAN-05-Code-Organization-and-Documentation.md](.dev/docs/TMP-FIX-PLAN-05-Code-Organization-and-Documentation.md) | Partial | Route split + docstrings done; other steps pending (P2) |
 | [.dev/docs/TMP-FIX-PLAN-06-Performance-and-Soak-Stability.md](.dev/docs/TMP-FIX-PLAN-06-Performance-and-Soak-Stability.md) | Complete | Performance & soak stability fixes |
-| [habla/tests/TEST_STATUS.md](habla/tests/TEST_STATUS.md) | Current | Test suite status: 648 tests, 639 passing, 9 skipped benchmarks |
+| [habla/tests/TEST_STATUS.md](habla/tests/TEST_STATUS.md) | Current | Test suite status: 668 tests, 659 passing, 9 skipped benchmarks |
 | [habla/tests/EDGE_CASES.md](habla/tests/EDGE_CASES.md) | Reference | Idiom detection edge case catalog |
 | [docs/AUDIO_TUNING_GUIDE.md](docs/AUDIO_TUNING_GUIDE.md) | Reference | Audio parameter tuning guide |
 | [docs/WHISPER_FINE_TUNING_PLAN.md](docs/WHISPER_FINE_TUNING_PLAN.md) | Reference | WhisperX fine-tuning plan |
@@ -226,27 +226,29 @@ Operational patterns ported from StockMaster for production stability.
 - [x] File/line info in log files for debugging
 
 ### 2.5.6 Ollama Rate Limiting
-- [ ] Add token-bucket or minimum-interval rate limiter to `_call_ollama()` (prevent flooding Ollama when multiple clients connect or partials fire rapidly)
-- [ ] Track `api_calls` count in translator metrics (already tracked, needs rate enforcement)
+- [x] Add minimum-interval rate limiter to `_call_provider()` (prevent flooding when partials fire rapidly)
+- [x] Track `rate_limited` count in translator metrics
+- [x] Configurable via `rate_limit_interval` (default 0.5s) and `RATE_LIMIT_INTERVAL` env var
 
-### 2.5.7 Ollama Health Monitoring at Runtime
-- [ ] Periodic background Ollama health check (every 60s, cached result)
-- [ ] If Ollama goes down mid-session, notify connected clients via WebSocket `error` message
-- [ ] Auto-detect Ollama recovery and resume normal operation
+### 2.5.7 Runtime LLM Health Monitoring
+- [x] Periodic background health check (every 60s) for active LLM provider
+- [x] If provider goes down mid-session, notify connected client via WebSocket `error` message
+- [x] Auto-detect recovery and send `status` message to client
 
 ### 2.5.8 WebSocket Heartbeat Tuning
-- [ ] Server-side pong tracking — detect stale client connections that stop responding
-- [ ] Configurable ping/pong intervals via config (currently client hardcoded 30s, server doesn't track)
-- [ ] Auto-close connections that miss 3 consecutive pongs (free resources)
+- [x] Server tracks `_last_activity_time` on every received message
+- [x] Configurable via `WebSocketConfig` (ping_interval_seconds, missed_pings_threshold) and env vars
+- [x] Auto-close connections with no activity for `interval * threshold` seconds (default 90s)
 
 ### 2.5.9 Request Timing Middleware
-- [ ] FastAPI middleware to log requests exceeding 5s with endpoint, method, and duration
-- [ ] Include translation latency breakdown in `/health` response (avg, p95 from translator metrics)
+- [x] FastAPI middleware logs requests exceeding 5s (configurable via `SLOW_REQUEST_THRESHOLD`)
+- [x] `X-Request-Duration-Ms` header on all HTTP responses (except /health and /ws)
+- [x] `/health` endpoint includes `translator_metrics` (avg latency, request counts, failures)
 
 ### 2.5.10 Session State Resume on Restart
-- [ ] On startup, check for `data/last_session.json` and offer to restore conversation context
-- [ ] Restore `topic_summary` and `recent_exchanges` so the LLM retains context across restarts
-- [ ] Restore speaker names/roles so returning speakers keep their labels
+- [x] On startup, restore from `data/last_session.json` (topic, context, speakers, metrics)
+- [x] Restore `topic_summary` and `recent_exchanges` so the LLM retains context across restarts
+- [x] Restore speaker names/roles so returning speakers keep their labels
 
 ---
 

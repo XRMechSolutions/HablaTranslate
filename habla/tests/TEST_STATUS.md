@@ -6,13 +6,13 @@
 
 | Run Mode | Tests | Runtime | Command |
 |---|---:|---:|---|
-| **Default (fast)** | 630 passed, 26 deselected | ~32s | `python -m pytest` |
+| **Default (fast)** | 642 passed, 26 deselected | ~35s | `python -m pytest` |
 | **Slow only** | 14 passed | ~32s | `python -m pytest -m slow` |
 | **Benchmark only** | 9 (require live services) | varies | `python -m pytest -m benchmark` |
-| **All tests** | 647 passed, 9 skipped | ~83s | `python -m pytest -m ""` |
+| **All tests** | 659 passed, 9 skipped | ~85s | `python -m pytest -m ""` |
 
-- **Total Tests:** 656 (647 pass + 9 skipped benchmark)
-- **Passing:** 647/647 (100%)
+- **Total Tests:** 668 (659 pass + 9 skipped benchmark)
+- **Passing:** 659/659 (100%)
 - **Default run skips:** slow (14 tests) and benchmark (9 tests) via `pytest.ini` marker filter
 
 ---
@@ -23,7 +23,7 @@ Tests are split into three tiers via pytest markers configured in `pytest.ini`:
 
 | Tier | Marker | Count | What | Default |
 |---|---|---:|---|---|
-| Fast | _(unmarked)_ | 630 | Unit tests, mocked dependencies | Runs |
+| Fast | _(unmarked)_ | 642 | Unit tests, mocked dependencies | Runs |
 | Slow | `@pytest.mark.slow` | 14 | Queue drain (30s timeout), soak stability | Skipped |
 | Benchmark | `@pytest.mark.benchmark` | 9 | Live GPU/service timing tests | Skipped |
 
@@ -37,13 +37,13 @@ The default `addopts` in `pytest.ini` includes `-m "not slow and not benchmark"`
 |---|---|---:|---|
 | `db/database.py` | `tests/db/test_database.py` | 37 | Covered |
 | `pipeline/orchestrator.py` | `tests/pipeline/test_orchestrator.py` | 102 | Covered |
-| `pipeline/translator.py` | `tests/pipeline/test_translator.py` | 46 | Covered |
+| `pipeline/translator.py` | `tests/pipeline/test_translator.py` | 49 | Covered |
 | `pipeline/vad_buffer.py` | `tests/pipeline/test_vad_buffer.py` | 32 | Covered |
-| `routes/api.py` | `tests/routes/test_api.py` | 74 | Covered |
-| `routes/websocket.py` | `tests/routes/test_websocket.py` | 104 | Covered |
+| `routes/api.py` | `tests/routes/test_api.py` | 76 | Covered |
+| `routes/websocket.py` | `tests/routes/test_websocket.py` | 107 | Covered |
 | `routes/playback endpoints` | `tests/routes/test_playback_api.py` | 12 | Covered |
 | `services/audio_recorder.py` | `tests/services/test_audio_recorder.py` | 28 | Covered |
-| `services/health.py` | `tests/services/test_health.py` | 43 | Covered |
+| `services/health.py` | `tests/services/test_health.py` | 47 | Covered |
 | `services/idiom_scanner.py` | `tests/services/test_idiom_scanner.py` | 23 | Covered |
 | `services/idiom merge logic` | `tests/services/test_idiom_merger.py` | 14 | Covered |
 | `services/lmstudio_manager.py` | `tests/services/test_lmstudio_manager.py` | 26 | Covered |
@@ -56,6 +56,12 @@ The default `addopts` in `pytest.ini` includes `-m "not slow and not benchmark"`
 ---
 
 ## Recent Changes
+
+**2026-02-25 — Phase 2.5 server resilience tests**
+- Added 3 tests in `test_translator.py`: rate limiter enforcement, no-delay, metric tracking
+- Added 4 tests in `test_health.py`: health monitor down/recovery/stable/no-session
+- Added 2 tests in `test_api.py`: timing header present, /health excluded from timing
+- Added 3 tests in `test_websocket.py`: heartbeat stale close, active no-close, cleanup cancel
 
 **2026-02-25 — Cost persistence tests + test tier restructuring**
 - Added 4 tests in `test_database.py`: cost columns exist, defaults, round-trip, aggregation

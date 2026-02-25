@@ -19,6 +19,7 @@ from server.services.health import (
     check_ollama,
     check_openai_key,
     check_whisperx,
+    run_llm_health_monitor,
     run_runtime_checks,
     run_startup_checks,
     _runtime_cache,
@@ -573,3 +574,129 @@ class TestRunRuntimeChecks:
         assert whisperx_check.status == ComponentStatus.DEGRADED
         diarization_check = next(c for c in result.checks if c.component == "diarization")
         assert diarization_check.status == ComponentStatus.DEGRADED
+
+
+# ---------------------------------------------------------------------------
+# TestLLMHealthMonitor
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+class TestLLMHealthMonitor:
+    """Tests for the background LLM health monitoring task."""
+
+    @pytest.mark.asyncio
+    async def test_monitor_detects_provider_down(self):
+        """When provider goes down, sends error to active session."""
+        config = MagicMock()
+        config.provider = "ollama"
+        session = MagicMock()
+        session._send = AsyncMock()
+
+        check_down = HealthCheck("ollama", ComponentStatus.DOWN, "Connection refused")
+
+        with patch("server.services.health._check_active_llm",
+                   new_callable=AsyncMock, return_value=check_down):
+            task = asyncio.create_task(
+                run_llm_health_monitor(
+                    get_config=lambda: config,
+                    get_session_fn=lambda: session,
+                    interval=0.05,
+                )
+            )
+            await asyncio.sleep(0.1)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        session._send.assert_called()
+        sent = session._send.call_args[0][0]
+        assert sent["type"] == "error"
+        assert "unavailable" in sent["message"]
+
+    @pytest.mark.asyncio
+    async def test_monitor_detects_recovery(self):
+        """When provider recovers, sends status message to session."""
+        config = MagicMock()
+        config.provider = "ollama"
+        session = MagicMock()
+        session._send = AsyncMock()
+
+        call_count = 0
+        async def alternating_check(_config):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return HealthCheck("ollama", ComponentStatus.DOWN, "down")
+            return HealthCheck("ollama", ComponentStatus.OK, "ok")
+
+        with patch("server.services.health._check_active_llm", side_effect=alternating_check):
+            task = asyncio.create_task(
+                run_llm_health_monitor(
+                    get_config=lambda: config,
+                    get_session_fn=lambda: session,
+                    interval=0.05,
+                )
+            )
+            await asyncio.sleep(0.15)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        calls = [c[0][0] for c in session._send.call_args_list]
+        assert any(c["type"] == "status" and "back online" in c.get("message", "") for c in calls)
+
+    @pytest.mark.asyncio
+    async def test_monitor_no_notification_when_stable(self):
+        """No messages sent when provider stays OK."""
+        config = MagicMock()
+        config.provider = "ollama"
+        session = MagicMock()
+        session._send = AsyncMock()
+
+        check_ok = HealthCheck("ollama", ComponentStatus.OK, "ok")
+
+        with patch("server.services.health._check_active_llm",
+                   new_callable=AsyncMock, return_value=check_ok):
+            task = asyncio.create_task(
+                run_llm_health_monitor(
+                    get_config=lambda: config,
+                    get_session_fn=lambda: session,
+                    interval=0.05,
+                )
+            )
+            await asyncio.sleep(0.15)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        session._send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_monitor_no_session_no_crash(self):
+        """Provider goes down but no active session — should not raise."""
+        config = MagicMock()
+        config.provider = "ollama"
+
+        check_down = HealthCheck("ollama", ComponentStatus.DOWN, "down")
+
+        with patch("server.services.health._check_active_llm",
+                   new_callable=AsyncMock, return_value=check_down):
+            task = asyncio.create_task(
+                run_llm_health_monitor(
+                    get_config=lambda: config,
+                    get_session_fn=lambda: None,
+                    interval=0.05,
+                )
+            )
+            await asyncio.sleep(0.1)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        # No exception means success

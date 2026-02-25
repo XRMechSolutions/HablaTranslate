@@ -51,6 +51,9 @@ class TranslatorConfig(BaseModel):
     # Fallback: if cloud (OpenAI) fails, try local providers. Never local→cloud.
     fallback_to_local: bool = True
 
+    # Rate limiting: minimum seconds between LLM requests
+    rate_limit_interval: float = 0.5
+
     @property
     def model(self) -> str:
         """Return the active model name for the current provider."""
@@ -99,6 +102,12 @@ class RecordingConfig(BaseModel):
     include_metadata: bool = True  # Save JSON metadata with each recording
 
 
+class WebSocketConfig(BaseModel):
+    """WebSocket connection settings."""
+    ping_interval_seconds: float = 30.0  # Expected client ping interval
+    missed_pings_threshold: int = 3  # Close after this many missed intervals
+
+
 class AppConfig(BaseModel):
     """Root configuration."""
     host: str = "0.0.0.0"
@@ -112,6 +121,7 @@ class AppConfig(BaseModel):
     audio: AudioConfig = AudioConfig()
     session: SessionConfig = SessionConfig()
     recording: RecordingConfig = RecordingConfig()
+    websocket: WebSocketConfig = WebSocketConfig()
 
 
 def load_config() -> AppConfig:
@@ -154,6 +164,12 @@ def load_config() -> AppConfig:
         config.data_dir = Path(data)
     if rec := os.getenv("RECORDING_ENABLED"):
         config.recording.enabled = rec.lower() in ("1", "true", "yes", "on")
+    if interval := os.getenv("RATE_LIMIT_INTERVAL"):
+        config.translator.rate_limit_interval = float(interval)
+    if ping := os.getenv("WS_PING_INTERVAL"):
+        config.websocket.ping_interval_seconds = float(ping)
+    if missed := os.getenv("WS_MISSED_PINGS"):
+        config.websocket.missed_pings_threshold = int(missed)
 
     # Validate critical config
     if not config.diarization.hf_token:

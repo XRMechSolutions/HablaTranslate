@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse
 from server.config import load_config
 from server.db.database import init_db, close_db
 from server.pipeline.orchestrator import PipelineOrchestrator
-from server.routes.websocket import websocket_endpoint, set_ws_pipeline, set_recording_config, set_ws_playback_service
+from server.routes.websocket import websocket_endpoint, set_ws_pipeline, set_recording_config, set_ws_playback_service, set_ws_config
 from server.routes._state import set_pipeline, set_lmstudio_manager, set_playback_service
 from server.routes.api_vocab import vocab_router
 from server.routes.api_system import system_router
@@ -24,7 +24,10 @@ from server.routes.api_idioms import idiom_router
 from server.routes.api_llm import llm_router, lmstudio_router
 from server.routes.api_playback import playback_router
 from server.services.playback import PlaybackService
-from server.services.health import run_startup_checks, run_runtime_checks, ComponentStatus
+import time as _time
+from starlette.requests import Request
+
+from server.services.health import run_startup_checks, run_runtime_checks, run_llm_health_monitor, ComponentStatus
 from server.services.lmstudio_manager import LMStudioManager
 
 # Logging — structured with file rotation
@@ -120,6 +123,7 @@ async def lifespan(app: FastAPI):
     set_pipeline(pipeline)
     set_ws_pipeline(pipeline)
     set_recording_config(config.recording)
+    set_ws_config(config.websocket)
 
     if config.recording.enabled:
         logger.info(f"Audio recording enabled: {config.recording.output_dir}")
@@ -201,12 +205,24 @@ async def lifespan(app: FastAPI):
 
     app.state.console_task = asyncio.create_task(_console_loop())
 
+    # Background LLM health monitor (checks every 60s, notifies client on failure/recovery)
+    from server.routes.websocket import get_active_session
+    app.state.health_monitor_task = asyncio.create_task(
+        run_llm_health_monitor(
+            get_config=lambda: pipeline.config.translator,
+            get_session_fn=get_active_session,
+            interval=60.0,
+        )
+    )
+
     yield
 
     # Shutdown — pipeline drains queue and saves state before closing
     logger.info("Shutting down...")
     if getattr(app.state, "console_task", None):
         app.state.console_task.cancel()
+    if getattr(app.state, "health_monitor_task", None):
+        app.state.health_monitor_task.cancel()
     await pipeline.shutdown()
     if lmstudio_manager is not None:
         await lmstudio_manager.stop_monitor()
@@ -230,6 +246,26 @@ app.include_router(idiom_router)
 app.include_router(llm_router)
 app.include_router(lmstudio_router)
 app.include_router(playback_router)
+
+# Slow request logging middleware
+_SLOW_REQUEST_THRESHOLD = float(os.getenv("SLOW_REQUEST_THRESHOLD", "5.0"))
+_TIMING_EXCLUDED_PATHS = {"/health", "/ws/translate"}
+
+
+@app.middleware("http")
+async def request_timing_middleware(request: Request, call_next):
+    if request.url.path in _TIMING_EXCLUDED_PATHS:
+        return await call_next(request)
+    start = _time.monotonic()
+    response = await call_next(request)
+    duration = _time.monotonic() - start
+    if duration > _SLOW_REQUEST_THRESHOLD:
+        logger.warning(
+            f"Slow request: {request.method} {request.url.path} "
+            f"took {duration:.2f}s (threshold: {_SLOW_REQUEST_THRESHOLD}s)"
+        )
+    response.headers["X-Request-Duration-Ms"] = str(round(duration * 1000))
+    return response
 
 
 # WebSocket endpoint
@@ -268,7 +304,20 @@ async def health_check():
     if pipeline is None:
         return {"status": "starting", "components": {}}
     health = await run_runtime_checks(pipeline)
-    return health.to_dict()
+    result = health.to_dict()
+    metrics = pipeline.translator.metrics
+    if metrics["successes"] > 0:
+        avg_latency = metrics["total_latency_ms"] / metrics["successes"]
+        result["translator_metrics"] = {
+            "avg_latency_ms": round(avg_latency, 1),
+            "total_requests": metrics["requests"],
+            "successes": metrics["successes"],
+            "failures": metrics["failures"],
+            "timeouts": metrics["timeouts"],
+            "rate_limited": metrics["rate_limited"],
+            "degraded": metrics["degraded"],
+        }
+    return result
 
 
 @app.get("/vocab")
