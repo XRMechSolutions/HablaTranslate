@@ -23,7 +23,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
-from server.config import TranslatorConfig, WhisperConfig, VADConfig
+from server.config import TranslatorConfig, ASRConfig, AudioConfig
 from server.pipeline.translator import Translator
 from server.pipeline.vad_buffer import StreamingVADBuffer, AudioDecoder
 from server.services.idiom_scanner import IdiomScanner, create_starter_idioms
