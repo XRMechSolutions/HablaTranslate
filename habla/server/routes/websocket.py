@@ -54,6 +54,7 @@ _active_ws_lock = asyncio.Lock()
 # always use the current pipeline instead of a stale (closed) one.
 _current_pipeline: PipelineOrchestrator | None = None
 _recording_config: RecordingConfig | None = None
+_ws_config = None  # WebSocketConfig, set from main.py
 
 # Active session reference — allows REST API (playback) to access the session.
 _active_session: Optional['ClientSession'] = None
@@ -72,6 +73,12 @@ def set_ws_pipeline(pipeline: PipelineOrchestrator):
     """Called from main.py on startup and after restart."""
     global _current_pipeline
     _current_pipeline = pipeline
+
+
+def set_ws_config(config):
+    """Set WebSocket configuration (heartbeat intervals)."""
+    global _ws_config
+    _ws_config = config
 
 
 def set_recording_config(config: RecordingConfig):
@@ -129,6 +136,10 @@ class ClientSession:
 
         # Cleanup guard
         self._cleaned_up = False
+
+        # Heartbeat monitoring
+        self._last_activity_time = time.monotonic()
+        self._heartbeat_task: asyncio.Task | None = None
 
         # Background decode loop
         self._decode_task: asyncio.Task | None = None
@@ -414,10 +425,32 @@ class ClientSession:
         except Exception as e:
             logger.debug(f"WebSocket send failed (client may have disconnected): {e}")
 
+    async def _heartbeat_monitor(self, interval: float, max_missed: int):
+        """Monitor client liveness. Close connection if no activity for too long."""
+        timeout = interval * max_missed
+        try:
+            while True:
+                await asyncio.sleep(interval)
+                elapsed = time.monotonic() - self._last_activity_time
+                if elapsed > timeout:
+                    logger.warning(
+                        f"Client {self.id}: no activity for {elapsed:.0f}s "
+                        f"(>{timeout:.0f}s), closing stale connection"
+                    )
+                    try:
+                        await self.ws.close(code=1000, reason="Heartbeat timeout")
+                    except Exception:
+                        pass
+                    break
+        except asyncio.CancelledError:
+            pass
+
     async def cleanup(self):
         if self._cleaned_up:
             return
         self._cleaned_up = True
+        if self._heartbeat_task:
+            self._heartbeat_task.cancel()
         self.playback_mode = False
         if self.listening:
             await self.stop_listening()
@@ -502,6 +535,15 @@ async def websocket_endpoint(websocket: WebSocket):
             )
             session._wire_callbacks()
 
+            # Start heartbeat monitor
+            if _ws_config:
+                session._heartbeat_task = asyncio.create_task(
+                    session._heartbeat_monitor(
+                        _ws_config.ping_interval_seconds,
+                        _ws_config.missed_pings_threshold,
+                    )
+                )
+
             p = session.pipeline
             await session._send({
                 "type": "status",
@@ -514,6 +556,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
             while True:
                 message = await websocket.receive()
+                session._last_activity_time = time.monotonic()
                 if message.get("type") == "websocket.disconnect":
                     logger.info(f"Client {session.id}: disconnect received")
                     break

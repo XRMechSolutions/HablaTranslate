@@ -391,3 +391,81 @@ class TestMonitor:
         await manager.stop_monitor()
 
         assert manager._monitor_task is None
+
+
+# ---------------------------------------------------------------------------
+# TestRefreshLoadedModels
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+class TestRefreshLoadedModels:
+    """Tests for live model verification via lms ps / API fallback."""
+
+    async def test_refresh_detects_evicted_model(self, manager):
+        """If a model disappears from LM Studio, _loaded_models is updated."""
+        manager._loaded_models = {"model-a", "model-b"}
+
+        # lms ps returns only model-a
+        with patch.object(manager, "_query_lms_ps", new_callable=AsyncMock,
+                          return_value={"model-a"}):
+            await manager._refresh_loaded_models()
+
+        assert manager._loaded_models == {"model-a"}
+
+    async def test_refresh_detects_new_model(self, manager):
+        """If a model is manually loaded, it appears in _loaded_models."""
+        manager._loaded_models = {"model-a"}
+
+        with patch.object(manager, "_query_lms_ps", new_callable=AsyncMock,
+                          return_value={"model-a", "model-new"}):
+            await manager._refresh_loaded_models()
+
+        assert "model-new" in manager._loaded_models
+
+    async def test_refresh_falls_back_to_api(self, manager):
+        """If lms ps fails, falls back to /v1/models API."""
+        manager._loaded_models = {"old-model"}
+
+        with (
+            patch.object(manager, "_query_lms_ps", new_callable=AsyncMock,
+                         return_value=None),
+            patch.object(manager, "_query_api_models", new_callable=AsyncMock,
+                         return_value={"api-model"}),
+        ):
+            await manager._refresh_loaded_models()
+
+        assert manager._loaded_models == {"api-model"}
+
+    async def test_refresh_keeps_stale_set_on_total_failure(self, manager):
+        """If both lms ps and API fail, keep existing set."""
+        manager._loaded_models = {"stale-model"}
+
+        with (
+            patch.object(manager, "_query_lms_ps", new_callable=AsyncMock,
+                         return_value=None),
+            patch.object(manager, "_query_api_models", new_callable=AsyncMock,
+                         return_value=None),
+        ):
+            await manager._refresh_loaded_models()
+
+        assert manager._loaded_models == {"stale-model"}
+
+    async def test_query_lms_ps_parses_json(self, manager):
+        """_query_lms_ps correctly parses lms ps --json output."""
+        ps_output = '[{"identifier": "author/model-dir/my-model.gguf"}]'
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ps_output
+
+        with patch("server.services.lmstudio_manager.subprocess.run",
+                   return_value=mock_result):
+            result = await manager._query_lms_ps()
+
+        assert result == {"my-model"}
+
+    async def test_query_lms_ps_returns_none_on_missing_exe(self, manager):
+        """If lms.exe is not found, returns None gracefully."""
+        with patch("server.services.lmstudio_manager.subprocess.run",
+                   side_effect=FileNotFoundError("lms not found")):
+            result = await manager._query_lms_ps()
+
+        assert result is None

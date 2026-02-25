@@ -158,11 +158,16 @@ class Translator:
             "total_latency_ms": 0.0,
             "last_error": None,
             "last_error_time": None,
+            "rate_limited": 0,
         }
 
         # Health tracking: consecutive timeout counter
         self._consecutive_timeouts = 0
         self._degraded = False
+
+        # Rate limiting (minimum interval between requests)
+        self._last_request_time: float = 0.0
+        self._rate_limit_lock = asyncio.Lock()
 
         # OpenAI cost tracking
         self._costs = {
@@ -337,6 +342,18 @@ class Translator:
         lmstudio_model: str = "",
     ) -> str:
         """Call a specific provider with retry logic. Returns raw text response."""
+        # Enforce minimum interval between requests
+        async with self._rate_limit_lock:
+            now = time.monotonic()
+            elapsed = now - self._last_request_time
+            min_interval = self.config.rate_limit_interval
+            if elapsed < min_interval:
+                delay = min_interval - elapsed
+                self._metrics["rate_limited"] += 1
+                logger.debug(f"Rate limiter: waiting {delay:.2f}s before LLM call")
+                await asyncio.sleep(delay)
+            self._last_request_time = time.monotonic()
+
         if retries is not None:
             max_retries = retries
         elif self._degraded:

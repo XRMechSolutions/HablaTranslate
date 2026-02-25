@@ -1643,3 +1643,88 @@ class TestConstants:
 
     def test_max_pending_greater_than_merge_gap(self):
         assert MAX_PENDING_SECONDS > MERGE_GAP_SECONDS
+
+
+# ---------------------------------------------------------------------------
+# TestHeartbeat
+# ---------------------------------------------------------------------------
+class TestHeartbeat:
+    """Tests for WebSocket heartbeat monitoring (2.5.8)."""
+
+    def _make_session(self):
+        """Create a minimal ClientSession with mocked dependencies."""
+        mock_ws = MagicMock()
+        mock_ws.close = AsyncMock()
+        mock_pipeline = MagicMock()
+        mock_pipeline.config = MagicMock()
+
+        with patch.object(ws_mod.ClientSession, "__init__", lambda self, *a, **k: None):
+            session = ws_mod.ClientSession.__new__(ws_mod.ClientSession)
+        session.ws = mock_ws
+        session.id = 12345
+        session._last_activity_time = asyncio.get_event_loop().time()
+        session._heartbeat_task = None
+        session._cleaned_up = False
+        return session
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_closes_stale_connection(self):
+        """Stale connection is closed after missed heartbeats."""
+        import time
+        session = self._make_session()
+        session._last_activity_time = time.monotonic() - 10  # simulate old activity
+
+        task = asyncio.create_task(
+            session._heartbeat_monitor(interval=0.05, max_missed=2)
+        )
+        await asyncio.sleep(0.15)
+        if not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        session.ws.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_no_close_with_activity(self):
+        """Connection stays open when activity is recent."""
+        import time
+        session = self._make_session()
+        session._last_activity_time = time.monotonic()
+
+        task = asyncio.create_task(
+            session._heartbeat_monitor(interval=0.05, max_missed=3)
+        )
+        # Keep updating activity
+        for _ in range(3):
+            await asyncio.sleep(0.04)
+            session._last_activity_time = time.monotonic()
+
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+        session.ws.close.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_cancelled_on_cleanup(self):
+        """Heartbeat task is cancelled during cleanup."""
+        import time
+        session = self._make_session()
+        session._last_activity_time = time.monotonic()
+        session.listening = False
+        session.playback_mode = False
+        session._decode_task = None
+        session._pending_task = None
+
+        session._heartbeat_task = asyncio.create_task(
+            session._heartbeat_monitor(interval=60.0, max_missed=3)
+        )
+        await session.cleanup()
+        # Give event loop a tick to process the cancellation
+        await asyncio.sleep(0)
+        assert session._heartbeat_task.cancelled() or session._heartbeat_task.done()

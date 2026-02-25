@@ -1,5 +1,6 @@
 """Startup and runtime health checks for Habla services."""
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
@@ -257,3 +258,53 @@ async def run_runtime_checks(pipeline) -> SystemHealth:
     _runtime_cache["timestamp"] = now
 
     return health
+
+
+async def run_llm_health_monitor(
+    get_config,
+    get_session_fn,
+    interval: float = 60.0,
+):
+    """Background task: periodically check active LLM provider health.
+
+    Sends WebSocket error to connected client when provider goes down.
+    Logs recovery when provider comes back.
+    """
+    last_status = ComponentStatus.OK
+
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            config = get_config()
+            check = await _check_active_llm(config)
+
+            if check.status != ComponentStatus.OK and last_status == ComponentStatus.OK:
+                logger.warning(
+                    f"LLM provider {config.provider} is {check.status.value}: "
+                    f"{check.message}"
+                )
+                session = get_session_fn()
+                if session:
+                    await session._send({
+                        "type": "error",
+                        "message": f"LLM provider ({config.provider}) is unavailable: {check.message}",
+                    })
+
+            elif check.status == ComponentStatus.OK and last_status != ComponentStatus.OK:
+                logger.info(
+                    f"LLM provider {config.provider} recovered "
+                    f"(was {last_status.value})"
+                )
+                session = get_session_fn()
+                if session:
+                    await session._send({
+                        "type": "status",
+                        "message": f"LLM provider ({config.provider}) is back online",
+                    })
+
+            last_status = check.status
+
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.debug(f"LLM health monitor error: {e}")

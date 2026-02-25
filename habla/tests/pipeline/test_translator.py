@@ -688,3 +688,63 @@ class TestSessionCosts:
         assert translator._costs["all_time_output_tokens"] == 1500
         assert abs(translator._costs["all_time_cost_usd"] - 0.004) < 1e-6
         await close_db()
+
+
+# ---------------------------------------------------------------------------
+# TestRateLimiting
+# ---------------------------------------------------------------------------
+class TestRateLimiting:
+    """Test minimum-interval rate limiting in _call_provider."""
+
+    def _make_translator(self, interval: float = 0.2):
+        from server.config import TranslatorConfig
+        config = TranslatorConfig(
+            provider="ollama",
+            rate_limit_interval=interval,
+        )
+        return Translator(config)
+
+    def test_rate_limit_metric_starts_at_zero(self):
+        t = self._make_translator()
+        assert t._metrics["rate_limited"] == 0
+
+    @pytest.mark.asyncio
+    async def test_rate_limiter_enforces_minimum_interval(self):
+        """Two rapid calls should be spaced by at least rate_limit_interval."""
+        import time
+        t = self._make_translator(interval=0.2)
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"response": '{"translation": "hi"}'}
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch.object(t.client, "post", new_callable=AsyncMock, return_value=mock_resp):
+            start = time.monotonic()
+            await t._call_provider("ollama", "sys", "user", retries=0)
+            await t._call_provider("ollama", "sys", "user", retries=0)
+            elapsed = time.monotonic() - start
+
+        assert elapsed >= 0.18  # Allow small timing tolerance
+        assert t._metrics["rate_limited"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_rate_limiter_no_delay_when_interval_elapsed(self):
+        """No throttling when enough time has passed between calls."""
+        import asyncio, time
+        t = self._make_translator(interval=0.05)
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"response": '{"translation": "hi"}'}
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch.object(t.client, "post", new_callable=AsyncMock, return_value=mock_resp):
+            await t._call_provider("ollama", "sys", "user", retries=0)
+            await asyncio.sleep(0.1)  # Wait longer than interval
+            start = time.monotonic()
+            await t._call_provider("ollama", "sys", "user", retries=0)
+            elapsed = time.monotonic() - start
+
+        # Should not have been delayed significantly
+        assert elapsed < 0.08

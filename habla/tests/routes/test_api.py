@@ -983,3 +983,61 @@ class TestLMStudioRoutes:
         resp = await client.get("/api/lmstudio/models")
 
         assert resp.status_code == 503
+
+
+# ---------------------------------------------------------------------------
+# TestRequestTimingMiddleware
+# ---------------------------------------------------------------------------
+class TestRequestTimingMiddleware:
+    """Tests for the request timing middleware (2.5.9)."""
+
+    @pytest.fixture
+    def middleware_app(self):
+        """Create an app with the timing middleware applied."""
+        import time as _time
+        from starlette.requests import Request
+
+        test_app = FastAPI()
+
+        @test_app.middleware("http")
+        async def timing_mw(request: Request, call_next):
+            if request.url.path == "/health":
+                return await call_next(request)
+            start = _time.monotonic()
+            response = await call_next(request)
+            duration = _time.monotonic() - start
+            response.headers["X-Request-Duration-Ms"] = str(round(duration * 1000))
+            return response
+
+        @test_app.get("/fast")
+        async def fast():
+            return {"ok": True}
+
+        @test_app.get("/health")
+        async def health():
+            return {"status": "ok"}
+
+        return test_app
+
+    @pytest.fixture
+    async def mw_client(self, middleware_app):
+        async with AsyncClient(
+            transport=ASGITransport(app=middleware_app), base_url="http://test"
+        ) as c:
+            yield c
+
+    @pytest.mark.asyncio
+    async def test_timing_header_present(self, mw_client):
+        """Regular endpoints include X-Request-Duration-Ms header."""
+        resp = await mw_client.get("/fast")
+        assert resp.status_code == 200
+        assert "X-Request-Duration-Ms" in resp.headers
+        duration = int(resp.headers["X-Request-Duration-Ms"])
+        assert duration >= 0
+
+    @pytest.mark.asyncio
+    async def test_health_excluded_from_timing(self, mw_client):
+        """The /health endpoint is excluded from timing middleware."""
+        resp = await mw_client.get("/health")
+        assert resp.status_code == 200
+        assert "X-Request-Duration-Ms" not in resp.headers

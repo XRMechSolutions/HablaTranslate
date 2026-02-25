@@ -363,6 +363,74 @@ class LMStudioManager:
             logger.warning("[lmstudio/verify] check failed (%s)", exc)
             return False
 
+    # --- Live model verification ---------------------------------------------
+
+    async def _refresh_loaded_models(self) -> None:
+        """Re-query LM Studio to update _loaded_models from live state.
+        Tries `lms ps --json` first (authoritative), falls back to /v1/models API.
+        Detects silent model eviction that the in-memory set would miss.
+        """
+        live_models = await self._query_lms_ps()
+        if live_models is None:
+            live_models = await self._query_api_models()
+        if live_models is None:
+            return  # both methods failed, keep stale set
+
+        evicted = self._loaded_models - live_models
+        new = live_models - self._loaded_models
+        if evicted:
+            logger.warning(
+                "[lmstudio/refresh] Models no longer loaded (evicted?): %s",
+                sorted(evicted),
+            )
+        if new:
+            logger.info(
+                "[lmstudio/refresh] New models detected: %s", sorted(new),
+            )
+        self._loaded_models = live_models
+
+    async def _query_lms_ps(self) -> set[str] | None:
+        """Run `lms ps --json` and return set of loaded model stems, or None on failure."""
+        try:
+            lms = self._get_lms_exe()
+            result = await asyncio.to_thread(
+                subprocess.run,
+                [lms, "ps", "--json"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                import json
+                data = json.loads(result.stdout)
+                models = set()
+                for entry in data:
+                    # lms ps returns objects with "identifier", "path", or "id" fields
+                    name = entry.get("identifier") or entry.get("id") or entry.get("path", "")
+                    if name:
+                        models.add(Path(name).stem)
+                logger.debug("[lmstudio/ps] Live models: %s", sorted(models))
+                return models
+        except FileNotFoundError:
+            logger.debug("[lmstudio/ps] lms.exe not found, falling back to API")
+        except Exception as exc:
+            logger.debug("[lmstudio/ps] Failed: %s", exc)
+        return None
+
+    async def _query_api_models(self) -> set[str] | None:
+        """Query /v1/models API and return set of loaded model stems, or None on failure."""
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                resp = await client.get(f"{self._config.lmstudio_url}/v1/models")
+            if resp.is_success:
+                models = set()
+                for m in resp.json().get("data", []):
+                    model_id = m.get("id", "")
+                    if model_id:
+                        models.add(Path(model_id).stem)
+                return models
+        except Exception as exc:
+            logger.debug("[lmstudio/api-models] Failed: %s", exc)
+        return None
+
     # --- Config match check -------------------------------------------------
 
     def _check_models_match_config(self) -> None:
@@ -423,7 +491,19 @@ class LMStudioManager:
                     await self.restart()
                 else:
                     logger.debug("[lmstudio/monitor] Health check OK")
+                    # Refresh from live state to detect silent eviction
+                    old_loaded = set(self._loaded_models)
+                    await self._refresh_loaded_models()
                     self._check_models_match_config()
+                    # Auto-reload any configured models that were evicted
+                    configured = {Path(p).stem for p in self._config.lmstudio_model_paths}
+                    evicted_configured = (old_loaded & configured) - self._loaded_models
+                    if evicted_configured:
+                        logger.warning(
+                            "[lmstudio/monitor] Reloading evicted configured models: %s",
+                            sorted(evicted_configured),
+                        )
+                        await self._load_models()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
