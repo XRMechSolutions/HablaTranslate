@@ -129,6 +129,39 @@ async def review_vocab(vocab_id: int, req: ReviewRequest):
     return result
 
 
+@vocab_router.get("/{vocab_id}")
+async def get_vocab(vocab_id: int):
+    """Get a single vocab item by ID. Returns 404 if not found."""
+    item = await _vocab_service.get_by_id(vocab_id)
+    if not item:
+        raise HTTPException(404, "Vocab item not found")
+    return item
+
+
+class UpdateVocabRequest(BaseModel):
+    term: str | None = None
+    meaning: str | None = None
+    literal: str | None = None
+    category: str | None = None
+    source_sentence: str | None = None
+    region: str | None = None
+
+
+@vocab_router.patch("/{vocab_id}")
+async def update_vocab(vocab_id: int, req: UpdateVocabRequest):
+    """Update fields on a vocab item. Only provided (non-null) fields are changed.
+
+    Returns 200 with updated vocab item. Returns 404 if not found.
+    Returns 400 if term is set to blank.
+    """
+    if req.term is not None and not req.term.strip():
+        raise HTTPException(400, "Term cannot be blank")
+    item = await _vocab_service.update(vocab_id, **req.model_dump(exclude_unset=True))
+    if not item:
+        raise HTTPException(404, "Vocab item not found")
+    return item
+
+
 @vocab_router.delete("/{vocab_id}")
 async def delete_vocab(vocab_id: int):
     """Delete a vocab item. Returns 200 {deleted: true} or 404 if not found."""

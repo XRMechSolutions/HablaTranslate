@@ -270,8 +270,8 @@ Fix backend gaps that cause silent data loss or incorrect behavior.
 ### 3.2 Missing Vocab API Endpoints
 - [x] `POST /api/vocab/` — Manually create vocab item (with duplicate detection + encounter counting)
 - [x] Text selection save — select Spanish text in exchange cards, floating "Save to Vocab" button
-- [ ] `GET /api/vocab/{id}` — Get individual vocab item by ID
-- [ ] `PATCH /api/vocab/{id}` — Edit existing vocab item (term, meaning, notes)
+- [x] `GET /api/vocab/{id}` — Get individual vocab item by ID
+- [x] `PATCH /api/vocab/{id}` — Edit existing vocab item (term, meaning, notes)
 
 ### 3.3 Database Safety
 - [x] Add `PRAGMA busy_timeout=30000` for lock contention handling

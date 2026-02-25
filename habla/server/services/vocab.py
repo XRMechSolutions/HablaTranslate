@@ -66,6 +66,38 @@ class VocabService:
         await db.commit()
         return cursor.lastrowid
 
+    async def get_by_id(self, vocab_id: int) -> dict | None:
+        """Get a single vocab item by ID. Returns None if not found."""
+        db = await get_db()
+        rows = await db.execute_fetchall(
+            "SELECT * FROM vocab WHERE id = ?", (vocab_id,)
+        )
+        return dict(rows[0]) if rows else None
+
+    async def update(self, vocab_id: int, **fields) -> dict | None:
+        """Update specific fields on a vocab item. Returns updated item or None if not found."""
+        db = await get_db()
+        rows = await db.execute_fetchall(
+            "SELECT * FROM vocab WHERE id = ?", (vocab_id,)
+        )
+        if not rows:
+            return None
+
+        allowed = {"term", "meaning", "literal", "category", "source_sentence", "region", "notes"}
+        updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
+        if not updates:
+            return dict(rows[0])
+
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [vocab_id]
+        await db.execute(f"UPDATE vocab SET {set_clause} WHERE id = ?", values)
+        await db.commit()
+
+        updated = await db.execute_fetchall(
+            "SELECT * FROM vocab WHERE id = ?", (vocab_id,)
+        )
+        return dict(updated[0])
+
     async def get_all(
         self, limit: int = 50, offset: int = 0, category: str | None = None
     ) -> list[dict]:
