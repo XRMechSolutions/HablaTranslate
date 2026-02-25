@@ -1,7 +1,7 @@
 """Unit tests for the VocabService (database integration tests)."""
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from server.services.vocab import VocabService
@@ -169,7 +169,7 @@ class TestGetDueForReview:
     async def test_get_due_for_review_with_due_items(self, vocab_service, mock_db):
         """Items with past review date should be returned."""
         with patch("server.services.vocab.get_db", return_value=mock_db):
-            past_date = (datetime.utcnow() - timedelta(days=1)).isoformat()
+            past_date = (datetime.now(UTC) - timedelta(days=1)).isoformat()
             mock_rows = [
                 {"id": 1, "term": "test", "next_review": past_date},
             ]

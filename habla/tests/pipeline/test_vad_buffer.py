@@ -470,66 +470,17 @@ class TestAudioDecoderStreaming:
         assert pcm == b""
 
 
-class TestAudioDecoderBlobMode:
-    """Test one-shot blob decode."""
+class TestAudioDecoderReset:
+    """Test AudioDecoder reset."""
 
-    @pytest.mark.asyncio
-    async def test_decode_blob_success(self):
-        """decode_blob should decode complete WebM to PCM."""
+    def test_reset_clears_pcm_chunks(self):
+        """reset should clear buffered PCM chunks."""
         decoder = AudioDecoder()
-
-        with patch("asyncio.create_subprocess_exec") as mock_exec:
-            mock_process = AsyncMock()
-            mock_process.communicate = AsyncMock(return_value=(b"pcm_data", b""))
-            mock_exec.return_value = mock_process
-
-            pcm = await decoder.decode_blob(b"webm_blob")
-
-            assert pcm == b"pcm_data"
-
-    @pytest.mark.asyncio
-    async def test_decode_blob_error(self):
-        """decode_blob error should return empty bytes."""
-        decoder = AudioDecoder()
-
-        with patch("asyncio.create_subprocess_exec") as mock_exec:
-            mock_exec.side_effect = Exception("ffmpeg failed")
-
-            pcm = await decoder.decode_blob(b"webm_blob")
-
-            assert pcm == b""
-
-
-class TestAudioDecoderFlush:
-    """Test flushing accumulated audio."""
-
-    @pytest.mark.asyncio
-    async def test_flush_with_accumulated(self):
-        """flush should decode accumulated audio."""
-        decoder = AudioDecoder()
-        decoder._accumulated.extend(b"accumulated_webm")
-
-        with patch.object(decoder, "decode_blob", return_value=b"decoded_pcm") as mock_decode:
-            pcm = await decoder.flush()
-
-            assert pcm == b"decoded_pcm"
-            assert len(decoder._accumulated) == 0
-
-    @pytest.mark.asyncio
-    async def test_flush_empty(self):
-        """flush with no accumulated audio should return empty."""
-        decoder = AudioDecoder()
-        pcm = await decoder.flush()
-        assert pcm == b""
-
-    def test_reset(self):
-        """reset should clear accumulated buffer."""
-        decoder = AudioDecoder()
-        decoder._accumulated.extend(b"data")
+        decoder._pcm_chunks.append(b"data")
 
         decoder.reset()
 
-        assert len(decoder._accumulated) == 0
+        assert len(decoder._pcm_chunks) == 0
 
 
 class TestEdgeCases:

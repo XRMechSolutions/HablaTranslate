@@ -66,7 +66,7 @@ class BenchmarkResult:
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
 
-        print(f"\n📊 Results saved to: {filename}")
+        print(f"\nResults saved to: {filename}")
         return summary
 
     def print_summary(self):

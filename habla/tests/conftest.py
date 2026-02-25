@@ -193,3 +193,108 @@ def sample_translation_context():
             "translation": "Very well, thanks.",
         },
     ]
+
+
+# --- Playback test fixtures ---
+
+def _write_minimal_wav(path: Path, duration_seconds: float = 0.5):
+    """Write a minimal valid WAV file (16-bit mono 16kHz silence)."""
+    import struct
+    sample_rate = 16000
+    num_samples = int(sample_rate * duration_seconds)
+    data_size = num_samples * 2  # 16-bit = 2 bytes per sample
+    with open(path, "wb") as f:
+        f.write(b"RIFF")
+        f.write(struct.pack("<I", 36 + data_size))
+        f.write(b"WAVE")
+        f.write(b"fmt ")
+        f.write(struct.pack("<I", 16))
+        f.write(struct.pack("<HHIIHH", 1, 1, sample_rate, sample_rate * 2, 2, 16))
+        f.write(b"data")
+        f.write(struct.pack("<I", data_size))
+        f.write(b"\x00" * data_size)
+
+
+@pytest.fixture
+def recordings_dir(tmp_path):
+    """Create a fake recordings directory with various recording states."""
+    rec_dir = tmp_path / "recordings"
+    rec_dir.mkdir()
+
+    # Recording with raw stream, segments, metadata, and ground truth
+    full = rec_dir / "rec_full"
+    full.mkdir()
+    (full / "raw_stream.webm").write_bytes(b"\x1a\x45\xdf\xa3" + b"\x00" * 100)
+    _write_minimal_wav(full / "segment_001.wav", 1.0)
+    _write_minimal_wav(full / "segment_002.wav", 0.8)
+    (full / "metadata.json").write_text(json.dumps({
+        "started_at": "2026-02-22T10:00:00",
+        "ended_at": "2026-02-22T10:05:00",
+        "total_segments": 2,
+        "segments": [
+            {"segment_id": 1, "duration_seconds": 1.0},
+            {"segment_id": 2, "duration_seconds": 0.8},
+        ],
+    }))
+    (full / "ground_truth.json").write_text(json.dumps({
+        "generated_at": "2026-02-22T12:00:00",
+        "whisper_model": "large-v3",
+        "segments": [
+            {"segment_id": 1, "transcript": "Hola", "translation": "Hello"},
+            {"segment_id": 2, "transcript": "Adios", "translation": "Goodbye"},
+        ],
+    }))
+
+    # Recording with segments only (no raw stream)
+    segs = rec_dir / "rec_segments_only"
+    segs.mkdir()
+    _write_minimal_wav(segs / "segment_001.wav", 0.5)
+    (segs / "metadata.json").write_text(json.dumps({
+        "started_at": "2026-02-21T14:00:00",
+        "segments": [{"segment_id": 1, "duration_seconds": 0.5}],
+    }))
+
+    # Empty recording dir
+    (rec_dir / "rec_empty").mkdir()
+
+    return rec_dir
+
+
+@pytest.fixture
+def mock_session():
+    """Mock ClientSession with real asyncio primitives for playback testing."""
+    session = MagicMock()
+
+    session.listening = False
+    session.playback_mode = False
+
+    # VAD mock
+    session.vad = MagicMock()
+    session.vad.reset = MagicMock()
+    session.vad.feed_pcm = AsyncMock()
+    session.vad.flush = AsyncMock()
+    session.vad.on_partial_audio = None
+
+    # Decoder mock
+    session.decoder = MagicMock()
+    session.decoder.reset = MagicMock()
+    session.decoder.start_streaming = AsyncMock()
+    session.decoder.stop_streaming = AsyncMock(return_value=b"")
+
+    # Real asyncio primitives (can't mock these)
+    session._chunk_inbox = []
+    session._chunk_event = asyncio.Event()
+    session._decode_task = None
+
+    # Async method mocks
+    session._continuous_decode_loop = AsyncMock()
+    session._flush_pending_now = AsyncMock()
+    session._on_partial_audio = AsyncMock()
+    session._send = AsyncMock()
+
+    # Pipeline mock with real queue
+    session.pipeline = MagicMock()
+    session.pipeline._queue = asyncio.Queue()
+    session.pipeline.process_wav = AsyncMock(return_value=None)
+
+    return session

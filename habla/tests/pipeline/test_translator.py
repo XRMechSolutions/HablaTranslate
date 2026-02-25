@@ -419,7 +419,7 @@ class TestTranslationParsing:
         result = translator._parse_response(raw, "Original")
         assert result.corrected == "Fixed text"
         assert result.translated == "Traducción"
-        assert result.confidence == 0.1  # Low confidence on fallback
+        assert result.confidence == 0.3  # Low confidence on regex fallback
 
     def test_parse_complete_failure(self, translator_config):
         """Complete parse failure returns original as translation."""
