@@ -20,6 +20,7 @@ async function openSettings() {
   $('#settingsModal').classList.add('vis');
   await loadProviders();
   await loadCurrentLLM();
+  loadQualityMetrics();
 }
 
 async function loadProviders() {
@@ -352,6 +353,21 @@ export function handlePlaybackMessage(m) {
   }
 }
 
+async function loadQualityMetrics() {
+  try {
+    const r = await fetch('/api/system/metrics');
+    if (!r.ok) return;
+    const d = await r.json();
+    $('#qConfAvg').textContent = d.confidence?.average != null ? d.confidence.average.toFixed(2) : '-';
+    $('#qConfLow').textContent = d.confidence?.low_count || 0;
+    $('#qCorrections').textContent = d.corrections?.total_detected || 0;
+    $('#qIdiomDb').textContent = d.idioms?.pattern_db_hits || 0;
+    $('#qIdiomLlm').textContent = d.idioms?.llm_hits || 0;
+    const avg = d.processing?.avg_ms;
+    $('#qProcAvg').textContent = avg ? `${Math.round(avg)}ms` : '-';
+  } catch (e) { /* metrics unavailable */ }
+}
+
 async function switchLLM() {
   const prov = $('#provSelect').value;
   const model = $('#modelSelect').value;
@@ -372,6 +388,7 @@ export function initSettings() {
   $('#gearBtn').onclick = openSettings;
   $('#settingsClose').onclick = () => { $('#settingsModal').classList.remove('vis'); };
   $('#refreshModels').onclick = loadProviders;
+  $('#qualityRefresh').onclick = loadQualityMetrics;
   $('#asrAutoLang').onchange = (e) => { setAsrAutoLanguage(e.target.checked); };
   $('#saveAudioToggle').onchange = (e) => { setRecording(e.target.checked); };
   $('#audioCompression').onchange = (e) => { setAudioCompression(e.target.checked); };

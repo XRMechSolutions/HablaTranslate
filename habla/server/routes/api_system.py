@@ -1,8 +1,9 @@
-"""System management routes: status, direction, mode, ASR language, speakers, recording."""
+"""System management routes: status, direction, mode, ASR language, speakers, recording, metrics."""
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from server.db.database import get_db
 from server.routes._state import _pipeline, _lmstudio_manager
 import server.routes._state as _state
 
@@ -150,4 +151,106 @@ async def set_recording(req: RecordingRequest):
     return {
         "recording_enabled": app_config.recording.enabled,
         "output_dir": str(app_config.recording.output_dir)
+    }
+
+
+@system_router.get("/metrics")
+async def system_metrics():
+    """Return translation quality metrics: confidence distribution, correction rates, idiom stats.
+
+    Combines in-memory pipeline/translator metrics with DB aggregates.
+    Returns 503 if pipeline not initialized.
+    """
+    if not _state._pipeline:
+        raise HTTPException(503, "Pipeline not initialized")
+
+    db = await get_db()
+    pipeline = _state._pipeline
+
+    # Confidence distribution from DB
+    confidence_rows = await db.execute_fetchall("""
+        SELECT
+            COUNT(*) as total,
+            ROUND(AVG(confidence), 3) as avg_confidence,
+            COUNT(CASE WHEN confidence < 0.3 THEN 1 END) as low_count,
+            COUNT(CASE WHEN confidence >= 0.3 AND confidence < 0.7 THEN 1 END) as medium_count,
+            COUNT(CASE WHEN confidence >= 0.7 THEN 1 END) as high_count
+        FROM exchanges
+    """)
+    conf = dict(confidence_rows[0]) if confidence_rows else {}
+
+    # Correction frequency per speaker
+    correction_rows = await db.execute_fetchall("""
+        SELECT e.speaker_id,
+               COALESCE(s.custom_name, s.auto_label, e.speaker_id) as speaker_name,
+               COUNT(*) as total_exchanges,
+               SUM(CASE WHEN e.is_correction THEN 1 ELSE 0 END) as corrections
+        FROM exchanges e
+        LEFT JOIN speakers s ON e.speaker_id = s.id AND e.session_id = s.session_id
+        GROUP BY e.speaker_id
+    """)
+    corrections_by_speaker = [
+        {
+            "speaker_id": r["speaker_id"],
+            "speaker_name": r["speaker_name"],
+            "total_exchanges": r["total_exchanges"],
+            "corrections": r["corrections"],
+        }
+        for r in correction_rows
+    ]
+
+    # Average processing time
+    proc_rows = await db.execute_fetchall("""
+        SELECT ROUND(AVG(processing_ms), 0) as avg_ms,
+               MIN(processing_ms) as min_ms,
+               MAX(processing_ms) as max_ms
+        FROM exchanges WHERE processing_ms > 0
+    """)
+    processing = dict(proc_rows[0]) if proc_rows else {}
+
+    # Pipeline in-memory metrics
+    pipeline_metrics = pipeline.metrics
+    translator_metrics = pipeline.translator.metrics
+
+    # Compute translator avg latency
+    avg_latency = 0.0
+    if translator_metrics["requests"] > 0:
+        avg_latency = round(translator_metrics["total_latency_ms"] / translator_metrics["requests"], 1)
+
+    return {
+        "confidence": {
+            "total_exchanges": conf.get("total", 0),
+            "average": conf.get("avg_confidence"),
+            "low_count": conf.get("low_count", 0),
+            "medium_count": conf.get("medium_count", 0),
+            "high_count": conf.get("high_count", 0),
+        },
+        "corrections": {
+            "total_detected": pipeline_metrics.get("corrections_detected", 0),
+            "by_speaker": corrections_by_speaker,
+        },
+        "idioms": {
+            "pattern_db_hits": pipeline_metrics.get("idiom_pattern_db_hits", 0),
+            "llm_hits": pipeline_metrics.get("idiom_llm_hits", 0),
+            "patterns_loaded": pipeline.idiom_scanner.count,
+        },
+        "pipeline": {
+            "segments_processed": pipeline_metrics.get("segments_processed", 0),
+            "translations_completed": pipeline_metrics.get("translations_completed", 0),
+            "translation_errors": pipeline_metrics.get("translation_errors", 0),
+            "low_confidence_count": pipeline_metrics.get("low_confidence_count", 0),
+            "queue_depth": pipeline_metrics.get("queue_depth", 0),
+            "peak_queue_depth": pipeline_metrics.get("peak_queue_depth", 0),
+        },
+        "translator": {
+            "provider": translator_metrics.get("provider"),
+            "model": translator_metrics.get("model"),
+            "avg_latency_ms": avg_latency,
+            "total_requests": translator_metrics.get("requests", 0),
+            "successes": translator_metrics.get("successes", 0),
+            "failures": translator_metrics.get("failures", 0),
+            "timeouts": translator_metrics.get("timeouts", 0),
+            "degraded": translator_metrics.get("degraded", False),
+        },
+        "processing": processing,
     }

@@ -101,6 +101,10 @@ class PipelineOrchestrator:
             "peak_queue_depth": 0,
             "sessions_created": 0,
             "sessions_closed": 0,
+            "low_confidence_count": 0,
+            "corrections_detected": 0,
+            "idiom_pattern_db_hits": 0,
+            "idiom_llm_hits": 0,
         }
 
         # Thread safety: WhisperX model is not thread-safe.
@@ -482,6 +486,16 @@ class PipelineOrchestrator:
 
         # Merge idiom matches
         merged_phrases = self._merge_idioms(idiom_matches, result.flagged_phrases)
+
+        # Track quality metrics
+        if result.confidence < 0.3:
+            self._metrics["low_confidence_count"] += 1
+            logger.warning(
+                f"Low confidence ({result.confidence:.2f}) translation: "
+                f"src='{text[:100]}' -> '{result.translated[:100]}'"
+            )
+        if result.is_correction:
+            self._metrics["corrections_detected"] += 1
 
         # Update speaker hint
         if result.speaker_hint and not speaker.custom_name:
@@ -924,6 +938,7 @@ class PipelineOrchestrator:
             key = m.canonical.lower()
             if key not in seen:
                 seen.add(key)
+                self._metrics["idiom_pattern_db_hits"] += 1
                 result.append(FlaggedPhrase(
                     phrase=m.canonical,
                     literal=m.literal,
@@ -941,6 +956,7 @@ class PipelineOrchestrator:
             key = fp.phrase.lower()
             if key not in seen:
                 seen.add(key)
+                self._metrics["idiom_llm_hits"] += 1
                 fp.source = "llm"
                 result.append(fp)
 
