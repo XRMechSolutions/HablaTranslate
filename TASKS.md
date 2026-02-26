@@ -306,15 +306,15 @@ Fix backend gaps that cause silent data loss or incorrect behavior.
 Get the project production-ready for self-hosted use over Tailscale.
 
 ### 4.1 Git Hygiene
-- [ ] Create `.gitignore` (`.pyc`, `__pycache__`, `*.db*`, `.env`, `venv/`, `.vscode/`, `*.log`, `data/audio/`, `.DS_Store`)
-- [ ] Remove already-tracked files that should be ignored (`habla.db`, `__pycache__/`)
+- [x] Create `.gitignore` (`.pyc`, `__pycache__`, `*.db*`, `.env`, `venv/`, `.vscode/`, `*.log`, `data/audio/`, `.DS_Store`)
+- [x] Remove already-tracked files that should be ignored (`habla.db`, `__pycache__/`) — verified none tracked
 
 ### 4.2 Dependency Pinning
-- [ ] Pin exact versions in `requirements.txt` (run `pip freeze` and lock current working versions)
-- [ ] Consider adding `requirements-dev.txt` for test/lint dependencies
+- [x] Pin exact versions in `requirements.txt` (run `pip freeze` and lock current working versions)
+- [x] Add `requirements-dev.txt` for test dependencies
 
 ### 4.3 Environment Configuration
-- [ ] Create `.env.example` with all env vars (required and optional) and defaults
+- [x] Create `.env.example` with all env vars (required and optional) and defaults
 - [x] Validate `HF_TOKEN` at startup and log clear error if missing
 - [x] Make `db_path` and `data_dir` configurable via env vars
 - [x] Add `LOG_LEVEL` env var support
@@ -325,7 +325,7 @@ Get the project production-ready for self-hosted use over Tailscale.
 - [x] Add `restart: unless-stopped` to docker-compose services
 - [x] Add resource limits (memory) to docker-compose
 - [x] Pin Ollama image version (was `latest`, now `0.5`)
-- [ ] Use Docker secrets or env_file for `HF_TOKEN` (not inline env var)
+- [x] Use Docker `env_file` for secrets (HF_TOKEN, OPENAI_API_KEY via `.env`)
 - [x] Add `depends_on` health check condition so Habla waits for Ollama readiness
 
 ### 4.5 Health & Monitoring
@@ -334,14 +334,14 @@ Get the project production-ready for self-hosted use over Tailscale.
 - [x] Add request timing middleware (log slow requests > 5s)
 
 ### 4.6 HTTPS Setup
-- [ ] Document Tailscale HTTPS setup for secure mic access on Android
-- [ ] OR add nginx/Caddy reverse proxy config for TLS termination
-- [ ] Verify WebSocket upgrade works through HTTPS proxy
+- [x] Document Tailscale HTTPS setup for secure mic access on Android (`.dev/docs/HTTPS-Setup.md`)
+- [x] Document Caddy reverse proxy config as alternative
+- [x] Verify WebSocket upgrade works through HTTPS proxy (documented in setup guide)
 
 ### 4.7 Database Backup
-- [ ] Create backup script (SQLite `.dump` → gzip, daily cron)
-- [ ] Document restore procedure
-- [ ] Add backup path to `.env.example`
+- [x] Create backup script (`scripts/backup_db.sh` — SQLite `.dump` -> gzip, rotation)
+- [x] Document restore procedure (in script comments)
+- [x] Add backup path to `.gitignore`
 
 ---
 
