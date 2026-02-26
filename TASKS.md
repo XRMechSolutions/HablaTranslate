@@ -292,12 +292,12 @@ Fix backend gaps that cause silent data loss or incorrect behavior.
 
 > **Reference:** `C:\Users\clint\GeneralizedServiceChatbot` — `RAGMetrics` quality tracking pattern
 
-- [ ] Track LLM confidence scores over time (already returned in `TranslationResult.confidence`)
-- [ ] Log low-confidence translations (< 0.3) with source text for review
-- [ ] Track correction frequency per speaker (how often the LLM corrects ASR errors)
-- [ ] Track idiom detection rate (pattern DB hits vs LLM-only detections)
-- [ ] Add `GET /api/system/metrics` endpoint — translation stats, confidence distribution, correction rates
-- [ ] Show quality summary in settings panel or system status
+- [x] Track LLM confidence scores over time (already returned in `TranslationResult.confidence`)
+- [x] Log low-confidence translations (< 0.3) with source text for review
+- [x] Track correction frequency per speaker (how often the LLM corrects ASR errors)
+- [x] Track idiom detection rate (pattern DB hits vs LLM-only detections)
+- [x] Add `GET /api/system/metrics` endpoint — translation stats, confidence distribution, correction rates
+- [x] Show quality summary in settings panel or system status
 
 ---
 

@@ -145,6 +145,17 @@
       <div class="set-metric"><span>Failures</span><span class="val" id="metFailures">0</span></div>
     </div>
     <div class="set-section">
+      <div class="set-label">Quality <button class="set-refresh" id="qualityRefresh" style="font-size:11px;padding:1px 6px">Refresh</button></div>
+      <div id="qualityPanel" style="font-size:12px; color:var(--fg2)">
+        <div class="set-metric"><span>Avg confidence</span><span class="val" id="qConfAvg">-</span></div>
+        <div class="set-metric"><span>Low confidence</span><span class="val" id="qConfLow">0</span></div>
+        <div class="set-metric"><span>Corrections</span><span class="val" id="qCorrections">0</span></div>
+        <div class="set-metric"><span>Idioms (pattern DB)</span><span class="val" id="qIdiomDb">0</span></div>
+        <div class="set-metric"><span>Idioms (LLM)</span><span class="val" id="qIdiomLlm">0</span></div>
+        <div class="set-metric"><span>Avg processing</span><span class="val" id="qProcAvg">-</span></div>
+      </div>
+    </div>
+    <div class="set-section">
       <div class="set-label">Audio Input</div>
       <div class="set-row">
         <label class="set-toggle">
