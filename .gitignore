@@ -67,6 +67,9 @@ htmlcov/
 # Session state (saved on shutdown, not source)
 habla/data/last_session.json
 
+# Database backups
+habla/data/backups/
+
 # Audio recordings (may contain voice samples, often large)
 habla/data/audio/recordings/
 habla/data/audio/*.wav
