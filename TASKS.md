@@ -284,9 +284,9 @@ Fix backend gaps that cause silent data loss or incorrect behavior.
 - [x] Fix topic summary prompt condition — orchestrator initializes `topic_summary = ""` but prompt checks for `None`
 
 ### 3.5 Pipeline Error Reporting
-- [ ] Send error callback to client when `_process_audio_segment()` fails at ASR stage (translation-stage errors already reach client)
-- [ ] Send error callback when partial transcription fails (currently swallowed in orchestrator)
-- [ ] Log and notify when ffmpeg subprocess crashes (currently causes silent audio loss)
+- [x] Send error callback to client when `_process_audio_segment()` fails at ASR stage (translation-stage errors already reach client)
+- [x] Send error callback when partial transcription fails (currently swallowed in orchestrator)
+- [x] Log and notify when ffmpeg subprocess crashes (currently causes silent audio loss)
 
 ### 3.6 Translation Quality Metrics (from GeneralizedServiceChatbot RAGMetrics)
 

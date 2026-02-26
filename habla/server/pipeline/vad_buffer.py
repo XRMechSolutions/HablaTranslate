@@ -277,11 +277,18 @@ class AudioDecoder:
         self._read_task: asyncio.Task | None = None
         self._pcm_chunks: list[bytes] = []
         self._pcm_lock = asyncio.Lock()
+        self._dead = False  # set True when ffmpeg crashes
+
+    @property
+    def is_dead(self) -> bool:
+        """True if ffmpeg process has crashed and audio decoding is lost."""
+        return self._dead
 
     async def start_streaming(self):
         """Start a persistent ffmpeg process for streaming decode."""
         await self.stop_streaming()
         self._pcm_chunks = []
+        self._dead = False
         self._process = await asyncio.create_subprocess_exec(
             "ffmpeg", "-y",
             "-i", "pipe:0",
@@ -314,11 +321,18 @@ class AudioDecoder:
         """Feed a WebM chunk to the streaming ffmpeg process. Returns any available PCM."""
         if not self._process or not self._process.stdin:
             return b""
+        # Detect crashed ffmpeg process
+        if self._process.returncode is not None and not self._dead:
+            self._dead = True
+            logger.error(f"ffmpeg process crashed (exit code {self._process.returncode}) — audio decoding lost for this session")
+            return b""
         try:
             self._process.stdin.write(webm_bytes)
             await self._process.stdin.drain()
         except (BrokenPipeError, ConnectionResetError, OSError) as e:
-            logger.debug(f"ffmpeg stdin write error: {e}")
+            if not self._dead:
+                self._dead = True
+                logger.error(f"ffmpeg process died (write error: {e}) — audio decoding lost for this session")
             return b""
 
         # Yield briefly to let the reader task collect output

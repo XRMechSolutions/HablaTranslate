@@ -87,6 +87,7 @@ def session(mock_websocket, mock_pipeline):
     s.decoder.start_streaming = AsyncMock()
     s.decoder.stop_streaming = AsyncMock(return_value=b"")
     s.decoder.feed_chunk = AsyncMock(return_value=b"")
+    s.decoder.is_dead = False
 
     yield s
 
@@ -1025,6 +1026,7 @@ class TestMessageDispatch:
         s.decoder.start_streaming = AsyncMock()
         s.decoder.stop_streaming = AsyncMock(return_value=b"")
         s.decoder.feed_chunk = AsyncMock(return_value=b"")
+        s.decoder.is_dead = False
 
         yield s, mock_pipeline
 

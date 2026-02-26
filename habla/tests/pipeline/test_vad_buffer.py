@@ -456,6 +456,7 @@ class TestAudioDecoderStreaming:
         """feed_chunk should write to ffmpeg stdin."""
         decoder = AudioDecoder()
         decoder._process = AsyncMock()
+        decoder._process.returncode = None  # process is running
         decoder._process.stdin = AsyncMock()
 
         await decoder.feed_chunk(b"test_webm_data")
