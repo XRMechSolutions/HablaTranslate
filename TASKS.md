@@ -350,23 +350,23 @@ Get the project production-ready for self-hosted use over Tailscale.
 Build confidence that changes don't break the pipeline.
 
 ### 5.1 Unit Tests
-- [ ] Idiom scanner — pattern matching, dedup, edge cases (empty input, overlapping matches)
-- [ ] Speaker tracker — auto-labeling, rename, role hints
-- [ ] Vocab service — CRUD, SM-2 calculations, Anki export format
-- [ ] Translator — prompt building, JSON response parsing, timeout handling
-- [ ] VAD buffer — speech detection, segment boundaries, energy fallback
-- [ ] Config — env var overrides, defaults, validation
+- [x] Idiom scanner — pattern matching, dedup, edge cases (23 tests)
+- [x] Speaker tracker — auto-labeling, rename, role hints (32 tests)
+- [x] Vocab service — CRUD, SM-2 calculations, Anki export format (32 tests)
+- [x] Translator — prompt building, JSON response parsing, timeout handling (49 tests)
+- [x] VAD buffer — speech detection, segment boundaries, energy fallback (32 tests)
+- [x] Config — env var overrides, defaults, validation (40 tests)
 
 ### 5.2 Integration Tests
-- [ ] WebSocket connection lifecycle (connect, send audio, receive translation, disconnect)
-- [ ] REST API endpoints (vocab CRUD, system status, direction toggle)
-- [ ] Database operations (init, insert, query, FTS search)
-- [ ] Full pipeline: text input → translation → exchange persisted → vocab saved
+- [x] WebSocket connection lifecycle (connect, send audio, receive translation, disconnect) (107 tests)
+- [x] REST API endpoints (vocab CRUD, system status, direction toggle) (76 tests)
+- [x] Database operations (init, insert, query, FTS search) (40 tests)
+- [x] Full pipeline: text input → translation → exchange persisted → vocab saved (102 tests)
 
 ### 5.3 Test Infrastructure
-- [ ] Add `pytest` and `pytest-asyncio` to dev requirements
-- [ ] Create test fixtures (mock Ollama responses, sample audio, pre-seeded DB)
-- [ ] Add `pytest.ini` or `pyproject.toml` test configuration
+- [x] Add `pytest` and `pytest-asyncio` to dev requirements
+- [x] Create test fixtures (mock Ollama responses, sample audio, pre-seeded DB) — conftest.py (301 lines)
+- [x] Add `pytest.ini` test configuration (markers: unit, integration, slow, benchmark)
 
 ---
 
