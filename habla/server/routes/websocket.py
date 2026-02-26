@@ -314,6 +314,9 @@ class ClientSession:
                 # Feed each chunk to streaming ffmpeg
                 for chunk in chunks:
                     pcm = await self.decoder.feed_chunk(chunk)
+                    if self.decoder.is_dead:
+                        await self._send({"type": "error", "message": "Audio decoder crashed — restart listening to recover"})
+                        return
                     if pcm:
                         empty_cycles = 0
                         logger.debug(f"Decode produced {len(pcm)} bytes PCM")

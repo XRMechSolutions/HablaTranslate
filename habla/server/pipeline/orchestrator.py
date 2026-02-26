@@ -604,6 +604,11 @@ class PipelineOrchestrator:
 
             except Exception as e:
                 logger.warning(f"Partial processing error: {e}")
+                if self._on_error:
+                    try:
+                        await self._on_error(f"Partial transcription error: {e}")
+                    except Exception:
+                        pass
             finally:
                 if wav_path:
                     Path(wav_path).unlink(missing_ok=True)
@@ -691,6 +696,12 @@ class PipelineOrchestrator:
                     raise
                 except Exception as e:
                     self._metrics["translation_errors"] += 1
+                    logger.error(f"Pipeline processing error: {e}", exc_info=True)
+                    if self._on_error:
+                        try:
+                            await self._on_error(f"Processing failed: {e}")
+                        except Exception:
+                            pass
                     if not future.done():
                         future.set_exception(e)
             except asyncio.CancelledError:
