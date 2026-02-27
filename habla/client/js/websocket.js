@@ -10,8 +10,13 @@ async function restoreSession() {
   try {
     const r = await fetch('/api/system/status');
     const d = await r.json();
-    if (d.direction) { state.direction = d.direction; updateDirUI(); }
-    if (d.mode) { state.mode = d.mode; updateModeUI(); }
+    // Only restore direction/mode from server if client has no localStorage preference
+    if (d.direction && !localStorage.getItem('habla_direction')) {
+      state.direction = d.direction; updateDirUI();
+    }
+    if (d.mode && !localStorage.getItem('habla_mode')) {
+      state.mode = d.mode; updateModeUI();
+    }
     if (d.session_id) state.sessionId = d.session_id;
   } catch {}
 }
@@ -32,6 +37,15 @@ export function connect() {
     state.wsAttempt = 0;
     state.wsGaveUp = false;
     clearPartial();
+    // Sync client direction/mode to server (client localStorage is authoritative)
+    const ld = localStorage.getItem('habla_direction');
+    if (ld === 'es_to_en' || ld === 'en_to_es') {
+      send({ type: 'toggle_direction', direction: ld });
+    }
+    const lm = localStorage.getItem('habla_mode');
+    if (lm === 'conversation' || lm === 'classroom') {
+      send({ type: 'set_mode', mode: lm });
+    }
     if (state.listening) {
       send({ type: 'start_listening' });
     }
@@ -86,8 +100,13 @@ function scheduleReconnect() {
 function handleMsg(m) {
   switch (m.type) {
     case 'status':
-      state.direction = m.direction || state.direction;
-      state.mode = m.mode || state.mode;
+      // Only accept server direction/mode if client has no localStorage preference
+      if (!localStorage.getItem('habla_direction')) {
+        state.direction = m.direction || state.direction;
+      }
+      if (!localStorage.getItem('habla_mode')) {
+        state.mode = m.mode || state.mode;
+      }
       if (m.session_id) state.sessionId = m.session_id;
       updateDirUI(); updateModeUI();
       if (m.pipeline_ready === false) showSvcNotice('ASR unavailable \u2014 text-only mode');
