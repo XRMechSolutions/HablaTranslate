@@ -32,10 +32,12 @@ $('#txtIn').onkeydown = e => { if (e.key === 'Enter') $('#sendBtn').click(); };
 
 $('#dirBtn').onclick = () => {
   state.direction = state.direction === 'es_to_en' ? 'en_to_es' : 'es_to_en';
+  localStorage.setItem('habla_direction', state.direction);
   send({ type: 'toggle_direction', direction: state.direction }); updateDirUI();
 };
 $('#modeBtn').onclick = () => {
   state.mode = state.mode === 'conversation' ? 'classroom' : 'conversation';
+  localStorage.setItem('habla_mode', state.mode);
   send({ type: 'set_mode', mode: state.mode }); updateModeUI();
 };
 $('#vocabBtn').onclick = () => location.href = '/vocab';
@@ -86,6 +88,18 @@ setInterval(() => {
 // Service worker
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
+
+// Restore direction/mode from localStorage before connecting
+const savedDir = localStorage.getItem('habla_direction');
+if (savedDir === 'es_to_en' || savedDir === 'en_to_es') {
+  state.direction = savedDir;
+  updateDirUI();
+}
+const savedMode = localStorage.getItem('habla_mode');
+if (savedMode === 'conversation' || savedMode === 'classroom') {
+  state.mode = savedMode;
+  updateModeUI();
 }
 
 // Connect
