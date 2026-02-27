@@ -19,25 +19,27 @@
 <div class="hdr">
   <h1>Habla</h1>
   <div class="hdr-r">
-    <button class="dir-btn" id="dirBtn">
+    <button class="dir-btn" id="dirBtn" aria-label="Switch translation direction">
       <span id="srcLang">ES</span>
       <span class="arr">&harr;</span>
       <span id="tgtLang">EN</span>
     </button>
-    <button class="mode-btn" id="modeBtn">conversation</button>
-    <button class="icon-btn" id="saveBtn" title="Save Transcript">&#128190;</button>
-    <button class="icon-btn" id="clearBtn" title="New Session">&#8635;</button>
-    <button class="gear-btn" id="gearBtn" title="LLM Settings">&#9881;</button>
-    <div class="dot" id="statusDot"></div>
+    <button class="mode-btn" id="modeBtn" aria-label="Toggle conversation or classroom mode">conversation</button>
+    <button class="icon-btn" id="saveBtn" title="Save Transcript" aria-label="Save transcript">&#128190;</button>
+    <button class="icon-btn" id="clearBtn" title="New Session" aria-label="New session">&#8635;</button>
+    <button class="gear-btn" id="gearBtn" title="LLM Settings" aria-label="Settings">&#9881;</button>
+    <div class="dot" id="statusDot" role="status"><span class="dot-label" id="dotLabel">Disconnected</span></div>
   </div>
 </div>
 
-<div class="transcript" id="transcript">
+<div class="transcript" id="transcript" aria-live="polite" role="log">
   <div class="placeholder" id="placeholder">
     Tap the microphone to start listening<br>
     <span style="font-size:11px;color:var(--fg3)">Audio streams continuously -- no need to hold the button</span>
   </div>
 </div>
+
+<button class="scroll-bottom" id="scrollBottom" aria-label="Scroll to bottom">&#8595;</button>
 
 <div class="listen-bar" id="listenBar">
   <div class="bars"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>
@@ -55,7 +57,7 @@
 <div class="spk-bar" id="spkBar"></div>
 
 <div class="ctrl">
-  <button class="listen-btn" id="listenBtn" title="Start / Stop listening">
+  <button class="listen-btn" id="listenBtn" title="Start / Stop listening" aria-label="Start or stop listening">
     <svg class="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
       <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
@@ -67,8 +69,9 @@
   </button>
 
   <div class="txt-area">
+    <label for="txtIn" class="sr-only">Type text to translate</label>
     <input class="txt-in" id="txtIn" placeholder="Or type to translate..." />
-    <button class="send" id="sendBtn">&rarr;</button>
+    <button class="send" id="sendBtn" aria-label="Send text">&rarr;</button>
   </div>
 
   <button class="nav-btn" id="historyBtn">History</button>
@@ -77,7 +80,7 @@
 
 <button class="sel-save" id="selSave">Save to Vocab</button>
 
-<div class="modal-bg" id="renameModal">
+<div class="modal-bg" id="renameModal" role="dialog" aria-modal="true" aria-label="Name this speaker">
   <div class="modal">
     <h3>Name this speaker</h3>
     <input id="renameInput" placeholder="e.g. Profesor, Maria..." />
@@ -88,7 +91,7 @@
   </div>
 </div>
 
-<div class="modal-bg" id="saveModal">
+<div class="modal-bg" id="saveModal" role="dialog" aria-modal="true" aria-label="Save transcript">
   <div class="modal">
     <h3>Save Transcript</h3>
     <input id="saveNotesInput" placeholder="Session name (optional)..." />
@@ -99,7 +102,7 @@
   </div>
 </div>
 
-<div class="modal-bg" id="settingsModal">
+<div class="modal-bg" id="settingsModal" role="dialog" aria-modal="true" aria-label="Settings">
   <div class="modal settings">
     <h3>LLM Settings</h3>
     <div class="set-section">

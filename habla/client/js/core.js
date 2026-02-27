@@ -46,6 +46,8 @@ export const state = {
   wsAttempt: 0,
   wsReconnTimer: null,
   wsGaveUp: false,
+  lastPingSent: 0,
+  latencyMs: null,
   pendingTextQueue: [],
   audioQueue: [],
   audioQueueBytes: 0,
