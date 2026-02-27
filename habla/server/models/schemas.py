@@ -63,6 +63,7 @@ class Exchange(BaseModel):
     is_correction: bool = False
     correction_detail: Optional[CorrectionDetail] = None
     processing_ms: int = 0
+    audio_path: Optional[str] = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -119,6 +120,7 @@ class WSTranslation(BaseModel):
     is_correction: bool = False
     correction_detail: Optional[CorrectionDetail] = None
     confidence: float = 0.0
+    has_audio: bool = False
     timestamp: str
 
 

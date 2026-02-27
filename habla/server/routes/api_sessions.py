@@ -1,6 +1,7 @@
 """Session history routes: list, get, exchanges, save, export, delete."""
 
 import json
+from pathlib import Path
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query
@@ -132,6 +133,7 @@ async def get_session_exchanges(
                 ex["correction_detail"] = json.loads(ex["correction_json"])
             except (json.JSONDecodeError, TypeError):
                 pass
+        ex["has_audio"] = bool(ex.get("audio_path"))
         exchanges.append(ex)
     return exchanges
 
@@ -209,6 +211,27 @@ async def export_session(session_id: int):
     )
 
 
+@session_router.get("/{session_id}/exchanges/{exchange_id}/audio")
+async def get_exchange_audio(session_id: int, exchange_id: int):
+    """Serve the audio clip for a specific exchange. Returns 404 if not found."""
+    from fastapi.responses import FileResponse
+
+    db = await get_db()
+    rows = await db.execute_fetchall(
+        "SELECT audio_path FROM exchanges WHERE id = ? AND session_id = ?",
+        (exchange_id, session_id),
+    )
+    if not rows:
+        raise HTTPException(404, "Exchange not found")
+    audio_path = rows[0]["audio_path"]
+    if not audio_path:
+        raise HTTPException(404, "No audio clip for this exchange")
+    path = Path(audio_path)
+    if not path.exists():
+        raise HTTPException(404, "Audio file missing")
+    return FileResponse(path, media_type="audio/wav", filename=f"exchange_{exchange_id}.wav")
+
+
 @session_router.delete("/{session_id}")
 async def delete_session(session_id: int):
     """Delete a session and all associated data (metrics, exchanges, speakers). Returns 404 if not found.
@@ -221,6 +244,12 @@ async def delete_session(session_id: int):
     )
     if not rows:
         raise HTTPException(404, "Session not found")
+
+    # Clean up audio clips directory for this session
+    clips_dir = Path("data/audio/clips") / str(session_id)
+    if clips_dir.exists():
+        import shutil
+        shutil.rmtree(clips_dir, ignore_errors=True)
 
     await db.execute("DELETE FROM quality_metrics WHERE session_id = ?", (session_id,))
     await db.execute("DELETE FROM exchanges WHERE session_id = ?", (session_id,))

@@ -429,8 +429,8 @@ class PipelineOrchestrator:
                 """INSERT INTO exchanges
                    (session_id, speaker_id, direction, raw_transcript,
                     corrected_source, translation, confidence,
-                    is_correction, correction_json, processing_ms)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    is_correction, correction_json, processing_ms, audio_path)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     self.session_id,
                     exchange.speaker.id,
@@ -442,6 +442,7 @@ class PipelineOrchestrator:
                     exchange.is_correction,
                     correction_json,
                     exchange.processing_ms,
+                    exchange.audio_path,
                 ),
             )
             await db.commit()
@@ -464,7 +465,9 @@ class PipelineOrchestrator:
         await self._queue.put(("wav", wav_path, future))
         return await future
 
-    async def process_text(self, text: str, speaker_id: str = "MANUAL") -> Exchange:
+    async def process_text(
+        self, text: str, speaker_id: str = "MANUAL", audio_path: str | None = None
+    ) -> Exchange:
         """Process text directly (skip ASR). Useful for testing or typed input."""
         start_time = time.monotonic()
 
@@ -515,6 +518,7 @@ class PipelineOrchestrator:
             is_correction=result.is_correction,
             correction_detail=result.correction_detail,
             processing_ms=elapsed_ms,
+            audio_path=audio_path,
         )
 
         # Update context
@@ -543,6 +547,7 @@ class PipelineOrchestrator:
                 is_correction=result.is_correction,
                 correction_detail=result.correction_detail,
                 confidence=result.confidence,
+                has_audio=bool(exchange.audio_path),
                 timestamp=datetime.now(UTC).isoformat(),
             )
             await self._on_translation(ws_msg)
@@ -779,6 +784,26 @@ class PipelineOrchestrator:
 
         return wav_path
 
+    def _save_audio_clip(self, wav_path: str) -> str | None:
+        """Save a copy of the WAV as an audio clip for later playback.
+
+        Returns the relative path to the saved clip, or None if disabled/failed.
+        """
+        if not self.config.session.save_audio_clips or not self.session_id:
+            return None
+        try:
+            import shutil
+            clips_dir = Path("data/audio/clips") / str(self.session_id)
+            clips_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            clip_path = clips_dir / f"clip_{ts}.wav"
+            shutil.copy2(wav_path, clip_path)
+            logger.debug(f"Saved audio clip: {clip_path}")
+            return str(clip_path)
+        except Exception as e:
+            logger.warning(f"Failed to save audio clip: {e}")
+            return None
+
     async def _process_audio_segment_from_wav(self, wav_path: str) -> Exchange | None:
         """Run full pipeline on a WAV file (used by both PTT and continuous modes).
 
@@ -791,6 +816,9 @@ class PipelineOrchestrator:
         # Normalize audio (bandpass + loudness) before ASR
         wav_path = await self._normalize_wav(wav_path)
 
+        # Save audio clip before ASR (WAV gets deleted after processing)
+        clip_path = self._save_audio_clip(wav_path)
+
         # Run ASR + diarization in thread (blocking GPU ops)
         transcript, diarized_segments = await asyncio.to_thread(
             self._run_asr_and_diarize, wav_path
@@ -798,6 +826,9 @@ class PipelineOrchestrator:
 
         if not transcript or not transcript.strip():
             logger.warning("Full ASR returned empty transcript — WhisperX VAD may have rejected the audio")
+            # Clean up clip if ASR produced nothing
+            if clip_path:
+                Path(clip_path).unlink(missing_ok=True)
             return None
 
         # Determine primary speaker from diarization
@@ -821,16 +852,20 @@ class PipelineOrchestrator:
             })
 
         # Fire translation concurrently — don't block the ASR queue waiting for LLM
-        task = asyncio.create_task(self._translate_and_notify(transcript, speaker_id, start_time))
+        task = asyncio.create_task(
+            self._translate_and_notify(transcript, speaker_id, start_time, audio_path=clip_path)
+        )
         self._inflight_translations.add(task)
         task.add_done_callback(self._inflight_translations.discard)
 
         return None  # Translation result sent via callback, not via future
 
-    async def _translate_and_notify(self, transcript: str, speaker_id: str, start_time: float):
+    async def _translate_and_notify(
+        self, transcript: str, speaker_id: str, start_time: float, audio_path: str | None = None
+    ):
         """Run translation outside the queue so ASR can continue processing."""
         try:
-            exchange = await self.process_text(transcript, speaker_id)
+            exchange = await self.process_text(transcript, speaker_id, audio_path=audio_path)
             if exchange:
                 exchange.processing_ms = int((time.monotonic() - start_time) * 1000)
                 logger.info(f"Translation done in {exchange.processing_ms}ms: '{transcript[:60]}'")
