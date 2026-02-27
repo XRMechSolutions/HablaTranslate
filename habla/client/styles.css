@@ -19,10 +19,12 @@ body{font-family:-apple-system,system-ui,'Segoe UI',sans-serif;background:var(--
 .dir-btn.flipped .arr{transform:rotate(180deg)}
 .mode-btn{font-size:10px;padding:3px 7px;border-radius:8px;background:rgba(29,155,240,.15);color:var(--accent);font-weight:600;border:none;cursor:pointer;font-family:inherit}
 .mode-btn.classroom{background:rgba(245,158,11,.15);color:var(--amber)}
-.dot{width:7px;height:7px;border-radius:50%;background:var(--red);transition:background .3s}
-.dot.ok{background:var(--green)}
-.dot.wait{background:var(--amber);animation:pulse 1s infinite}
+.dot{display:flex;align-items:center;gap:5px}
+.dot::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--red);transition:background .3s;flex-shrink:0}
+.dot.ok::before{background:var(--green)}
+.dot.wait::before{background:var(--amber);animation:pulse 1s infinite}
 @keyframes pulse{50%{opacity:.5}}
+.dot-label{font-size:10px;color:var(--fg3);white-space:nowrap}
 
 
 /* TRANSCRIPT */
@@ -92,6 +94,11 @@ body{font-family:-apple-system,system-ui,'Segoe UI',sans-serif;background:var(--
 .diff-eq{color:var(--fg2)}
 .diff-del{color:var(--red);text-decoration:line-through}
 .diff-add{color:var(--green);font-weight:600}
+
+/* SCROLL TO BOTTOM */
+.scroll-bottom{display:none;position:fixed;bottom:140px;right:14px;z-index:50;width:36px;height:36px;border-radius:50%;background:var(--bg4);color:var(--fg2);border:1px solid var(--fg3);font-size:18px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.4);align-items:center;justify-content:center}
+.scroll-bottom.vis{display:flex}
+.scroll-bottom:active{transform:scale(.9)}
 
 /* LISTENING INDICATOR */
 .listen-bar{display:none;padding:6px 14px;background:var(--bg2);border-top:1px solid var(--bg4);flex-shrink:0;text-align:center}
@@ -214,6 +221,23 @@ body{font-family:-apple-system,system-ui,'Segoe UI',sans-serif;background:var(--
 /* SERVICE NOTICE BANNER */
 .svc-notice{display:none;padding:6px 14px;background:var(--amber);color:#1a1a1a;text-align:center;font-size:12px;font-weight:600;flex-shrink:0}
 .svc-notice.vis{display:block}
+
+/* SCREEN READER ONLY */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
+
+/* KEYBOARD FOCUS */
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button:focus:not(:focus-visible),input:focus:not(:focus-visible),select:focus:not(:focus-visible){outline:none}
+
+/* LANDSCAPE */
+@media (orientation: landscape) and (max-height: 500px){
+  .hdr{padding:6px 14px}
+  .hdr h1{font-size:15px}
+  .ctrl{padding:6px 14px;gap:6px}
+  .listen-btn{width:44px;height:44px}
+  .listen-btn svg{width:20px;height:20px}
+  .transcript{padding:6px 14px;gap:6px}
+}
 
 /* DESKTOP LAYOUT */
 @media (min-width: 900px){

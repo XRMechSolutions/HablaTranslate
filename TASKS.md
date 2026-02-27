@@ -375,20 +375,20 @@ Build confidence that changes don't break the pipeline.
 Improve usability for all users.
 
 ### 6.1 Accessibility (WCAG 2.1 Level A)
-- [ ] Add `aria-label` to all icon/emoji buttons (vocab, save, dismiss, direction toggle)
-- [ ] Add `role="dialog"` and `aria-modal="true"` to speaker rename modal
-- [ ] Add `aria-live="polite"` to transcript region for screen reader announcements
-- [ ] Add text labels alongside status dot (Connected / Disconnected / Connecting)
-- [ ] Add proper `<label>` elements for text input
-- [ ] Add keyboard focus indicators (`:focus-visible` styles)
+- [x] Add `aria-label` to all icon/emoji buttons (vocab, save, dismiss, direction toggle)
+- [x] Add `role="dialog"` and `aria-modal="true"` to speaker rename modal
+- [x] Add `aria-live="polite"` to transcript region for screen reader announcements
+- [x] Add text labels alongside status dot (Connected / Disconnected / Connecting)
+- [x] Add proper `<label>` elements for text input
+- [x] Add keyboard focus indicators (`:focus-visible` styles)
 
 ### 6.2 Client UX Polish
-- [ ] Add landscape orientation handling (prevent overlap of controls and transcript)
-- [ ] Add confirmation dialog before deleting vocab items
-- [ ] Show connection quality (latency) not just connected/disconnected
-- [ ] Add "scroll to bottom" button when user scrolls up in transcript
-- [ ] Add long-press/hold on exchange card to copy translation text
-- [ ] Handle session restore on page refresh (re-fetch current speakers, direction, mode via `/api/system/status`)
+- [x] Add landscape orientation handling (prevent overlap of controls and transcript)
+- [x] Add confirmation dialog before deleting vocab items
+- [x] Show connection quality (latency) not just connected/disconnected
+- [x] Add "scroll to bottom" button when user scrolls up in transcript
+- [x] Add long-press/hold on exchange card to copy translation text
+- [x] Handle session restore on page refresh (re-fetch current speakers, direction, mode via `/api/system/status`)
 
 ---
 

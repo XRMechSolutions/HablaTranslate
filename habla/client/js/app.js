@@ -77,8 +77,11 @@ $('#clearBtn').onclick = () => {
   clearTranscript();
 };
 
-// Keepalive
-setInterval(() => send({ type: 'ping' }), 30000);
+// Keepalive with latency tracking
+setInterval(() => {
+  state.lastPingSent = Date.now();
+  send({ type: 'ping' });
+}, 30000);
 
 // Service worker
 if ('serviceWorker' in navigator) {

@@ -583,10 +583,19 @@ export function initUI() {
   // Auto-scroll resumes only when the user scrolls back near the bottom — no timer.
   state.userScrolledUp = false;
   const transcript = $('#transcript');
+  const scrollBtn = $('#scrollBottom');
   transcript.addEventListener('scroll', () => {
     const atBottom = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < SCROLL_THRESHOLD;
     state.userScrolledUp = !atBottom;
+    if (scrollBtn) scrollBtn.classList.toggle('vis', state.userScrolledUp);
   });
+  if (scrollBtn) {
+    scrollBtn.onclick = () => {
+      transcript.scrollTop = transcript.scrollHeight;
+      state.userScrolledUp = false;
+      scrollBtn.classList.remove('vis');
+    };
+  }
 
   // Rename modal handlers
   $('#renameCancel').onclick = () => { $('#renameModal').classList.remove('vis'); state.renamingSpeakerId = null; };
@@ -649,4 +658,19 @@ export function initUI() {
       setTimeout(hideSelSave, 200);
     }
   });
+
+  // Long-press on translation text to copy
+  let _lpTimer = null;
+  transcript.addEventListener('pointerdown', (e) => {
+    const tgt = e.target.closest('.ex-tgt');
+    if (!tgt) return;
+    _lpTimer = setTimeout(() => {
+      const text = tgt.textContent.trim();
+      if (text && navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(() => toast('Copied translation', 'info', 1500)).catch(() => {});
+      }
+    }, 600);
+  });
+  transcript.addEventListener('pointerup', () => clearTimeout(_lpTimer));
+  transcript.addEventListener('pointercancel', () => clearTimeout(_lpTimer));
 }

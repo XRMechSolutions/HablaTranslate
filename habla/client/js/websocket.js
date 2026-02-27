@@ -5,11 +5,22 @@ import { $, state, send, toast, showSvcNotice, hideSvcNotice,
          flushAudioSpool } from './core.js';
 import { clearPartial, clearTranscript, showPartialSource, showPartialTranslation,
          lockTranscript, finalizeExchange, updateSpeakers, updateDirUI, updateModeUI } from './ui.js';
+
+async function restoreSession() {
+  try {
+    const r = await fetch('/api/system/status');
+    const d = await r.json();
+    if (d.direction) { state.direction = d.direction; updateDirUI(); }
+    if (d.mode) { state.mode = d.mode; updateModeUI(); }
+    if (d.session_id) state.sessionId = d.session_id;
+  } catch {}
+}
 import { handlePlaybackMessage } from './settings.js';
 
 export function connect() {
   if (state.ws && (state.ws.readyState === 0 || state.ws.readyState === 1)) return;
   $('#statusDot').className = 'dot wait';
+  const _dl0 = $('#dotLabel'); if (_dl0) _dl0.textContent = 'Connecting';
   $('#connLost').classList.remove('vis');
   state.ws = new WebSocket(WS_URL);
   state.ws.binaryType = 'arraybuffer';
@@ -17,6 +28,7 @@ export function connect() {
   state.ws.onopen = () => {
     if (window.HABLA_DEBUG) console.log('[habla] ws open', WS_URL);
     $('#statusDot').className = 'dot ok';
+    const _dl1 = $('#dotLabel'); if (_dl1) _dl1.textContent = 'Connected';
     state.wsAttempt = 0;
     state.wsGaveUp = false;
     clearPartial();
@@ -28,17 +40,20 @@ export function connect() {
       send(msg);
     }
     flushAudioSpool().catch(() => {});
+    restoreSession();
   };
 
   state.ws.onclose = () => {
     if (window.HABLA_DEBUG) console.log('[habla] ws close');
     $('#statusDot').className = 'dot';
+    const _dl2 = $('#dotLabel'); if (_dl2) _dl2.textContent = 'Disconnected';
     scheduleReconnect();
   };
 
   state.ws.onerror = () => {
     if (window.HABLA_DEBUG) console.log('[habla] ws error');
     $('#statusDot').className = 'dot';
+    const _dl3 = $('#dotLabel'); if (_dl3) _dl3.textContent = 'Disconnected';
   };
   state.ws.onmessage = e => {
     if (window.HABLA_DEBUG) {
@@ -116,6 +131,13 @@ function handleMsg(m) {
     case 'playback_finished':
     case 'playback_stopped':
       handlePlaybackMessage(m);
+      break;
+    case 'pong':
+      if (state.lastPingSent) {
+        state.latencyMs = Date.now() - state.lastPingSent;
+        const dl = $('#dotLabel');
+        if (dl && state.ws?.readyState === 1) dl.textContent = `Connected ${state.latencyMs}ms`;
+      }
       break;
     case 'error':
       toast(m.message || 'Server error', 'error');
