@@ -333,6 +333,10 @@ function buildExchangeHTML(msg) {
       ${correctedLine}${idiomH}${corrH}
     </div>` : '';
 
+  const audioBtn = (msg.has_audio && msg.exchange_id)
+    ? `<button class="audio-play" onclick="playExAudio(this,${msg.exchange_id})" title="Play audio clip">&#9654;</button>`
+    : '';
+
   return `
     <div class="ex-spk">
       <div class="spk-dot" style="background:${color}"></div>
@@ -345,6 +349,7 @@ function buildExchangeHTML(msg) {
     <div class="ex-meta">
       <span>${new Date(msg.timestamp).toLocaleTimeString()}</span>
       ${msg.confidence ? `<span>${Math.round(msg.confidence * 100)}%</span>` : ''}
+      ${audioBtn}
       ${hasNotes ? `<button class="notes-toggle" onclick="toggleNotes(this)">Notes</button>` : ''}
     </div>`;
 }
@@ -353,6 +358,36 @@ window.toggleNotes = (btn) => {
   const card = btn.closest('.ex');
   if (!card) return;
   card.classList.toggle('notes-open');
+};
+
+// --- Exchange audio playback ---
+let _exAudio = null;
+window.playExAudio = (btn, exchangeId) => {
+  // Stop any currently playing clip
+  if (_exAudio) {
+    _exAudio.pause();
+    _exAudio = null;
+    // Reset any other playing buttons
+    document.querySelectorAll('.audio-play.playing').forEach(b => {
+      b.classList.remove('playing');
+      b.innerHTML = '&#9654;';
+    });
+  }
+  if (btn.classList.contains('playing')) {
+    btn.classList.remove('playing');
+    btn.innerHTML = '&#9654;';
+    return;
+  }
+  const card = btn.closest('.ex');
+  const exData = card?._exData;
+  const sessionId = exData?.session_id || state.sessionId;
+  if (!sessionId) return;
+  btn.classList.add('playing');
+  btn.innerHTML = '&#9632;';
+  _exAudio = new Audio(`/api/sessions/${sessionId}/exchanges/${exchangeId}/audio`);
+  _exAudio.onended = () => { btn.classList.remove('playing'); btn.innerHTML = '&#9654;'; _exAudio = null; };
+  _exAudio.onerror = () => { btn.classList.remove('playing'); btn.innerHTML = '&#9654;'; _exAudio = null; toast('Audio unavailable', 'error'); };
+  _exAudio.play().catch(() => { btn.classList.remove('playing'); btn.innerHTML = '&#9654;'; _exAudio = null; });
 };
 
 // --- Speaker updates ---

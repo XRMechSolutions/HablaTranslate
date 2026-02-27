@@ -404,10 +404,11 @@ Bigger features that extend the platform. Not required for "fully functional" bu
 - [ ] Add voice selection (Spanish/English voices)
 
 ### 7.2 Audio Clip Storage
-- [ ] Wire `save_audio_clips` config flag
-- [ ] Save PCM segments to `data/audio/` with exchange ID reference
-- [ ] Populate `audio_path` column in exchanges table
-- [ ] Add playback button on exchange cards in client
+- [x] Wire `save_audio_clips` config flag (saves normalized WAV after ASR preprocessing)
+- [x] Save audio clips to `data/audio/clips/{session_id}/` with timestamp-based naming
+- [x] Populate `audio_path` column in exchanges table + `has_audio` in API responses
+- [x] Add playback button on exchange cards in client + `GET /api/sessions/{id}/exchanges/{id}/audio` endpoint
+- [x] Clean up audio clips when session is deleted
 
 ### 7.3 Conversation History UI
 - [x] Build session browser (list past sessions with date, duration, exchange count)
