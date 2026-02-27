@@ -410,9 +410,9 @@ Bigger features that extend the platform. Not required for "fully functional" bu
 - [ ] Add playback button on exchange cards in client
 
 ### 7.3 Conversation History UI
-- [ ] Build session browser (list past sessions with date, duration, exchange count)
-- [ ] Session replay view (scroll through past exchanges with speaker attribution)
-- [ ] Search across session history
+- [x] Build session browser (list past sessions with date, duration, exchange count)
+- [x] Session replay view (scroll through past exchanges with speaker attribution)
+- [x] Search across session history (GET /api/sessions/search + search bar in history.html, 3 tests)
 
 ### 7.4 Native Android Client (Kotlin/KMM)
 - [ ] Background audio capture (works with screen off)

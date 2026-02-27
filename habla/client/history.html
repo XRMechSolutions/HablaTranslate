@@ -24,6 +24,18 @@ body{font-family:-apple-system,system-ui,'Segoe UI',sans-serif;background:var(--
 .back-btn{padding:5px 10px;border-radius:8px;background:var(--bg4);color:var(--fg2);border:none;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:4px}
 .back-btn:active{transform:scale(.95)}
 
+/* SEARCH BAR */
+.search-wrap{display:flex;gap:8px;padding:10px 14px;background:var(--bg2);border-bottom:1px solid var(--bg4);flex-shrink:0}
+.search-in{flex:1;background:var(--bg3);border:1px solid var(--bg4);border-radius:18px;padding:8px 14px;color:var(--fg);font-size:13px;outline:none;font-family:inherit}
+.search-in:focus{border-color:var(--accent)}
+.search-in::placeholder{color:var(--fg3)}
+.search-clear{padding:6px 12px;border-radius:12px;background:var(--bg4);color:var(--fg2);border:none;font-size:11px;cursor:pointer;font-family:inherit;display:none}
+.search-clear.vis{display:block}
+
+/* SEARCH MATCH HIGHLIGHT */
+.match-snippet{font-size:11px;color:var(--fg3);margin-top:4px;padding:4px 8px;background:var(--bg4);border-radius:6px}
+.match-snippet mark{background:rgba(29,155,240,.3);color:var(--fg);border-radius:2px;padding:0 2px}
+
 /* MAIN CONTENT */
 .content{flex:1;overflow-y:auto;padding:10px 14px;-webkit-overflow-scrolling:touch}
 
@@ -78,6 +90,11 @@ body{font-family:-apple-system,system-ui,'Segoe UI',sans-serif;background:var(--
   <div class="hdr-r">
     <a class="back-btn" href="/">< Habla</a>
   </div>
+</div>
+
+<div class="search-wrap">
+  <input class="search-in" id="searchInput" placeholder="Search conversations..." />
+  <button class="search-clear" id="searchClear" onclick="clearSearch()">Clear</button>
 </div>
 
 <div class="content" id="content">
@@ -155,6 +172,7 @@ function sessionCardHTML(s){
     </div>
     ${notesHtml}
     ${topicHtml}
+    <div class="s-snippets" id="snip-${s.id}"></div>
     <div class="s-exchanges" id="ex-${s.id}"></div>
     <div class="s-actions" onclick="event.stopPropagation()">
       <button onclick="downloadSession(${s.id})">Download</button>
@@ -304,6 +322,74 @@ function toast(msg){
   t.textContent=msg;
   t.classList.add('vis');
   setTimeout(()=>t.classList.remove('vis'),3000);
+}
+
+// --- Search ---
+let searchTimer=null;
+let searchMode=false;
+
+$('#searchInput').oninput=()=>{
+  clearTimeout(searchTimer);
+  const q=$('#searchInput').value.trim();
+  $('#searchClear').classList.toggle('vis',q.length>0);
+  if(!q){
+    if(searchMode) clearSearch();
+    return;
+  }
+  searchTimer=setTimeout(()=>doSearch(q),400);
+};
+$('#searchInput').onkeydown=e=>{
+  if(e.key==='Enter'){clearTimeout(searchTimer);doSearch($('#searchInput').value.trim())}
+  if(e.key==='Escape') clearSearch();
+};
+
+async function doSearch(q){
+  if(!q) return;
+  searchMode=true;
+  const c=$('#content');
+  c.innerHTML='<div class="empty">Searching...</div>';
+  try{
+    const r=await fetch('/api/sessions/search?q='+encodeURIComponent(q)+'&limit=30');
+    const results=await r.json();
+    if(!results.length){
+      c.innerHTML=`<div class="empty">No results for "${esc(q)}"</div>`;
+      return;
+    }
+    c.innerHTML='';
+    results.forEach(s=>{
+      c.insertAdjacentHTML('beforeend',sessionCardHTML(s));
+      if(s.matched_exchanges&&s.matched_exchanges.length){
+        const snipDiv=document.getElementById('snip-'+s.id);
+        if(snipDiv){
+          snipDiv.innerHTML=s.matched_exchanges.map(m=>{
+            const text=m.corrected_source||m.raw_transcript||'';
+            const tgt=m.translation||'';
+            return `<div class="match-snippet">${highlight(text,q)} -> ${highlight(tgt,q)}</div>`;
+          }).join('');
+        }
+      }
+    });
+  }catch(e){
+    c.innerHTML='<div class="empty">Search failed.</div>';
+  }
+}
+
+function clearSearch(){
+  searchMode=false;
+  $('#searchInput').value='';
+  $('#searchClear').classList.remove('vis');
+  offset=0;
+  expandedId=null;
+  exchangeCache={};
+  speakerCache={};
+  loadSessions();
+}
+
+function highlight(text,q){
+  if(!q) return esc(text);
+  const escaped=esc(text);
+  const rx=new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi');
+  return escaped.replace(rx,'<mark>$1</mark>');
 }
 
 // --- Init ---

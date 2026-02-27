@@ -644,6 +644,50 @@ class TestSessionRoutes:
 
         assert resp.status_code == 404
 
+    async def test_search_sessions_returns_matches(self, client, mock_db):
+        """GET /api/sessions/search?q=hola returns sessions with matching exchanges."""
+        call_count = 0
+
+        async def multi_fetchall(sql, params=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Session search query
+                return [{"id": 1, "started_at": "2026-02-20", "notes": "", "topic_summary": "",
+                         "direction": "es_to_en", "mode": "conversation", "speaker_count": 1,
+                         "exchange_count": 3}]
+            else:
+                # Matched exchange snippets
+                return [{"raw_transcript": "Hola amigo", "corrected_source": "Hola amigo",
+                         "translation": "Hello friend", "speaker_id": "SPK_00",
+                         "timestamp": "2026-02-20 10:00:00"}]
+
+        mock_db.execute_fetchall = multi_fetchall
+
+        resp = await client.get("/api/sessions/search?q=hola")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["id"] == 1
+        assert len(data[0]["matched_exchanges"]) == 1
+        assert "Hola" in data[0]["matched_exchanges"][0]["raw_transcript"]
+
+    async def test_search_sessions_empty_query_returns_422(self, client, mock_db):
+        """GET /api/sessions/search without q returns 422."""
+        resp = await client.get("/api/sessions/search")
+
+        assert resp.status_code == 422
+
+    async def test_search_sessions_no_results(self, client, mock_db):
+        """GET /api/sessions/search?q=xyz returns empty list when nothing matches."""
+        mock_db.execute_fetchall.return_value = []
+
+        resp = await client.get("/api/sessions/search?q=xyz")
+
+        assert resp.status_code == 200
+        assert resp.json() == []
+
     async def test_export_session_not_found_returns_404(self, client, mock_db):
         """GET /api/sessions/999/export returns 404 for nonexistent session."""
         mock_db.execute_fetchall.return_value = []
