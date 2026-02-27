@@ -29,6 +29,50 @@ async def list_sessions(
     return [dict(r) for r in rows]
 
 
+@session_router.get("/search")
+async def search_sessions(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(default=30, ge=1, le=100),
+):
+    """Search across session history by matching exchange text (source, translation).
+
+    Returns sessions containing matching exchanges, most recent first,
+    with matched exchange snippets.
+    """
+    db = await get_db()
+    pattern = f"%{q}%"
+    rows = await db.execute_fetchall(
+        """SELECT DISTINCT s.*,
+                  (SELECT COUNT(*) FROM exchanges e2 WHERE e2.session_id = s.id) as exchange_count
+           FROM sessions s
+           JOIN exchanges e ON e.session_id = s.id
+           WHERE e.raw_transcript LIKE ? COLLATE NOCASE
+              OR e.corrected_source LIKE ? COLLATE NOCASE
+              OR e.translation LIKE ? COLLATE NOCASE
+           ORDER BY s.started_at DESC
+           LIMIT ?""",
+        (pattern, pattern, pattern, limit),
+    )
+    results = []
+    for r in rows:
+        session = dict(r)
+        # Fetch matching exchange snippets for this session
+        matches = await db.execute_fetchall(
+            """SELECT raw_transcript, corrected_source, translation, speaker_id, timestamp
+               FROM exchanges
+               WHERE session_id = ?
+                 AND (raw_transcript LIKE ? COLLATE NOCASE
+                   OR corrected_source LIKE ? COLLATE NOCASE
+                   OR translation LIKE ? COLLATE NOCASE)
+               ORDER BY timestamp ASC
+               LIMIT 5""",
+            (session["id"], pattern, pattern, pattern),
+        )
+        session["matched_exchanges"] = [dict(m) for m in matches]
+        results.append(session)
+    return results
+
+
 @session_router.get("/{session_id}")
 async def get_session(session_id: int):
     """Get a single session with speakers list and exchange_count. Returns 404 if not found."""
