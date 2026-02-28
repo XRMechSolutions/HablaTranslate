@@ -111,11 +111,39 @@ async def lifespan(app: FastAPI):
         # Log which components failed but don't abort — allow degraded mode
         logger.warning("Some components are DOWN. Server will start in degraded mode.")
 
+    # Restore persisted LLM settings (provider, model, quick_model)
+    saved_llm = LMStudioManager.load_settings(config.data_dir)
+    if saved_llm:
+        if saved_llm.get("provider") in ("ollama", "lmstudio", "openai"):
+            config.translator.provider = saved_llm["provider"]
+        if saved_llm.get("lmstudio_model"):
+            config.translator.lmstudio_model = saved_llm["lmstudio_model"]
+        if saved_llm.get("quick_model"):
+            config.translator.quick_model = saved_llm["quick_model"]
+        if saved_llm.get("ollama_model"):
+            config.translator.ollama_model = saved_llm["ollama_model"]
+        if saved_llm.get("direction") in ("es_to_en", "en_to_es"):
+            config.session.direction = saved_llm["direction"]
+        if saved_llm.get("mode") in ("conversation", "classroom"):
+            config.session.mode = saved_llm["mode"]
+        logger.info("Restored LLM settings: provider=%s model=%s quick=%s dir=%s mode=%s",
+                     config.translator.provider, config.translator.model,
+                     config.translator.quick_model, config.session.direction,
+                     config.session.mode)
+
     # Start LM Studio (only when lmstudio is the active provider)
     if config.translator.provider == "lmstudio":
         lmstudio_manager = LMStudioManager(config.translator)
+        lmstudio_manager._data_dir = config.data_dir
         set_lmstudio_manager(lmstudio_manager)
         await lmstudio_manager.ensure_running()
+
+        # Load the persisted model selection if not already loaded
+        for model_id in [config.translator.lmstudio_model, config.translator.quick_model]:
+            if model_id and LMStudioManager._model_stem(model_id) not in lmstudio_manager.get_loaded_models():
+                logger.info("Loading persisted model: %s", model_id)
+                await lmstudio_manager.switch_model(new_id=model_id)
+
         lmstudio_manager.start_monitor()
 
     # Initialize pipeline

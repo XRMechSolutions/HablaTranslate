@@ -2,9 +2,11 @@
 
 import asyncio
 import contextlib
+import json
 import logging
 import os
 import platform
+import re
 import subprocess
 import threading
 from pathlib import Path
@@ -27,6 +29,7 @@ class LMStudioManager:
         self._process: subprocess.Popen | None = None
         self._loaded_models: set[str] = set()
         self._monitor_task: asyncio.Task | None = None
+        self._data_dir: Path | None = None  # set by main.py for restart model reload
 
     # ------------------------------------------------------------------
     # Public interface
@@ -46,18 +49,23 @@ class LMStudioManager:
 
     async def ensure_running(self) -> None:
         """Start LM Studio if it is not already running.
+
         If already running, discover which models are loaded so the internal
-        set is accurate even when we did not start the process ourselves.
+        set is accurate.  Does NOT force-load models — that is driven by
+        persisted user settings applied in main.py after this call.
         """
         if await self.is_running():
             logger.info("LM Studio already running")
-            if not self._loaded_models:
-                await self._discover_loaded_models()
+            await self._discover_loaded_models()
             return
         await self.start()
 
     async def start(self) -> None:
-        """Spawn LM Studio, wait for initialisation, then load configured models."""
+        """Spawn LM Studio and wait for initialisation.
+
+        Does NOT load models — that is driven by persisted user settings
+        applied in main.py after ``ensure_running()`` returns.
+        """
         logger.info("Starting LM Studio: %s", self._config.lmstudio_executable)
 
         port = self._port()
@@ -84,7 +92,6 @@ class LMStudioManager:
         await asyncio.sleep(15)
 
         self._loaded_models.clear()
-        await self._load_models()
 
     async def stop(self) -> None:
         """Terminate LM Studio (process tree on Windows)."""
@@ -121,17 +128,185 @@ class LMStudioManager:
         self._loaded_models.clear()
 
     async def restart(self) -> None:
-        """Stop then start LM Studio."""
+        """Stop then start LM Studio, reloading persisted model selections."""
         await self.stop()
         await self.start()
+        # Reload user's persisted model selections
+        if self._data_dir:
+            saved = self.load_settings(self._data_dir)
+            for key in ("lmstudio_model", "quick_model"):
+                model_id = saved.get(key, "")
+                if model_id:
+                    await self.switch_model(new_id=model_id)
 
     def get_loaded_models(self) -> list[str]:
         """Return a snapshot of currently loaded model names (stems, no .gguf)."""
         return list(self._loaded_models)
 
+    async def get_available_models(self) -> list[dict]:
+        """Return all models downloaded in LM Studio (not just loaded).
+
+        Uses ``lms ls --json``. Each entry has at least ``id`` (the load key)
+        and ``path`` (full GGUF path).  Falls back to loaded-only list from
+        the ``/v1/models`` API if the CLI is unavailable.
+        """
+        try:
+            lms = self._get_lms_exe()
+            result = await asyncio.to_thread(
+                subprocess.run,
+                [lms, "ls", "--json"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                raw = json.loads(result.stdout)
+                models = []
+                for entry in raw:
+                    key = entry.get("modelKey") or entry.get("key") or entry.get("id") or entry.get("path", "")
+                    if not key:
+                        continue
+                    models.append({
+                        "id": key,
+                        "path": entry.get("path", ""),
+                        "size_bytes": entry.get("sizeBytes") or entry.get("size_bytes", 0),
+                    })
+                return models
+        except Exception as exc:
+            logger.warning("[lmstudio] lms ls failed (%s), falling back to loaded models", exc)
+
+        # Fallback: return only loaded models from the API
+        loaded = await self._query_api_models()
+        return [{"id": m, "path": "", "size_bytes": 0} for m in sorted(loaded or [])]
+
+    async def switch_model(self, new_id: str, old_id: str = "", other_keep: str = "") -> bool:
+        """Unload *old_id* (if loaded and not needed) then load *new_id*.
+
+        Args:
+            new_id: Model identifier to load (key from ``lms ls``).
+            old_id: Model identifier to unload first. Skipped if empty,
+                    same as *new_id*, or same as *other_keep*.
+            other_keep: Another model that must stay loaded (e.g. the quick
+                        model when switching the main model).
+
+        Returns True if *new_id* is loaded after the operation.
+        """
+        new_stem = self._model_stem(new_id)
+        old_stem = self._model_stem(old_id) if old_id else ""
+        keep_stem = self._model_stem(other_keep) if other_keep else ""
+
+        # Unload old if it's different and not needed by the other role
+        if old_stem and old_stem != new_stem and old_stem != keep_stem:
+            if old_stem in self._loaded_models:
+                await self._unload_model(old_stem)
+
+        # Load new if not already loaded
+        if new_stem in self._loaded_models:
+            logger.info("[lmstudio] Model already loaded: %s", new_stem)
+            return True
+
+        # Find the GGUF path for the new model via lms ls
+        path = await self._resolve_model_path(new_id)
+        if not path:
+            logger.error("[lmstudio] Cannot resolve path for model: %s", new_id)
+            return False
+
+        return await self._load_model(path)
+
+    async def _resolve_model_path(self, model_id: str) -> str:
+        """Find the GGUF file path for a model identifier.
+
+        Matching is case-insensitive and tolerates missing quantization
+        suffixes (e.g. ``towerinstruct-mistral-7b-v0.2`` matches the GGUF
+        file ``TowerInstruct-Mistral-7B-v0.2-Q3_K_M.gguf``).
+        """
+        needle = self._model_stem(model_id).lower()
+        try:
+            lms = self._get_lms_exe()
+            result = await asyncio.to_thread(
+                subprocess.run,
+                [lms, "ls", "--json"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                best_match = ""
+                best_path = ""
+                for entry in json.loads(result.stdout):
+                    key = entry.get("modelKey") or entry.get("key") or entry.get("id") or ""
+                    if not key:
+                        continue
+                    # Exact match (fast path)
+                    if key == model_id:
+                        return entry.get("path", "")
+                    candidate = self._model_stem(key).lower()
+                    # Exact stem match (case-insensitive)
+                    if candidate == needle:
+                        return entry.get("path", "")
+                    # Prefix match: .env name may lack quantization suffix
+                    # e.g. "towerinstruct-mistral-7b-v0.2" matches
+                    #      "towerinstruct-mistral-7b-v0.2-q3_k_m"
+                    if candidate.startswith(needle) and len(candidate) > len(best_match):
+                        best_match = candidate
+                        best_path = entry.get("path", "")
+                if best_path:
+                    return best_path
+        except Exception as exc:
+            logger.warning("[lmstudio] Could not resolve model path: %s", exc)
+        # If model_id looks like a path already, use it directly
+        if model_id.endswith(".gguf"):
+            return model_id
+        return ""
+
+    # --- Settings persistence -----------------------------------------------
+
+    @staticmethod
+    def _settings_path(data_dir: Path) -> Path:
+        return data_dir / "llm_settings.json"
+
+    @staticmethod
+    def load_settings(data_dir: Path) -> dict:
+        """Read persisted LLM settings from disk.  Returns {} if none."""
+        path = LMStudioManager._settings_path(data_dir)
+        if path.exists():
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                logger.warning("[lmstudio] Could not read %s: %s", path, exc)
+        return {}
+
+    @staticmethod
+    def save_settings(data_dir: Path, settings: dict) -> None:
+        """Write LLM settings to disk."""
+        path = LMStudioManager._settings_path(data_dir)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+            logger.info("[lmstudio] Settings saved to %s", path)
+        except Exception as exc:
+            logger.error("[lmstudio] Could not save settings: %s", exc)
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _model_stem(name: str) -> str:
+        """Normalise a model identifier to a comparable lowercase stem.
+
+        1. Strip ``:N`` duplicate-instance suffix (LM Studio appends these).
+        2. Take only the filename component (last path segment).
+        3. Strip ``.gguf`` extension if present (but *not* arbitrary dots,
+           since model names like ``ganymede-llama-3.3-3b-preview`` contain
+           dots that ``Path.stem`` would incorrectly treat as extensions).
+        4. Strip GGUF quantization suffixes (``-Q3_K_M``, ``.Q4_K_S``,
+           ``-IQ2_XXS``, etc.) so ``.env`` display names match GGUF filenames.
+        5. Lowercase for case-insensitive comparison.
+        """
+        cleaned = re.sub(r":\d+$", "", name)
+        basename = cleaned.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+        if basename.lower().endswith(".gguf"):
+            basename = basename[:-5]
+        # Strip GGUF quantization suffix (Q3_K_M, Q4_K_S, IQ2_XXS, etc.)
+        basename = re.sub(r"[-._][IiQq][Qq]?\d+(_[A-Za-z0-9]+)*$", "", basename)
+        return basename.lower()
 
     def _port(self) -> int:
         """Extract port from lmstudio_url."""
@@ -156,39 +331,39 @@ class LMStudioManager:
     # ------------------------------------------------------------------
 
     async def _discover_loaded_models(self) -> None:
-        """Query /v1/models and populate _loaded_models from a running LM Studio.
-        Used when ensure_running() short-circuits because the process was
-        already up before Habla started.
-        """
-        try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                resp = await client.get(f"{self._config.lmstudio_url}/v1/models")
-            if resp.is_success:
-                for m in resp.json().get("data", []):
-                    model_id = m.get("id", "")
-                    if model_id:
-                        self._loaded_models.add(Path(model_id).stem)
-                logger.info(
-                    "[lmstudio] Discovered %d already-loaded model(s): %s",
-                    len(self._loaded_models), sorted(self._loaded_models),
-                )
-                self._check_models_match_config()
-        except Exception as exc:
-            logger.warning("[lmstudio] Could not discover loaded models: %s", exc)
+        """Populate _loaded_models from a running LM Studio.
 
-    async def _load_models(self) -> None:
-        """Load all configured model paths in sequence, then check config match."""
-        paths = self._config.lmstudio_model_paths
-        if not paths:
-            logger.warning("No LMSTUDIO_MODEL_PATHS configured - skipping model load")
+        Uses ``lms ps --json`` (authoritative — only actually loaded models),
+        falling back to ``/v1/models`` if the CLI is unavailable.  The API
+        fallback may include unloaded models on some LM Studio versions, so
+        the CLI is strongly preferred.
+        """
+        live = await self._query_lms_ps()
+        if live is not None:
+            self._loaded_models = live
+            logger.info(
+                "[lmstudio] Discovered %d loaded model(s) via lms ps: %s",
+                len(self._loaded_models), sorted(self._loaded_models),
+            )
             return
-        for path in paths:
-            await self._load_model(path)
-        self._check_models_match_config()
+
+        # Fallback: /v1/models API (may include non-loaded models)
+        api = await self._query_api_models()
+        if api is not None:
+            self._loaded_models = api
+            logger.info(
+                "[lmstudio] Discovered %d model(s) via /v1/models (may include unloaded): %s",
+                len(self._loaded_models), sorted(self._loaded_models),
+            )
+        else:
+            logger.warning("[lmstudio] Could not discover loaded models via any method")
 
     async def _load_model(self, path: str) -> bool:
         """Try each loading strategy in order. Returns True if any succeeded."""
-        filename = Path(path).stem
+        filename = self._model_stem(path)
+        if filename in self._loaded_models:
+            logger.info("[lmstudio] Model already loaded, skipping: %s", filename)
+            return True
         if await self._load_via_cli(path):
             return True
         if await self._load_via_api(path):
@@ -225,7 +400,6 @@ class LMStudioManager:
                 capture_output=True, text=True, timeout=30,
             )
             if result.returncode == 0 and result.stdout.strip():
-                import json
                 models = json.loads(result.stdout)
                 for model in models:
                     model_json = json.dumps(model)
@@ -247,11 +421,36 @@ class LMStudioManager:
         return key
 
     async def _load_via_cli(self, path: str) -> bool:
-        """Strategy 1: load model via `lms load`."""
-        filename = Path(path).stem
+        """Strategy 1: load model via ``lms load``.
+
+        Tries the display-name form first (``lms load <stem>``), which lets
+        the CLI resolve the GGUF path itself.  Falls back to the full key
+        with ``--host``/``--port`` if the simple form fails.
+        """
+        filename = self._model_stem(path)
         logger.info("[lmstudio/cli] Loading: %s", filename)
         try:
             lms = self._get_lms_exe()
+
+            # Try 1: display name only — lets lms resolve the GGUF itself
+            result = await asyncio.to_thread(
+                subprocess.run,
+                [lms, "load", filename],
+                capture_output=True, text=True, timeout=60,
+            )
+            if result.returncode == 0:
+                logger.info("[lmstudio/cli] OK (display name): %s", filename)
+                self._loaded_models.add(filename)
+                await asyncio.sleep(10)
+                await self._verify_loaded(path)
+                return True
+
+            logger.debug(
+                "[lmstudio/cli] display-name load failed (exit %d), trying full key",
+                result.returncode,
+            )
+
+            # Try 2: full key with host/port
             key = await asyncio.to_thread(self._find_model_key, path)
             port = self._port()
 
@@ -262,7 +461,7 @@ class LMStudioManager:
             )
 
             if result.returncode == 0:
-                logger.info("[lmstudio/cli] OK: %s", filename)
+                logger.info("[lmstudio/cli] OK (full key): %s", filename)
                 self._loaded_models.add(filename)
                 await asyncio.sleep(10)
                 await self._verify_loaded(path)
@@ -285,7 +484,7 @@ class LMStudioManager:
 
     async def _load_via_api(self, path: str) -> bool:
         """Strategy 2: trigger model load by sending a minimal completions request."""
-        filename = Path(path).stem
+        filename = self._model_stem(path)
         logger.info("[lmstudio/api] Loading: %s", filename)
         try:
             async with httpx.AsyncClient(timeout=30) as client:
@@ -318,7 +517,7 @@ class LMStudioManager:
 
     async def _load_via_alt(self, path: str) -> bool:
         """Strategy 3: undocumented /v1/models/load endpoint."""
-        filename = Path(path).stem
+        filename = self._model_stem(path)
         logger.info("[lmstudio/alt] Loading: %s", filename)
         try:
             async with httpx.AsyncClient(timeout=30) as client:
@@ -345,11 +544,56 @@ class LMStudioManager:
             )
             return False
 
+    # --- Unloading -----------------------------------------------------------
+
+    async def _unload_model(self, identifier: str) -> bool:
+        """Unload a model from LM Studio via `lms unload`.
+
+        Args:
+            identifier: Model stem name (e.g., 'test-model') to unload.
+
+        Returns:
+            True if unload succeeded, False otherwise.
+        """
+        logger.info("[lmstudio/unload] Unloading: %s", identifier)
+        try:
+            lms = self._get_lms_exe()
+            result = await asyncio.to_thread(
+                subprocess.run,
+                [lms, "unload", identifier],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode == 0:
+                self._loaded_models.discard(identifier)
+                logger.info("[lmstudio/unload] OK: %s", identifier)
+                return True
+            logger.warning(
+                "[lmstudio/unload] FAILED (exit %d): %s - stderr: %s",
+                result.returncode, identifier, result.stderr.strip(),
+            )
+            return False
+        except subprocess.TimeoutExpired:
+            logger.warning("[lmstudio/unload] FAILED (timeout): %s", identifier)
+            return False
+        except Exception as exc:
+            logger.warning("[lmstudio/unload] FAILED (%s): %s", exc, identifier)
+            return False
+
+    async def unload_all(self) -> None:
+        """Unload all currently loaded models. Used before shutdown or full reload."""
+        models = list(self._loaded_models)
+        if not models:
+            logger.info("[lmstudio/unload] No models to unload")
+            return
+        logger.info("[lmstudio/unload] Unloading all %d models: %s", len(models), sorted(models))
+        for model in models:
+            await self._unload_model(model)
+
     # --- Verification -------------------------------------------------------
 
     async def _verify_loaded(self, path: str) -> bool:
         """Confirm model appears in /v1/models after a 5 s settling wait."""
-        filename = Path(path).stem
+        filename = self._model_stem(path)
         await asyncio.sleep(5)
         try:
             async with httpx.AsyncClient(timeout=10) as client:
@@ -399,14 +643,13 @@ class LMStudioManager:
                 capture_output=True, text=True, timeout=15,
             )
             if result.returncode == 0 and result.stdout.strip():
-                import json
                 data = json.loads(result.stdout)
                 models = set()
                 for entry in data:
                     # lms ps returns objects with "identifier", "path", or "id" fields
                     name = entry.get("identifier") or entry.get("id") or entry.get("path", "")
                     if name:
-                        models.add(Path(name).stem)
+                        models.add(LMStudioManager._model_stem(name))
                 logger.debug("[lmstudio/ps] Live models: %s", sorted(models))
                 return models
         except FileNotFoundError:
@@ -425,7 +668,7 @@ class LMStudioManager:
                 for m in resp.json().get("data", []):
                     model_id = m.get("id", "")
                     if model_id:
-                        models.add(Path(model_id).stem)
+                        models.add(LMStudioManager._model_stem(model_id))
                 return models
         except Exception as exc:
             logger.debug("[lmstudio/api-models] Failed: %s", exc)
@@ -433,26 +676,12 @@ class LMStudioManager:
 
     # --- Config match check -------------------------------------------------
 
-    def _check_models_match_config(self) -> None:
-        """
-        Compare loaded models against config. Logs a warning for any model
-        that was configured but did not load successfully.
-        """
-        configured = {Path(p).stem for p in self._config.lmstudio_model_paths}
-        loaded = self._loaded_models
-        missing = configured - loaded
-        extra = loaded - configured
-
-        if missing:
-            for m in sorted(missing):
-                logger.warning("[lmstudio] Configured model NOT loaded: %s", m)
-        if extra:
-            for m in sorted(extra):
-                logger.debug("[lmstudio] Loaded model not in config (manual load?): %s", m)
-
-        total = len(configured)
-        ok = len(configured & loaded)
-        logger.info("[lmstudio] %d/%d configured models loaded", ok, total)
+    def _log_model_status(self) -> None:
+        """Log currently loaded models (informational only, no enforcement)."""
+        logger.info(
+            "[lmstudio] Currently loaded models (%d): %s",
+            len(self._loaded_models), sorted(self._loaded_models),
+        )
 
     # ------------------------------------------------------------------
     # Background monitor
@@ -491,19 +720,8 @@ class LMStudioManager:
                     await self.restart()
                 else:
                     logger.debug("[lmstudio/monitor] Health check OK")
-                    # Refresh from live state to detect silent eviction
-                    old_loaded = set(self._loaded_models)
                     await self._refresh_loaded_models()
-                    self._check_models_match_config()
-                    # Auto-reload any configured models that were evicted
-                    configured = {Path(p).stem for p in self._config.lmstudio_model_paths}
-                    evicted_configured = (old_loaded & configured) - self._loaded_models
-                    if evicted_configured:
-                        logger.warning(
-                            "[lmstudio/monitor] Reloading evicted configured models: %s",
-                            sorted(evicted_configured),
-                        )
-                        await self._load_models()
+                    self._log_model_status()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:

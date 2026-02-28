@@ -1,6 +1,7 @@
 """Tests for LMStudioManager - LM Studio process lifecycle management."""
 
 import asyncio
+import json
 import subprocess
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
@@ -131,14 +132,16 @@ class TestEnsureRunning:
         manager.is_running = AsyncMock(return_value=True)
         manager._loaded_models = {"some-model"}
         manager.start = AsyncMock()
+        manager._discover_loaded_models = AsyncMock()
 
         await manager.ensure_running()
 
         manager.start.assert_not_awaited()
+        manager._discover_loaded_models.assert_awaited_once()
 
     async def test_ensure_running_discovers_models_when_already_running(self, manager):
         manager.is_running = AsyncMock(return_value=True)
-        manager._loaded_models = set()  # empty triggers discovery
+        manager._loaded_models = set()
         manager._discover_loaded_models = AsyncMock()
         manager.start = AsyncMock()
 
@@ -187,26 +190,31 @@ class TestGetLoadedModels:
 
 @pytest.mark.unit
 class TestDiscoverLoadedModels:
-    async def test_discover_populates_loaded_models_from_api(self, manager):
-        resp = _make_httpx_response(
-            status_code=200,
-            json_data={"data": [{"id": "author/test-model"}, {"id": "other/second-model"}]},
-        )
-        ctx, _ = _mock_async_client(get_response=resp)
+    async def test_discover_populates_from_lms_ps(self, manager):
+        """lms ps --json is the primary source for loaded models."""
+        ps_result = {"test-model", "second-model"}
+        manager._query_lms_ps = AsyncMock(return_value=ps_result)
 
-        with patch("server.services.lmstudio_manager.httpx.AsyncClient", return_value=ctx):
-            await manager._discover_loaded_models()
+        await manager._discover_loaded_models()
 
-        # Path("author/test-model").stem == "test-model"
-        assert "test-model" in manager._loaded_models
-        assert "second-model" in manager._loaded_models
+        assert manager._loaded_models == ps_result
 
-    async def test_discover_handles_api_failure_gracefully(self, manager):
-        ctx, mock_client = _mock_async_client()
-        mock_client.get.side_effect = httpx.ConnectError("Connection refused")
+    async def test_discover_falls_back_to_api(self, manager):
+        """When lms ps fails, fall back to /v1/models API."""
+        manager._query_lms_ps = AsyncMock(return_value=None)
+        api_result = {"test-model", "second-model"}
+        manager._query_api_models = AsyncMock(return_value=api_result)
 
-        with patch("server.services.lmstudio_manager.httpx.AsyncClient", return_value=ctx):
-            await manager._discover_loaded_models()
+        await manager._discover_loaded_models()
+
+        assert manager._loaded_models == api_result
+
+    async def test_discover_handles_all_failures_gracefully(self, manager):
+        """When both lms ps and /v1/models fail, loaded_models stays empty."""
+        manager._query_lms_ps = AsyncMock(return_value=None)
+        manager._query_api_models = AsyncMock(return_value=None)
+
+        await manager._discover_loaded_models()
 
         assert len(manager._loaded_models) == 0
 
@@ -304,28 +312,304 @@ class TestVerifyLoaded:
 
 
 # ---------------------------------------------------------------------------
-# TestCheckModelsMatchConfig
+# TestModelStem
 # ---------------------------------------------------------------------------
 
 @pytest.mark.unit
-class TestCheckModelsMatchConfig:
-    def test_all_configured_models_loaded_logs_ok(self, manager, caplog):
-        manager._loaded_models = {"test-model"}
+class TestModelStem:
+    def test_strips_duplicate_suffix(self):
+        assert LMStudioManager._model_stem("my-model:3") == "my-model"
+
+    def test_strips_high_number_suffix(self):
+        assert LMStudioManager._model_stem("ganymede-llama-3.3-3b-preview:10") == "ganymede-llama-3.3-3b-preview"
+
+    def test_preserves_base_name(self):
+        assert LMStudioManager._model_stem("my-model") == "my-model"
+
+    def test_extracts_stem_from_path(self):
+        assert LMStudioManager._model_stem("author/model-dir/test-model.gguf") == "test-model"
+
+    def test_handles_path_with_suffix(self):
+        assert LMStudioManager._model_stem("author/test-model:2") == "test-model"
+
+    def test_handles_empty_string(self):
+        assert LMStudioManager._model_stem("") == ""
+
+    def test_strips_quantization_suffix(self):
+        assert LMStudioManager._model_stem("TowerInstruct-Mistral-7B-v0.2-Q3_K_M.gguf") == "towerinstruct-mistral-7b-v0.2"
+
+    def test_strips_dot_quantization(self):
+        assert LMStudioManager._model_stem("Ganymede-Llama-3.3-3B-Preview.Q4_K_S.gguf") == "ganymede-llama-3.3-3b-preview"
+
+    def test_case_insensitive(self):
+        assert LMStudioManager._model_stem("TowerInstruct-Mistral-7B") == LMStudioManager._model_stem("towerinstruct-mistral-7b")
+
+    def test_gguf_path_matches_display_name(self):
+        """GGUF path stem should match .env display name after normalization."""
+        gguf_path = "tensorblock/TowerInstruct-Mistral-7B-v0.2-GGUF/TowerInstruct-Mistral-7B-v0.2-Q3_K_M.gguf"
+        env_name = "towerinstruct-mistral-7b-v0.2"
+        assert LMStudioManager._model_stem(gguf_path) == LMStudioManager._model_stem(env_name)
+
+    def test_iq_quantization(self):
+        assert LMStudioManager._model_stem("model-name-IQ2_XXS.gguf") == "model-name"
+
+    def test_simple_quant(self):
+        assert LMStudioManager._model_stem("model-Q8_0.gguf") == "model"
+
+
+# ---------------------------------------------------------------------------
+# TestLogModelStatus
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestLogModelStatus:
+    def test_logs_loaded_models(self, manager, caplog):
+        manager._loaded_models = {"model-a", "model-b"}
 
         with caplog.at_level("INFO", logger="habla.lmstudio"):
-            manager._check_models_match_config()
+            manager._log_model_status()
 
-        assert "1/1 configured models loaded" in caplog.text
-        assert "NOT loaded" not in caplog.text
+        assert "Currently loaded models (2)" in caplog.text
+        assert "model-a" in caplog.text
+        assert "model-b" in caplog.text
 
-    def test_missing_model_logs_warning(self, manager, caplog):
-        manager._loaded_models = set()  # nothing loaded
+    def test_logs_empty_set(self, manager, caplog):
+        manager._loaded_models = set()
 
-        with caplog.at_level("WARNING", logger="habla.lmstudio"):
-            manager._check_models_match_config()
+        with caplog.at_level("INFO", logger="habla.lmstudio"):
+            manager._log_model_status()
 
-        assert "NOT loaded" in caplog.text
-        assert "test-model" in caplog.text
+        assert "Currently loaded models (0)" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# TestGetAvailableModels
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestGetAvailableModels:
+    async def test_returns_models_from_lms_ls(self, manager):
+        ls_output = json.dumps([
+            {"key": "author/model-a", "path": "/path/to/model-a.gguf", "sizeBytes": 1000},
+            {"key": "author/model-b", "path": "/path/to/model-b.gguf", "sizeBytes": 2000},
+        ])
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ls_output
+
+        with patch("server.services.lmstudio_manager.subprocess.run",
+                   return_value=mock_result):
+            result = await manager.get_available_models()
+
+        assert len(result) == 2
+        assert result[0]["id"] == "author/model-a"
+        assert result[0]["size_bytes"] == 1000
+        assert result[1]["id"] == "author/model-b"
+
+    async def test_falls_back_to_api_on_cli_failure(self, manager):
+        """If lms ls fails, falls back to /v1/models API."""
+        resp = _make_httpx_response(
+            status_code=200,
+            json_data={"data": [{"id": "loaded/model-x"}]},
+        )
+        ctx, _ = _mock_async_client(get_response=resp)
+
+        with patch("server.services.lmstudio_manager.subprocess.run",
+                   side_effect=FileNotFoundError("lms not found")), \
+             patch("server.services.lmstudio_manager.httpx.AsyncClient", return_value=ctx):
+            result = await manager.get_available_models()
+
+        assert len(result) == 1
+        assert result[0]["id"] == "model-x"
+
+    async def test_skips_entries_without_key(self, manager):
+        ls_output = json.dumps([
+            {"key": "author/valid-model", "path": "/path/to/model.gguf"},
+            {"nokey": True},  # missing key/id/path
+        ])
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ls_output
+
+        with patch("server.services.lmstudio_manager.subprocess.run",
+                   return_value=mock_result):
+            result = await manager.get_available_models()
+
+        assert len(result) == 1
+        assert result[0]["id"] == "author/valid-model"
+
+
+# ---------------------------------------------------------------------------
+# TestSwitchModel
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestSwitchModel:
+    async def test_switch_unloads_old_and_loads_new(self, manager):
+        manager._loaded_models = {"old-model"}
+        manager._unload_model = AsyncMock(return_value=True)
+        manager._resolve_model_path = AsyncMock(return_value="/path/to/new-model.gguf")
+        manager._load_model = AsyncMock(return_value=True)
+
+        result = await manager.switch_model(
+            new_id="author/new-model", old_id="author/old-model",
+        )
+
+        assert result is True
+        manager._unload_model.assert_awaited_once_with("old-model")
+        manager._load_model.assert_awaited_once_with("/path/to/new-model.gguf")
+
+    async def test_switch_skips_unload_when_same_model(self, manager):
+        manager._loaded_models = {"same-model"}
+        manager._unload_model = AsyncMock()
+
+        result = await manager.switch_model(
+            new_id="author/same-model", old_id="author/same-model",
+        )
+
+        assert result is True
+        manager._unload_model.assert_not_awaited()
+
+    async def test_switch_keeps_other_model(self, manager):
+        """Don't unload old_id if it's the same as other_keep."""
+        manager._loaded_models = {"shared-model"}
+        manager._unload_model = AsyncMock()
+        manager._resolve_model_path = AsyncMock(return_value="/path/to/new.gguf")
+        manager._load_model = AsyncMock(return_value=True)
+
+        result = await manager.switch_model(
+            new_id="author/new-model",
+            old_id="author/shared-model",
+            other_keep="author/shared-model",
+        )
+
+        assert result is True
+        manager._unload_model.assert_not_awaited()
+
+    async def test_switch_returns_true_if_already_loaded(self, manager):
+        manager._loaded_models = {"target-model"}
+        manager._unload_model = AsyncMock()
+        manager._load_model = AsyncMock()
+
+        result = await manager.switch_model(new_id="author/target-model")
+
+        assert result is True
+        manager._load_model.assert_not_awaited()
+
+    async def test_switch_returns_false_when_path_not_resolved(self, manager):
+        manager._loaded_models = set()
+        manager._resolve_model_path = AsyncMock(return_value="")
+
+        result = await manager.switch_model(new_id="author/missing-model")
+
+        assert result is False
+
+    async def test_switch_unloads_old_not_in_loaded_set(self, manager):
+        """If old model is not in _loaded_models, skip unload gracefully."""
+        manager._loaded_models = set()
+        manager._unload_model = AsyncMock()
+        manager._resolve_model_path = AsyncMock(return_value="/path/to/new.gguf")
+        manager._load_model = AsyncMock(return_value=True)
+
+        result = await manager.switch_model(
+            new_id="author/new-model", old_id="author/gone-model",
+        )
+
+        assert result is True
+        manager._unload_model.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# TestResolveModelPath
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestResolveModelPath:
+    async def test_resolves_path_from_lms_ls(self, manager):
+        ls_output = json.dumps([
+            {"key": "author/target-model", "path": "/models/target-model.gguf"},
+        ])
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ls_output
+
+        with patch("server.services.lmstudio_manager.subprocess.run",
+                   return_value=mock_result):
+            result = await manager._resolve_model_path("author/target-model")
+
+        assert result == "/models/target-model.gguf"
+
+    async def test_resolves_by_stem_match(self, manager):
+        ls_output = json.dumps([
+            {"key": "author/my-model", "path": "/models/my-model.gguf"},
+        ])
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ls_output
+
+        with patch("server.services.lmstudio_manager.subprocess.run",
+                   return_value=mock_result):
+            result = await manager._resolve_model_path("my-model")
+
+        assert result == "/models/my-model.gguf"
+
+    async def test_falls_back_to_gguf_path(self, manager):
+        with patch("server.services.lmstudio_manager.subprocess.run",
+                   side_effect=FileNotFoundError):
+            result = await manager._resolve_model_path("path/to/model.gguf")
+
+        assert result == "path/to/model.gguf"
+
+    async def test_returns_empty_when_not_found(self, manager):
+        ls_output = json.dumps([
+            {"key": "author/other-model", "path": "/models/other.gguf"},
+        ])
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ls_output
+
+        with patch("server.services.lmstudio_manager.subprocess.run",
+                   return_value=mock_result):
+            result = await manager._resolve_model_path("nonexistent-model")
+
+        assert result == ""
+
+
+# ---------------------------------------------------------------------------
+# TestSettingsPersistence
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestSettingsPersistence:
+    def test_save_and_load_roundtrip(self, tmp_path):
+        settings = {
+            "provider": "lmstudio",
+            "lmstudio_model": "author/test-model",
+            "quick_model": "author/quick-model",
+        }
+        LMStudioManager.save_settings(tmp_path, settings)
+
+        loaded = LMStudioManager.load_settings(tmp_path)
+
+        assert loaded == settings
+
+    def test_load_returns_empty_when_no_file(self, tmp_path):
+        result = LMStudioManager.load_settings(tmp_path)
+        assert result == {}
+
+    def test_load_returns_empty_on_corrupt_json(self, tmp_path):
+        path = tmp_path / "llm_settings.json"
+        path.write_text("not valid json{{{", encoding="utf-8")
+
+        result = LMStudioManager.load_settings(tmp_path)
+        assert result == {}
+
+    def test_save_creates_parent_dirs(self, tmp_path):
+        nested = tmp_path / "deep" / "nested" / "dir"
+        LMStudioManager.save_settings(nested, {"provider": "ollama"})
+
+        loaded = LMStudioManager.load_settings(nested)
+        assert loaded["provider"] == "ollama"
 
 
 # ---------------------------------------------------------------------------
@@ -469,3 +753,101 @@ class TestRefreshLoadedModels:
             result = await manager._query_lms_ps()
 
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# TestLoadModelDuplicateGuard
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestLoadModelDuplicateGuard:
+    async def test_load_model_skips_already_loaded(self, manager):
+        """If model is already in _loaded_models, _load_model returns True without loading."""
+        manager._loaded_models = {"test-model"}
+        manager._load_via_cli = AsyncMock()
+        manager._load_via_api = AsyncMock()
+        manager._load_via_alt = AsyncMock()
+
+        result = await manager._load_model("path/to/test-model.gguf")
+
+        assert result is True
+        manager._load_via_cli.assert_not_awaited()
+        manager._load_via_api.assert_not_awaited()
+        manager._load_via_alt.assert_not_awaited()
+
+    async def test_load_model_proceeds_when_not_loaded(self, manager):
+        """If model is NOT in _loaded_models, loading strategies are attempted."""
+        manager._loaded_models = set()
+        manager._load_via_cli = AsyncMock(return_value=True)
+
+        result = await manager._load_model("path/to/test-model.gguf")
+
+        assert result is True
+        manager._load_via_cli.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# TestUnloadModel
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestUnloadModel:
+    async def test_unload_success_removes_from_set(self, manager):
+        manager._loaded_models = {"test-model"}
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("server.services.lmstudio_manager.subprocess.run",
+                   return_value=mock_result):
+            result = await manager._unload_model("test-model")
+
+        assert result is True
+        assert "test-model" not in manager._loaded_models
+
+    async def test_unload_failure_keeps_set_unchanged(self, manager):
+        manager._loaded_models = {"test-model"}
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stderr = "error"
+
+        with patch("server.services.lmstudio_manager.subprocess.run",
+                   return_value=mock_result):
+            result = await manager._unload_model("test-model")
+
+        assert result is False
+        assert "test-model" in manager._loaded_models
+
+    async def test_unload_timeout_returns_false(self, manager):
+        manager._loaded_models = {"test-model"}
+
+        with patch("server.services.lmstudio_manager.subprocess.run",
+                   side_effect=subprocess.TimeoutExpired(cmd="lms", timeout=30)):
+            result = await manager._unload_model("test-model")
+
+        assert result is False
+        assert "test-model" in manager._loaded_models
+
+
+# ---------------------------------------------------------------------------
+# TestUnloadAll
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestUnloadAll:
+    async def test_unload_all_unloads_each_model(self, manager):
+        manager._loaded_models = {"model-a", "model-b"}
+        manager._unload_model = AsyncMock(return_value=True)
+
+        await manager.unload_all()
+
+        assert manager._unload_model.await_count == 2
+        calls = {c.args[0] for c in manager._unload_model.await_args_list}
+        assert calls == {"model-a", "model-b"}
+
+    async def test_unload_all_with_no_models(self, manager):
+        manager._loaded_models = set()
+        manager._unload_model = AsyncMock()
+
+        await manager.unload_all()
+
+        manager._unload_model.assert_not_awaited()
