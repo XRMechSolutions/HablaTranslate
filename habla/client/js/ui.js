@@ -8,8 +8,128 @@ const SCROLL_THRESHOLD = 80; // px from bottom to consider "at bottom"
 
 function scrollIfAtBottom() {
   const area = $('#transcript');
-  if (!area || state.userScrolledUp) return;
-  requestAnimationFrame(() => area.scrollTop = area.scrollHeight);
+  if (!area) return;
+  // Check position directly each time — the cached userScrolledUp flag can get
+  // stale when card merges grow content and shift the scroll position.
+  const gap = area.scrollHeight - area.scrollTop - area.clientHeight;
+  if (gap > SCROLL_THRESHOLD && state.userScrolledUp) return;
+  // Scroll immediately for already-laid-out content, then again after layout
+  // to catch content added in the current frame.
+  area.scrollTop = area.scrollHeight;
+  requestAnimationFrame(() => {
+    area.scrollTop = area.scrollHeight;
+  });
+}
+
+function _isNearBottom(el) {
+  if (!el) return true; // new element — default to auto-scroll
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 20;
+}
+
+/** Track whether user has physically interacted with an inner scroll box. */
+function _trackUserScroll(el) {
+  if (!el || el._scrollTracked) return;
+  el._scrollTracked = true;
+  el._userScrolled = false;
+  // Mark on physical interaction only (wheel / touch), not programmatic scrollTop
+  const mark = () => { el._userScrolled = true; };
+  el.addEventListener('wheel', mark, { passive: true });
+  el.addEventListener('touchstart', mark, { passive: true });
+}
+
+/**
+ * Reliably scroll an element to its bottom after an innerHTML change.
+ * Forces synchronous reflow, then uses double-RAF + setTimeout to cover
+ * all browser timing edge cases.
+ */
+function _forceScrollBottom(el) {
+  if (!el) return;
+  // 1. Force synchronous layout so scrollHeight is current
+  void el.offsetHeight;
+  el.scrollTop = el.scrollHeight;
+  // 2. After next paint
+  requestAnimationFrame(() => {
+    el.scrollTop = el.scrollHeight;
+    // 3. After the paint triggered by the RAF
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+  });
+}
+
+/** Should we auto-scroll this inner box? Yes unless user physically scrolled up. */
+function _shouldAutoScroll(el) {
+  if (!el) return true;
+  // If user never physically touched the scroll, always auto-scroll
+  if (!el._userScrolled) return true;
+  // If they did touch it but are near bottom, still auto-scroll
+  return _isNearBottom(el);
+}
+
+/**
+ * Update a merged card in-place without destroying the .ex-src / .ex-tgt
+ * elements, so their scroll positions are preserved. Only their innerHTML
+ * is changed; the elements themselves stay in the DOM.
+ */
+function rebuildMergedCard(el, data) {
+  const srcEl = el.querySelector('.ex-src:not(.corrected)');
+  const tgtEl = el.querySelector('.ex-tgt');
+  _trackUserScroll(srcEl);
+  _trackUserScroll(tgtEl);
+  const srcAutoScroll = _shouldAutoScroll(srcEl);
+  const tgtAutoScroll = _shouldAutoScroll(tgtEl);
+
+  // Build new source HTML (with idiom highlights)
+  const srcFlag = state.direction === 'es_to_en' ? '\u{1F1EA}\u{1F1F8}' : '\u{1F1EC}\u{1F1E7}';
+  const tgtFlag = state.direction === 'es_to_en' ? '\u{1F1EC}\u{1F1E7}' : '\u{1F1EA}\u{1F1F8}';
+  const srcRaw = data.source || data.corrected || '';
+  let srcH = esc(srcRaw);
+  (data.idioms || []).forEach(i => {
+    const e = esc(i.phrase), rx = new RegExp(escRx(e), 'gi');
+    srcH = srcH.replace(rx, `<span class="hl">${e}</span>`);
+  });
+
+  // Update text content in-place (element survives in DOM)
+  if (srcEl) {
+    srcEl.title = srcRaw;
+    srcEl.innerHTML = `${srcFlag} ${srcH}`;
+    if (srcAutoScroll) _forceScrollBottom(srcEl);
+  }
+  if (tgtEl) {
+    tgtEl.innerHTML = `${tgtFlag} ${esc(data.translated)}`;
+    if (tgtAutoScroll) _forceScrollBottom(tgtEl);
+  }
+
+  // Update corrected line
+  const oldCorr = el.querySelector('.ex-src.corrected');
+  const hasCorr = data.corrected && data.corrected !== data.source;
+  if (hasCorr) {
+    if (oldCorr) {
+      oldCorr.title = data.corrected;
+      oldCorr.innerHTML = `~ ${esc(data.corrected)}`;
+    } else if (tgtEl) {
+      const corrDiv = document.createElement('div');
+      corrDiv.className = 'ex-src corrected';
+      corrDiv.title = data.corrected;
+      corrDiv.innerHTML = `~ ${esc(data.corrected)}`;
+      tgtEl.insertAdjacentElement('afterend', corrDiv);
+    }
+  } else if (oldCorr) {
+    oldCorr.remove();
+  }
+
+  // Update metadata (timestamp, confidence)
+  const metaEl = el.querySelector('.ex-meta:not(.live-label)');
+  if (metaEl) {
+    const timeSpan = metaEl.querySelector('span');
+    if (timeSpan) timeSpan.textContent = new Date(data.timestamp).toLocaleTimeString();
+    const confSpan = metaEl.querySelectorAll('span')[1];
+    if (data.confidence && confSpan && !confSpan.classList.contains('audio-play')) {
+      confSpan.textContent = `${Math.round(data.confidence * 100)}%`;
+    }
+  }
+
+  el._exData = data;
 }
 
 // --- Stale pending card cleanup ---
@@ -170,9 +290,7 @@ export function finalizeExchange(msg) {
       last.timestamp = msg.timestamp;
       last._ts = msg._ts;
       if (last._el) {
-        last._el.innerHTML = buildExchangeHTML(last);
-        last._el._exData = last;
-        // Attach ground truth if available during playback
+        rebuildMergedCard(last._el, last);
         if (_gtCache) attachNextGroundTruth(last._el);
       }
     } else {
@@ -246,11 +364,7 @@ export function addExchange(msg, insertBefore = null) {
     last.timestamp = msg.timestamp;
     last._ts = msgTs;
     if (last._el) {
-      last._el.innerHTML = buildExchangeHTML(last);
-      last._el._exData = last;
-      // Scroll source text to show latest within its capped area
-      const srcDiv = last._el.querySelector('.ex-src:not(.corrected)');
-      if (srcDiv) srcDiv.scrollTop = srcDiv.scrollHeight;
+      rebuildMergedCard(last._el, last);
       scrollIfAtBottom();
     }
     return;
