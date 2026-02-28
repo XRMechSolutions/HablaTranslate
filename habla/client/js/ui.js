@@ -451,6 +451,10 @@ function buildExchangeHTML(msg) {
     ? `<button class="audio-play" onclick="playExAudio(this,${msg.exchange_id})" title="Play audio clip">&#9654;</button>`
     : '';
 
+  const bkmkBtn = msg.exchange_id
+    ? `<button class="bkmk-btn${msg.bookmarked ? ' active' : ''}" onclick="toggleBookmark(this,${msg.exchange_id})" title="Bookmark">&#9873;</button>`
+    : '';
+
   return `
     <div class="ex-spk">
       <div class="spk-dot" style="background:${color}"></div>
@@ -464,6 +468,7 @@ function buildExchangeHTML(msg) {
       <span>${new Date(msg.timestamp).toLocaleTimeString()}</span>
       ${msg.confidence ? `<span>${Math.round(msg.confidence * 100)}%</span>` : ''}
       ${audioBtn}
+      ${bkmkBtn}
       ${hasNotes ? `<button class="notes-toggle" onclick="toggleNotes(this)">Notes</button>` : ''}
     </div>`;
 }
@@ -472,6 +477,20 @@ window.toggleNotes = (btn) => {
   const card = btn.closest('.ex');
   if (!card) return;
   card.classList.toggle('notes-open');
+};
+
+// --- Bookmark toggle ---
+window.toggleBookmark = async (btn, exchangeId) => {
+  try {
+    const res = await fetch(`/api/exchanges/${exchangeId}/bookmark`, { method: 'POST' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    btn.classList.toggle('active', data.bookmarked);
+    if (window.toast) toast(data.bookmarked ? 'Bookmarked' : 'Bookmark removed');
+  } catch (e) {
+    console.error('Bookmark toggle failed:', e);
+    if (window.toast) toast('Bookmark failed', 'error');
+  }
 };
 
 // --- Exchange audio playback ---

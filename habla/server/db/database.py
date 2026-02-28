@@ -124,8 +124,7 @@ async def _create_tables(db: aiosqlite.Connection):
             literal     TEXT,
             meaning     TEXT NOT NULL,
             region      TEXT DEFAULT 'universal',
-            frequency   TEXT DEFAULT 'common',
-            examples    TEXT
+            frequency   TEXT DEFAULT 'common'
         )
     """)
 
@@ -136,6 +135,7 @@ async def _create_tables(db: aiosqlite.Connection):
             session_id      INTEGER NOT NULL REFERENCES sessions(id),
             segment_id      INTEGER,
             timestamp       DATETIME DEFAULT CURRENT_TIMESTAMP,
+            status          TEXT DEFAULT 'ok',
             confidence      REAL,
             audio_rms       REAL,
             duration_seconds REAL,
@@ -145,6 +145,19 @@ async def _create_tables(db: aiosqlite.Connection):
             vad_threshold   REAL,
             model_name      TEXT
         )
+    """)
+
+    # Migration: add status column if table existed before this change
+    try:
+        await db.execute("ALTER TABLE quality_metrics ADD COLUMN status TEXT DEFAULT 'ok'")
+    except Exception:
+        pass  # Column already exists
+
+    await db.execute("""
+        CREATE INDEX IF NOT EXISTS idx_quality_metrics_status ON quality_metrics(status)
+    """)
+    await db.execute("""
+        CREATE INDEX IF NOT EXISTS idx_quality_metrics_session ON quality_metrics(session_id)
     """)
 
     # Full-text search on vocab
@@ -203,6 +216,16 @@ async def _create_tables(db: aiosqlite.Connection):
     except Exception:
         pass  # Column already exists
 
+    # Add bookmark columns to exchanges (migration for existing DBs)
+    for col, typ in [
+        ("bookmarked", "BOOLEAN DEFAULT FALSE"),
+        ("bookmark_note", "TEXT"),
+    ]:
+        try:
+            await db.execute(f"ALTER TABLE exchanges ADD COLUMN {col} {typ}")
+        except Exception:
+            pass  # Column already exists
+
     # Indexes
     await db.execute("""
         CREATE INDEX IF NOT EXISTS idx_exchanges_session
@@ -215,4 +238,8 @@ async def _create_tables(db: aiosqlite.Connection):
     await db.execute("""
         CREATE INDEX IF NOT EXISTS idx_vocab_term
         ON vocab(term)
+    """)
+    await db.execute("""
+        CREATE INDEX IF NOT EXISTS idx_exchanges_bookmarked
+        ON exchanges(bookmarked) WHERE bookmarked = 1
     """)

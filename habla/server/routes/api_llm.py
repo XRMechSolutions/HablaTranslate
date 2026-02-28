@@ -93,7 +93,7 @@ async def llm_providers():
     openai_info = {"name": "openai", "status": "unknown", "models": []}
     if cfg.openai_api_key:
         openai_info["status"] = "ok"
-        openai_info["models"] = ["gpt-5", "gpt-5-mini", "gpt-4o-mini", "gpt-5-nano"]
+        openai_info["models"] = ["gpt-5.2", "gpt-5.2-pro", "gpt-4o-mini", "gpt-4o"]
     else:
         openai_info["status"] = "no_api_key"
     providers.append(openai_info)
@@ -154,7 +154,7 @@ async def llm_models(provider: str):
     elif provider == "openai":
         if not cfg.openai_api_key:
             raise HTTPException(400, "OPENAI_API_KEY not configured")
-        return {"models": ["gpt-5", "gpt-5-mini", "gpt-4o-mini", "gpt-5-nano"]}
+        return {"models": ["gpt-5.2", "gpt-5.2-pro", "gpt-4o-mini", "gpt-4o"]}
 
     else:
         raise HTTPException(400, f"Unknown provider: {provider}")

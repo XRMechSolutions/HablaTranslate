@@ -5,45 +5,82 @@ idiom detection, and vocabulary capture for language learning.
 
 Runs on a single RTX 3060 (12GB) with ~5GB VRAM usage.
 
-## Quick Start
+## Initial Setup (New Device)
+
+A setup script automates most of this. From the project root, run as **Administrator**:
+
+```
+setup.bat
+```
+
+It checks prerequisites, installs what it can (ffmpeg, pip packages, PyTorch CUDA), downloads ML models, generates Tailscale HTTPS certs, and updates the startup scripts. Review its output for anything that needs manual attention.
+
+The sections below cover what the script does and what still requires manual steps.
 
 ### Prerequisites
 
-- NVIDIA GPU with 12GB+ VRAM
-- [Ollama](https://ollama.com) installed
-- Python 3.11+
-- ffmpeg installed (`sudo apt install ffmpeg`)
-- HuggingFace account + token (for Pyannote diarization)
+| Requirement | How to install | Verify |
+|-------------|---------------|--------|
+| NVIDIA GPU (12GB+ VRAM) | [NVIDIA drivers](https://www.nvidia.com/Download/index.aspx) + [CUDA Toolkit 12.4+](https://developer.nvidia.com/cuda-downloads) | `nvidia-smi` |
+| Python 3.11+ | [python.org](https://www.python.org/downloads/) or Microsoft Store. Check "Add to PATH". | `python --version` |
+| ffmpeg | `winget install ffmpeg` (restart terminal after) | `ffmpeg -version` |
+| Tailscale | [tailscale.com/download](https://tailscale.com/download) | `tailscale status` |
+| LM Studio **or** Ollama | [lmstudio.ai](https://lmstudio.ai) / [ollama.com](https://ollama.com) | See below |
 
-### 1. Pull the LLM model
+### Manual Steps (cannot be automated)
 
-```bash
-ollama pull qwen3:4b
-```
+**1. HuggingFace token + model terms**
 
-### 2. Accept Pyannote model licenses
-
-Visit these HuggingFace pages and accept the terms:
+Get a token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) (read access is enough), then accept the terms on both of these pages:
 - https://huggingface.co/pyannote/speaker-diarization-3.1
 - https://huggingface.co/pyannote/segmentation-3.0
 
-### 3. Install and run
-
-```bash
-cd habla
-pip install -r requirements.txt
-
-# Set your HuggingFace token
-export HF_TOKEN=hf_your_token_here
-
-# Start the server
-uvicorn server.main:app --host 0.0.0.0 --port 8002
+Add the token to `habla/.env`:
+```
+HF_TOKEN=hf_your_real_token_here
 ```
 
-### 4. Open on your phone
+**2. LLM provider setup**
 
-Open `http://YOUR_SERVER_IP:8002` in your phone's browser.
-For remote access, set up WireGuard VPN.
+*Option A — LM Studio (default):*
+- Install LM Studio and download your translation models (GGUF format)
+- Models are stored in `C:\Users\<username>\.cache\lm-studio\models\`
+- Update `habla/.env` with the paths on this machine:
+  ```
+  LMSTUDIO_EXECUTABLE=C:/Program Files/LM Studio/LM Studio.exe
+  LMSTUDIO_MODEL=towerinstruct-mistral-7b-v0.2
+  LMSTUDIO_MODEL_PATHS=C:/Users/<username>/.cache/lm-studio/models/.../model.gguf
+  ```
+- Start LM Studio and load your model before starting Habla
+
+*Option B — Ollama:*
+- Install Ollama, then: `ollama pull qwen3:4b`
+- Set in `habla/.env`:
+  ```
+  LLM_PROVIDER=ollama
+  ```
+
+**3. PyTorch with CUDA**
+
+The setup script attempts this, but if CUDA isn't detected, install manually:
+```
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+```
+Verify: `python -c "import torch; print(torch.cuda.is_available())"` should print `True`.
+
+### Quick Start (after setup)
+
+```
+start-habla.bat
+```
+
+Wait for **"Application startup complete"** in the console before opening the browser. First launch downloads/loads ML models and may take 1-2 minutes.
+
+Access at: `https://<your-tailscale-hostname>:8002`
+
+### Remote Access (Phone)
+
+The server is accessed via [Tailscale](https://tailscale.com) VPN. Install Tailscale on your phone, sign in with the same account, and open the HTTPS URL. HTTPS is required for the browser to allow microphone access.
 
 ## Docker Alternative
 

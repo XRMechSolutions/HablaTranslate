@@ -1,0 +1,4 @@
+# Additional dependencies for Whisper fine-tuning (not needed for server runtime)
+# Install with: pip install -r requirements-finetune.txt
+datasets>=3.0.0
+soundfile>=0.12.1

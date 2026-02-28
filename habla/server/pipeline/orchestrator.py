@@ -65,12 +65,11 @@ class PipelineOrchestrator:
 
         # ASR model (loaded on startup)
         self._whisperx_model = None
-        self._align_model = None
         self._diarize_pipeline = None
         self._ready = False
 
-        # Processing queue: (kind, payload, future) where kind is "raw" or "wav"
-        self._queue: asyncio.Queue[tuple[str, bytes | str, asyncio.Future]] = asyncio.Queue(maxsize=5)
+        # Processing queue: (kind, payload, future, meta) where kind is "raw" or "wav"
+        self._queue: asyncio.Queue[tuple[str, bytes | str, asyncio.Future, dict]] = asyncio.Queue(maxsize=5)
         self._worker_task: asyncio.Task | None = None
 
         # Callbacks
@@ -105,6 +104,8 @@ class PipelineOrchestrator:
             "corrections_detected": 0,
             "idiom_pattern_db_hits": 0,
             "idiom_llm_hits": 0,
+            "asr_rejected_count": 0,
+            "asr_empty_count": 0,
         }
 
         # Thread safety: WhisperX model is not thread-safe.
@@ -170,7 +171,7 @@ class PipelineOrchestrator:
 
                 self._diarize_pipeline = PyannotePipeline.from_pretrained(
                     "pyannote/speaker-diarization-3.1",
-                    use_auth_token=self.config.diarization.hf_token,
+                    token=self.config.diarization.hf_token,
                 )
                 import torch
                 if self._diarize_pipeline is None:
@@ -230,7 +231,7 @@ class PipelineOrchestrator:
         # 4. Cancel any remaining queued futures
         while not self._queue.empty():
             try:
-                _, _, future = self._queue.get_nowait()
+                _, _, future, *_ = self._queue.get_nowait()
                 if not future.done():
                     future.cancel()
             except asyncio.QueueEmpty:
@@ -452,7 +453,9 @@ class PipelineOrchestrator:
             logger.error(f"Failed to save exchange: {e}", exc_info=True)
             return None
 
-    async def process_wav(self, wav_path: str) -> Exchange | None:
+    async def process_wav(
+        self, wav_path: str, audio_rms: float = 0.0, vad_avg_prob: float = 0.0
+    ) -> Exchange | None:
         """
         Process a WAV file through the full pipeline (used by continuous mode).
         Routes through the queue for proper serialization and backpressure.
@@ -461,8 +464,9 @@ class PipelineOrchestrator:
             logger.warning("Pipeline not ready, dropping audio")
             return None
 
+        meta = {"audio_rms": audio_rms, "vad_avg_prob": vad_avg_prob}
         future = asyncio.get_event_loop().create_future()
-        await self._queue.put(("wav", wav_path, future))
+        await self._queue.put(("wav", wav_path, future, meta))
         return await future
 
     async def process_text(
@@ -694,16 +698,17 @@ class PipelineOrchestrator:
         while True:
             try:
                 item = await self._queue.get()
-                kind, payload, future = item
+                kind, payload, future, *rest = item
+                meta = rest[0] if rest else {}
                 # Track peak queue depth
                 depth = self._queue.qsize() + 1  # +1 for the item we just took
                 if depth > self._metrics["peak_queue_depth"]:
                     self._metrics["peak_queue_depth"] = depth
                 try:
                     if kind == "wav":
-                        result = await self._process_audio_segment_from_wav(payload)
+                        result = await self._process_audio_segment_from_wav(payload, meta=meta)
                     else:
-                        result = await self._process_audio_segment(payload)
+                        result = await self._process_audio_segment(payload, meta=meta)
                     self._metrics["segments_processed"] += 1
                     if result:
                         self._metrics["translations_completed"] += 1
@@ -728,13 +733,13 @@ class PipelineOrchestrator:
             except Exception as e:
                 logger.error(f"Queue worker error: {e}", exc_info=True)
 
-    async def _process_audio_segment(self, audio_bytes: bytes) -> Exchange | None:
+    async def _process_audio_segment(self, audio_bytes: bytes, meta: dict | None = None) -> Exchange | None:
         """Run full pipeline on one audio segment (from raw Opus/WebM bytes)."""
         wav_path = await self._decode_to_wav(audio_bytes)
         if not wav_path:
             return None
         try:
-            return await self._process_audio_segment_from_wav(wav_path)
+            return await self._process_audio_segment_from_wav(wav_path, meta=meta)
         finally:
             Path(wav_path).unlink(missing_ok=True)
 
@@ -804,7 +809,46 @@ class PipelineOrchestrator:
             logger.warning(f"Failed to save audio clip: {e}")
             return None
 
-    async def _process_audio_segment_from_wav(self, wav_path: str) -> Exchange | None:
+    async def _record_quality_metric(
+        self,
+        status: str,
+        confidence: float | None,
+        meta: dict | None = None,
+        processing_ms: int = 0,
+        speaker_id: str | None = None,
+        duration_seconds: float = 0.0,
+    ):
+        """Record a quality metric row for auto-tuning analysis.
+
+        Called on every segment outcome: ok, asr_rejected, asr_empty, low_confidence.
+        """
+        if not self.session_id:
+            return
+        meta = meta or {}
+        try:
+            db = await get_db()
+            await db.execute(
+                """INSERT INTO quality_metrics
+                   (session_id, status, confidence, audio_rms, duration_seconds,
+                    speaker_id, processing_time_ms, vad_threshold, model_name)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    self.session_id,
+                    status,
+                    confidence,
+                    meta.get("audio_rms"),
+                    duration_seconds,
+                    speaker_id,
+                    processing_ms,
+                    self.config.asr.vad_threshold,
+                    self.config.asr.model_size,
+                ),
+            )
+            await db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to record quality metric: {e}")
+
+    async def _process_audio_segment_from_wav(self, wav_path: str, meta: dict | None = None) -> Exchange | None:
         """Run full pipeline on a WAV file (used by both PTT and continuous modes).
 
         ASR runs in the queue (GPU-serial). Once transcript is ready, translation
@@ -812,6 +856,7 @@ class PipelineOrchestrator:
         without waiting for a slow LLM call.
         """
         start_time = time.monotonic()
+        meta = meta or {}
 
         # Normalize audio (bandpass + loudness) before ASR
         wav_path = await self._normalize_wav(wav_path)
@@ -825,7 +870,12 @@ class PipelineOrchestrator:
         )
 
         if not transcript or not transcript.strip():
-            logger.warning("Full ASR returned empty transcript — WhisperX VAD may have rejected the audio")
+            logger.warning("Full ASR returned empty/bad transcript — WhisperX VAD may have rejected the audio")
+            self._metrics["asr_rejected_count"] += 1
+            await self._record_quality_metric(
+                status="asr_rejected", confidence=None, meta=meta,
+                processing_ms=int((time.monotonic() - start_time) * 1000),
+            )
             # Clean up clip if ASR produced nothing
             if clip_path:
                 Path(clip_path).unlink(missing_ok=True)
@@ -853,7 +903,7 @@ class PipelineOrchestrator:
 
         # Fire translation concurrently — don't block the ASR queue waiting for LLM
         task = asyncio.create_task(
-            self._translate_and_notify(transcript, speaker_id, start_time, audio_path=clip_path)
+            self._translate_and_notify(transcript, speaker_id, start_time, audio_path=clip_path, meta=meta)
         )
         self._inflight_translations.add(task)
         task.add_done_callback(self._inflight_translations.discard)
@@ -861,7 +911,8 @@ class PipelineOrchestrator:
         return None  # Translation result sent via callback, not via future
 
     async def _translate_and_notify(
-        self, transcript: str, speaker_id: str, start_time: float, audio_path: str | None = None
+        self, transcript: str, speaker_id: str, start_time: float,
+        audio_path: str | None = None, meta: dict | None = None
     ):
         """Run translation outside the queue so ASR can continue processing."""
         try:
@@ -869,6 +920,15 @@ class PipelineOrchestrator:
             if exchange:
                 exchange.processing_ms = int((time.monotonic() - start_time) * 1000)
                 logger.info(f"Translation done in {exchange.processing_ms}ms: '{transcript[:60]}'")
+                # Record quality metric for successful translation
+                status = "low_confidence" if exchange.confidence < 0.3 else "ok"
+                await self._record_quality_metric(
+                    status=status,
+                    confidence=exchange.confidence,
+                    meta=meta,
+                    processing_ms=exchange.processing_ms,
+                    speaker_id=speaker_id,
+                )
         except Exception as e:
             logger.error(f"Translation error: {e}")
             if self._on_error:

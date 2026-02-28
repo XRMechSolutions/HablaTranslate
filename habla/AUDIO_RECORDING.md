@@ -105,7 +105,6 @@ In `server/config.py`, the `RecordingConfig` class has these settings:
 class RecordingConfig(BaseModel):
     enabled: bool = False                    # Master toggle
     save_raw_audio: bool = True              # Save WebM/Opus stream
-    save_decoded_pcm: bool = False           # Save decoded PCM (verbose)
     save_vad_segments: bool = True           # Save VAD segments (WAV)
     output_dir: Path = Path("data/audio/recordings")
     max_recordings: int = 100                # Auto-cleanup old recordings

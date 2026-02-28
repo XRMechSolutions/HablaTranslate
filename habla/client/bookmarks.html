@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0f1419">
+<title>Habla - Bookmarks</title>
+<style>
+:root{
+  --bg:#0f1419;--bg2:#1a2027;--bg3:#1e272f;--bg4:#253340;
+  --fg:#e7e9ea;--fg2:#8b98a5;--fg3:#536471;
+  --accent:#1d9bf0;--green:#00ba7c;--amber:#f59e0b;--red:#f4212e;
+  --r:12px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,system-ui,'Segoe UI',sans-serif;background:var(--bg);color:var(--fg);height:100dvh;display:flex;flex-direction:column;overflow:hidden;-webkit-tap-highlight-color:transparent}
+
+/* HEADER */
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg2);border-bottom:1px solid var(--bg4);flex-shrink:0}
+.hdr h1{font-size:18px;font-weight:700}
+.back-btn{padding:5px 10px;border-radius:8px;background:var(--bg4);color:var(--fg2);border:none;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:4px}
+.back-btn:active{transform:scale(.95)}
+
+/* STATS BAR */
+.stats-bar{display:flex;gap:12px;padding:8px 14px;background:var(--bg2);border-bottom:1px solid var(--bg4);flex-shrink:0;flex-wrap:wrap}
+.stat{font-size:11px;color:var(--fg3)}
+.stat b{color:var(--fg2);font-weight:600}
+
+/* MAIN CONTENT */
+.content{flex:1;overflow-y:auto;padding:10px 14px;-webkit-overflow-scrolling:touch}
+
+/* BOOKMARK CARDS */
+.bk-card{background:var(--bg3);border-radius:var(--r);padding:12px;margin-bottom:8px;border-left:3px solid var(--amber);animation:up .2s ease-out}
+@keyframes up{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.bk-card:active{background:var(--bg4)}
+.bk-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.bk-speaker{font-size:12px;font-weight:700;color:var(--accent)}
+.bk-time{font-size:11px;color:var(--fg3)}
+.bk-src{font-size:13px;color:var(--fg2);margin-bottom:4px}
+.bk-tgt{font-size:14px;color:var(--fg);margin-bottom:6px}
+.bk-note{font-size:11px;color:var(--amber);font-style:italic;margin-bottom:6px}
+.bk-session{font-size:10px;color:var(--fg3);margin-bottom:6px}
+.bk-actions{display:flex;gap:8px;align-items:center}
+.bk-actions button{background:none;border:none;color:var(--fg3);cursor:pointer;font-size:12px;padding:4px 8px;border-radius:6px}
+.bk-actions button:hover{color:var(--fg);background:var(--bg4)}
+.bk-actions .remove{color:var(--red)}
+.bk-actions .remove:hover{background:rgba(244,33,46,.15)}
+
+/* EMPTY STATE */
+.empty{text-align:center;padding:40px 20px;color:var(--fg3)}
+.empty h2{font-size:16px;margin-bottom:8px;color:var(--fg2)}
+.empty p{font-size:13px}
+
+/* TOAST */
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--bg3);color:var(--fg);padding:10px 20px;border-radius:var(--r);font-size:13px;font-weight:600;transition:transform .3s;z-index:100;border:1px solid var(--bg4)}
+.toast.vis{transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <h1>Bookmarks</h1>
+  <a class="back-btn" href="/">&larr; Habla</a>
+</div>
+
+<div class="stats-bar" id="statsBar">
+  <span class="stat">Total: <b id="totalCount">0</b></span>
+</div>
+
+<div class="content" id="bookmarkList"></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+function showToast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('vis');
+  setTimeout(() => t.classList.remove('vis'), 2500);
+}
+
+function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function formatDate(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
+function renderBookmarks(bookmarks) {
+  const list = $('#bookmarkList');
+  if (!bookmarks.length) {
+    list.innerHTML = `
+      <div class="empty">
+        <h2>No bookmarks yet</h2>
+        <p>Tap the bookmark icon on any exchange card to save it for later review.</p>
+      </div>`;
+    return;
+  }
+  list.innerHTML = bookmarks.map(bk => {
+    const noteH = bk.bookmark_note ? `<div class="bk-note">${esc(bk.bookmark_note)}</div>` : '';
+    const sessionLabel = bk.session_name || `Session ${bk.session_id}`;
+    const sessionDate = bk.session_started ? formatDate(bk.session_started) : '';
+    return `
+      <div class="bk-card" data-id="${bk.id}">
+        <div class="bk-header">
+          <span class="bk-speaker">${esc(bk.speaker_id || 'Unknown')}</span>
+          <span class="bk-time">${formatDate(bk.timestamp)}</span>
+        </div>
+        <div class="bk-src">${esc(bk.raw_transcript)}</div>
+        <div class="bk-tgt">${esc(bk.translation)}</div>
+        ${noteH}
+        <div class="bk-session">${esc(sessionLabel)} ${sessionDate ? '&middot; ' + sessionDate : ''}</div>
+        <div class="bk-actions">
+          ${bk.has_audio ? `<button onclick="playAudio(${bk.id},${bk.session_id})">&#9654; Play</button>` : ''}
+          <button class="remove" onclick="removeBookmark(${bk.id})">Remove</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function loadBookmarks() {
+  try {
+    const data = await api('/api/bookmarks/recent?limit=200');
+    $('#totalCount').textContent = data.total;
+    renderBookmarks(data.bookmarks);
+  } catch (e) {
+    console.error('Failed to load bookmarks:', e);
+    $('#bookmarkList').innerHTML = '<div class="empty"><h2>Error loading bookmarks</h2></div>';
+  }
+}
+
+async function removeBookmark(id) {
+  try {
+    await api(`/api/exchanges/${id}/bookmark`, { method: 'POST' });
+    const card = document.querySelector(`.bk-card[data-id="${id}"]`);
+    if (card) {
+      card.style.transition = 'opacity .2s, transform .2s';
+      card.style.opacity = '0';
+      card.style.transform = 'translateX(-20px)';
+      setTimeout(() => {
+        card.remove();
+        const remaining = document.querySelectorAll('.bk-card').length;
+        $('#totalCount').textContent = remaining;
+        if (!remaining) renderBookmarks([]);
+      }, 200);
+    }
+    showToast('Bookmark removed');
+  } catch (e) {
+    console.error('Remove failed:', e);
+    showToast('Failed to remove bookmark');
+  }
+}
+
+let _audio = null;
+function playAudio(exchangeId, sessionId) {
+  if (_audio) { _audio.pause(); _audio = null; }
+  _audio = new Audio(`/api/sessions/${sessionId}/exchanges/${exchangeId}/audio`);
+  _audio.play().catch(e => {
+    console.error('Playback failed:', e);
+    showToast('Audio not available');
+  });
+}
+
+loadBookmarks();
+</script>
+</body>
+</html>

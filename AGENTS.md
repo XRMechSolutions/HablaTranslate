@@ -21,7 +21,7 @@ Target hardware is an MSI laptop with an RTX 3060 (12GB VRAM) that has known the
 
 ## User & Deployment Context
 
-- The owner accesses the server remotely from his Android phone over Tailscale VPN (Tailscale IP: 100.73.7.66), often from Spain
+- The owner accesses the server remotely from his Android phone over Tailscale VPN, often from Spain
 - The PWA client runs in Chrome on Android — must be mobile-first
 - Primary use cases: live classroom translation (long sessions, always-on listening) and casual conversation translation
 - Bandwidth is ~20MB/hour (Opus-encoded audio upstream, JSON downstream) — works on metered mobile data
@@ -120,51 +120,13 @@ Before auditing, reviewing, or creating tests for any module, **read the relevan
 
 These documents define the project's quality bar. Do not skip them.
 
-## Reusable Code from Other Projects
+## Design Influences
 
-Reference paths for patterns that can be ported into Habla. Do not copy blindly — adapt to Python/FastAPI conventions.
-
-### StockMaster — `C:\Clint file drop\StockMaster`
-Server resilience and operational patterns (Python, async).
-- **Circuit breakers**: `ExecutionEngine/core/circuit_breaker_manager.py` — 7 breaker types, auto-reset, DB persistence
-- **Retry with backoff**: `test/test_order_retry.py` — exponential backoff config, retryable vs permanent errors
-- **Graceful shutdown + state save**: `core/main.py:397-695` — SIGINT/SIGTERM handlers, queue drain, final state JSON
-- **Startup health checks**: `core/main.py:468-485` — component validation before accepting work
-- **Structured logging**: `DataGatheringTools/monitoring/logger_config.py` — JSON structured logs, rotating files, metrics collection, separate error log
-- **System monitoring**: `control_center/services/system_monitor.py` — CPU/memory/disk alerts with thresholds
-- **Rate limiting**: `AIDecisionMakers/brokers/alpaca_client.py:1174-1183` — token-bucket rate limiter
-- **Metrics tracking**: `AIDecisionMakers/brokers/alpaca_client.py:200-337` — orders, API calls, cache hits, uptime
-- **Cache with TTL**: `AIDecisionMakers/brokers/alpaca_client.py:841-864` — 30s position cache
-- **Docker health checks**: `control_center/Dockerfile` and `docker-compose.yml` — HEALTHCHECK, restart policies, service dependencies
-- **Error categorization**: `AIDecisionMakers/brokers/alpaca_client.py:41-55` — TEMPORARY/PERMANENT/CRITICAL error types
-- **WebSocket heartbeat**: `control_center/app.py:39-44` — ping_interval/timeout tuning
-
-### GeneralizedServiceChatbot — `C:\Users\clint\GeneralizedServiceChatbot`
-Multi-provider LLM integration and LM Studio management (Kotlin + C# + Node.js).
-- **LLM provider interface**: `app/src/main/java/.../LlmClient.kt` — abstract interface with `generateResponse()`, `setModel()`
-- **LM Studio client**: `app/src/main/java/.../LMStudioClient.kt` — OpenAI-compatible API calls, model discovery via `/v1/models`, health checks, auto-restart
-- **LM Studio health checker**: `app/src/main/java/.../LMStudioHealthChecker.kt` — health + model verification, restart requests, model loading
-- **LM Studio Monitor Service** (C# Windows service): `LMStudioMonitorService/` — manages LM Studio as child process on port 5000
-  - `Controllers/LMStudioController.cs` — process start/stop/restart, model loading via CLI (`lms.exe`) with API fallback
-  - `Controllers/HealthCheckController.cs` — `GET /api/health` returns running status + loaded model
-  - `Controllers/LMStudioAPIController.cs` — `GET/POST /LMStudioApi/model`, `POST /restart`, `GET /models`
-  - `appsettings.json` — executable path, model path, API endpoint, port config
-- **Settings persistence**: `app/src/main/java/.../SettingsManager.kt` — provider selection, model, URL storage
-- **Provider switching UI**: `app/src/main/res/layout/activity_settings.xml` — spinners for provider/model with loading indicators
-- **API format differences**: Ollama uses `/api/generate` + `response` field; LM Studio uses `/v1/chat/completions` + `choices[0].message.content`
-
-### story-server — `C:\Users\clint\story-server`
-Production Node.js server patterns.
-- Health monitoring with environment validation
-- Database migrations (sequential, with partial failure handling)
-- Winston structured logging with request correlation IDs
-- Scheduled background tasks (backup, cleanup)
-
-### storytimelanguage-web — `C:\Users\clint\storytimelanguage-web`
-React/TypeScript PWA client.
-- Multi-language support with translation infrastructure
-- WebSocket client patterns for real-time server communication
-- Vite build configuration, mobile-first design
+Patterns ported from other projects into Habla:
+- **Server resilience** — Circuit breakers, retry with exponential backoff, graceful shutdown with state save, startup health checks, structured logging, rate limiting (from a Python async trading system)
+- **Multi-provider LLM** — Provider abstraction, LM Studio management, model discovery, health checking, settings persistence (from a Kotlin/C#/Node.js chatbot)
+- **Production ops** — Database migrations, request correlation IDs, scheduled background tasks (from a Node.js server)
+- **PWA client** — Multi-language support, WebSocket patterns, mobile-first design (from a React/TypeScript app)
 
 ## Future Directions (from design discussions)
 

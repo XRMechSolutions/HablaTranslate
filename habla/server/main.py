@@ -23,6 +23,8 @@ from server.routes.api_sessions import session_router
 from server.routes.api_idioms import idiom_router
 from server.routes.api_llm import llm_router, lmstudio_router
 from server.routes.api_playback import playback_router
+from server.routes.api_corrections import corrections_router
+from server.routes.api_bookmarks import bookmarks_router
 from server.services.playback import PlaybackService
 import time as _time
 from starlette.requests import Request
@@ -274,6 +276,8 @@ app.include_router(idiom_router)
 app.include_router(llm_router)
 app.include_router(lmstudio_router)
 app.include_router(playback_router)
+app.include_router(corrections_router)
+app.include_router(bookmarks_router)
 
 # Slow request logging middleware
 _SLOW_REQUEST_THRESHOLD = float(os.getenv("SLOW_REQUEST_THRESHOLD", "5.0"))
@@ -362,3 +366,11 @@ async def history_page():
     if history_path.exists():
         return FileResponse(str(history_path))
     return {"message": "History page not found"}
+
+
+@app.get("/corrections")
+async def corrections_page():
+    corrections_path = client_dir / "corrections.html"
+    if corrections_path.exists():
+        return FileResponse(str(corrections_path))
+    return {"message": "Corrections page not found"}

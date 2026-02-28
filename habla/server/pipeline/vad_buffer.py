@@ -56,12 +56,12 @@ class StreamingVADBuffer:
     def __init__(
         self,
         config: VADConfig | None = None,
-        on_segment: Callable[[bytes, float], Awaitable[None]] | None = None,
+        on_segment: Callable[[bytes, float, float, float], Awaitable[None]] | None = None,
     ):
         self.config = config or VADConfig()
         # Force 16kHz/512-sample frames for Silero VAD compatibility
         self.config.sample_rate = 16000
-        self.on_segment = on_segment  # async callback(pcm_bytes, duration_seconds)
+        self.on_segment = on_segment  # async callback(pcm_bytes, duration, audio_rms, vad_avg_prob)
 
         # Silero VAD model
         self._vad_model = None
@@ -80,6 +80,7 @@ class StreamingVADBuffer:
         self._is_speaking = False
         self._silence_frames = 0
         self._speech_frames = 0
+        self._speech_prob_sum = 0.0  # accumulated VAD probability during speech
         self._silence_threshold_frames = max(
             1, self.config.silence_duration_ms // self.config.frame_ms
         )
@@ -117,20 +118,21 @@ class StreamingVADBuffer:
             logger.error(f"Failed to load Silero VAD: {e}")
             logger.info("Falling back to energy-based VAD")
 
-    def _is_speech_frame(self, pcm_frame: np.ndarray) -> bool:
-        """Run VAD on a single frame. Returns True if speech detected."""
+    def _is_speech_frame(self, pcm_frame: np.ndarray) -> tuple[bool, float]:
+        """Run VAD on a single frame. Returns (is_speech, probability)."""
         if pcm_frame.shape[0] != self._frame_size:
             logger.debug(f"VAD frame size mismatch: {pcm_frame.shape[0]} != {self._frame_size}")
-            return False
+            return False, 0.0
         if self._vad_ready and self._vad_model is not None:
             import torch
             tensor = torch.from_numpy(pcm_frame).float()
             prob = self._vad_model(tensor, self.config.sample_rate).item()
-            return prob > self.config.speech_threshold
+            return prob > self.config.speech_threshold, prob
         else:
             # Fallback: simple energy-based detection
             energy = np.sqrt(np.mean(pcm_frame.astype(np.float32) ** 2))
-            return energy > 500  # rough threshold for 16-bit audio
+            prob = min(1.0, energy / 1000.0)  # rough normalized probability
+            return energy > 500, prob
 
     async def feed_pcm(self, pcm_bytes: bytes):
         """
@@ -159,7 +161,7 @@ class StreamingVADBuffer:
                 frame_bytes = frame.astype(np.int16).tobytes()
 
             # Run VAD
-            is_speech = self._is_speech_frame(frame)
+            is_speech, frame_prob = self._is_speech_frame(frame)
 
             if is_speech:
                 if not self._is_speaking:
@@ -167,6 +169,7 @@ class StreamingVADBuffer:
                     self._is_speaking = True
                     self._silence_frames = 0
                     self._speech_frames = 0
+                    self._speech_prob_sum = 0.0
                     self._frames_since_partial = 0
                     self._speech_buffer = bytearray()
 
@@ -178,6 +181,7 @@ class StreamingVADBuffer:
 
                 self._speech_buffer.extend(frame_bytes)
                 self._speech_frames += 1
+                self._speech_prob_sum += frame_prob
                 self._silence_frames = 0
                 self._frames_since_partial += 1
 
@@ -223,24 +227,33 @@ class StreamingVADBuffer:
             logger.debug(f"Segment too short ({self._speech_frames} frames), discarding")
             self._speech_buffer = bytearray()
             self._speech_frames = 0
+            self._speech_prob_sum = 0.0
             return
 
         segment_bytes = bytes(self._speech_buffer)
         duration = len(segment_bytes) / (self.config.sample_rate * 2)  # 16-bit mono
 
+        # Compute audio RMS (root mean square energy)
+        samples = np.frombuffer(segment_bytes, dtype=np.int16).astype(np.float32)
+        audio_rms = float(np.sqrt(np.mean(samples ** 2))) if len(samples) > 0 else 0.0
+
+        # Average VAD probability across speech frames
+        vad_avg_prob = self._speech_prob_sum / self._speech_frames if self._speech_frames > 0 else 0.0
+
         self.segments_emitted += 1
         self.total_speech_seconds += duration
 
-        logger.info(f"Speech segment #{self.segments_emitted}: {duration:.1f}s")
+        logger.info(f"Speech segment #{self.segments_emitted}: {duration:.1f}s (RMS={audio_rms:.0f}, VAD={vad_avg_prob:.2f})")
 
         # Reset
         self._speech_buffer = bytearray()
         self._speech_frames = 0
         self._silence_frames = 0
+        self._speech_prob_sum = 0.0
 
         # Fire callback
         if self.on_segment:
-            await self.on_segment(segment_bytes, duration)
+            await self.on_segment(segment_bytes, duration, audio_rms, vad_avg_prob)
 
     async def flush(self):
         """Flush any remaining audio (call when stopping listening)."""

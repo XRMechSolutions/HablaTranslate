@@ -23,28 +23,19 @@ Detailed plans, standards, and audit results that support the tasks below.
 | [docs/AUDIO_TUNING_GUIDE.md](docs/AUDIO_TUNING_GUIDE.md) | Reference | Audio parameter tuning guide |
 | [docs/WHISPER_FINE_TUNING_PLAN.md](docs/WHISPER_FINE_TUNING_PLAN.md) | Reference | WhisperX fine-tuning plan |
 | [.dev/docs/PLAN-Phase1-Remaining.md](.dev/docs/PLAN-Phase1-Remaining.md) | Complete | Idiom client wiring + OpenAI cost persistence |
+| [.dev/docs/PLAN-Failed-Segment-Tracking.md](.dev/docs/PLAN-Failed-Segment-Tracking.md) | Not started | Failed segment tracking & auto-tuning feedback loop (7.16) |
 
-## Reusable Code References
+## Design References
 
-Other projects on this machine with patterns to draw from:
+Patterns drawn from the author's other projects (already ported into Habla where noted):
 
-| Project | Path | Reusable Patterns |
-|---------|------|-------------------|
-| **GeneralizedServiceChatbot** | `C:\Users\clint\GeneralizedServiceChatbot` | Multi-provider LLM switching (OpenAI/Claude/LM Studio), settings UI, health checking |
-| — LMStudioMonitorService | `GeneralizedServiceChatbot\LMStudioMonitorService\` | .NET Windows service: process mgmt, model loading (CLI + API), health endpoint on :5000 |
-| — LMStudioClient.kt | `GeneralizedServiceChatbot\app\...\LMStudioClient.kt` | Model discovery (`/v1/models`), health checks, auto-restart, `fetchAvailableModels()` |
-| — LMStudioHealthChecker.kt | `GeneralizedServiceChatbot\app\...\LMStudioHealthChecker.kt` | Health check with model verification, restart/load requests |
-| — SettingsActivity.kt | `GeneralizedServiceChatbot\app\...\SettingsActivity.kt` | Provider dropdown + dynamic model spinner, `loadAvailableModels()` |
-| **StoryTimeLanguageKMM** | `C:\Users\clint\AndroidStudioProjects\StoryTimeLanguageKMM` | GPT-5 Nano/Mini Responses API, fallback chains, cost optimization |
-| — LlmClient.kt | `shared\...\llm\LlmClient.kt` | `executeWithFallback()` — tries models in order, routes by `apiType` (`"responses"` vs `"chat"`) |
-| — Gpt5StreamingHandler.kt | `shared\...\domain\Gpt5StreamingHandler.kt` | GPT-5 SSE streaming: `response.output_text.delta` events |
-| — stringResourceTranslator.py | (project root) | Python GPT-5 Nano translation with per-model cost tracking |
-| **StockMaster** | `C:\Clint file drop\StockMaster` | Server resilience patterns (already ported to Phase 2.5) |
-| — circuit_breaker_manager.py | `ExecutionEngine\core\circuit_breaker_manager.py` | Circuit breaker with 7 types, cooldown, emergency stop |
-| — logger_config.py | `DataGatheringTools\monitoring\logger_config.py` | Structured JSON logging, rotating files, metrics collection |
-| — system_monitor.py | `control_center\services\system_monitor.py` | CPU/memory/disk monitoring with thresholds and alerts |
-| **ConjugationGameKMM** | `C:\Users\clint\AndroidStudioProjects\ConjugationGameKMM` | Spanish verb conjugation game — potential vocab/drill patterns |
-| **story-server** | `C:\Users\clint\story-server` | Node.js backend for StoryTime — server-side LLM orchestration |
+| Project | Reusable Patterns |
+|---------|-------------------|
+| **GeneralizedServiceChatbot** (Kotlin/C#/Node.js) | Multi-provider LLM switching (OpenAI/Claude/LM Studio), settings UI, health checking, LM Studio process management |
+| **StoryTimeLanguageKMM** (Kotlin Multiplatform) | GPT-5 Nano/Mini Responses API, fallback chains, cost optimization, SSE streaming |
+| **StockMaster** (Python async) | Server resilience patterns — already ported to Phase 2.5 (circuit breakers, retry, shutdown, logging) |
+| **ConjugationGameKMM** (Kotlin Multiplatform) | Spanish verb conjugation game — potential vocab/drill patterns |
+| **story-server** (Node.js) | Database migrations, structured logging, scheduled background tasks |
 
 ---
 
@@ -91,20 +82,7 @@ These are missing features that block primary use cases.
 
 Allow runtime switching between LLM providers and models from the client UI.
 
-> **Reference projects for reusable code:**
->
-> | Project | Path | Relevant Code |
-> |---------|------|---------------|
-> | GeneralizedServiceChatbot | `C:\Users\clint\GeneralizedServiceChatbot` | Provider switching, LM Studio management |
-> | — LMStudioClient.kt | `app\src\main\java\com\xrmech\customizablechatbot\LMStudioClient.kt` | Model discovery (`/v1/models`), health checks, auto-restart |
-> | — LMStudioHealthChecker.kt | `app\src\main\java\com\xrmech\customizablechatbot\LMStudioHealthChecker.kt` | Health check with model verification, restart/load requests |
-> | — LMStudioMonitorService | `LMStudioMonitorService\` (.NET 8 Windows service) | Process management, model loading via CLI + API, health endpoint on :5000 |
-> | — SettingsManager.kt | `app\src\main\java\com\xrmech\customizablechatbot\SettingsManager.kt` | Provider/model persistence pattern |
-> | — SettingsActivity.kt | `app\src\main\java\com\xrmech\customizablechatbot\SettingsActivity.kt` | Settings UI with provider dropdown + dynamic model spinner |
-> | StoryTimeLanguageKMM | `C:\Users\clint\AndroidStudioProjects\StoryTimeLanguageKMM` | GPT-5 Nano/Mini API integration |
-> | — LlmClient.kt | `shared\src\commonMain\kotlin\com\xrmech\storytimelanguage\llm\LlmClient.kt` | Three-provider fallback chain, Responses API vs Chat API routing |
-> | — Gpt5StreamingHandler.kt | `shared\src\commonMain\kotlin\com\xrmech\storytimelanguage\domain\Gpt5StreamingHandler.kt` | GPT-5 streaming SSE parsing |
-> | — stringResourceTranslator.py | (root) | Python GPT-5 Nano translation with cost tracking |
+> **Design references:** GeneralizedServiceChatbot (provider switching, LM Studio management, model discovery, health checks) and StoryTimeLanguageKMM (GPT-5 Nano/Mini API, fallback chains, SSE streaming, cost tracking).
 
 #### Backend — Provider Abstraction
 
@@ -258,7 +236,7 @@ Fix backend gaps that cause silent data loss or incorrect behavior.
 
 ### 3.1 Enhanced SRS Algorithm (from ConjugationGameKMM)
 
-> **Reference:** `C:\Users\clint\AndroidStudioProjects\ConjugationGameKMM` — `SrsAlgorithm`, `SrsModels`, `SrsScheduler`
+> **Design reference:** ConjugationGameKMM — `SrsAlgorithm`, `SrsModels`, `SrsScheduler`
 
 - [x] Cap ease factor upper bound at 5.0 (currently unbounded — can grow infinitely)
 - [x] Add lapse tracking — count how many times a card was forgotten after being learned (ConjugationGameKMM tracks this)
@@ -290,7 +268,7 @@ Fix backend gaps that cause silent data loss or incorrect behavior.
 
 ### 3.6 Translation Quality Metrics (from GeneralizedServiceChatbot RAGMetrics)
 
-> **Reference:** `C:\Users\clint\GeneralizedServiceChatbot` — `RAGMetrics` quality tracking pattern
+> **Design reference:** GeneralizedServiceChatbot — `RAGMetrics` quality tracking pattern
 
 - [x] Track LLM confidence scores over time (already returned in `TranslationResult.confidence`)
 - [x] Log low-confidence translations (< 0.3) with source text for review
@@ -298,6 +276,25 @@ Fix backend gaps that cause silent data loss or incorrect behavior.
 - [x] Track idiom detection rate (pattern DB hits vs LLM-only detections)
 - [x] Add `GET /api/system/metrics` endpoint — translation stats, confidence distribution, correction rates
 - [x] Show quality summary in settings panel or system status
+
+### 3.7 Dead / Partial Code Cleanup (Audit Feb 2026)
+
+Items found during codebase audit — code that was started but never connected, or scaffolding left behind.
+
+#### Dead Code (remove or decide to implement)
+
+- [x] **`_align_model` in orchestrator** — removed dead field (was never set or used)
+- [x] **`save_decoded_pcm` config flag** — removed unused flag + test assertion + doc reference
+- [x] **`examples` column in `idiom_patterns` table** — removed from schema (existing DBs unaffected, column just sits unused)
+
+#### Partial Implementations (finish wiring)
+
+- [x] **No corrections page navigation** — added Corrections button to `index.html` nav bar + click handler in `app.js`
+- [ ] **LM Studio auto-restart on health failure** — `lmstudio_manager.py` has full `ensure_running()` / restart capability, and `health.py:run_llm_health_monitor()` detects when LM Studio goes down, but the monitor only logs a warning and notifies the client — it never calls `lmstudio_manager.ensure_running()` to attempt recovery. Wire the auto-recovery loop.
+
+#### Cleanup
+
+- [x] **Remove `[RECORDING API]` debug logging** — reduced 7 verbose log lines to single `logger.info("Recording toggled: enabled=...")`
 
 ---
 
@@ -415,23 +412,67 @@ Bigger features that extend the platform. Not required for "fully functional" bu
 - [x] Session replay view (scroll through past exchanges with speaker attribution)
 - [x] Search across session history (GET /api/sessions/search + search bar in history.html, 3 tests)
 
-### 7.4 Native Android Client (Kotlin/KMM)
+### 7.4 Cloud API Key Setup & Model Selection UI
+
+Allow users without a local GPU to use cloud LLM providers (OpenAI, Claude) by entering their own API key. Provide a contextual model picker that shows available models per provider.
+
+#### API Key Management
+- [ ] Add settings UI section for entering/removing API keys (OpenAI, Claude/Anthropic)
+- [ ] Store API keys in `.env` or browser `localStorage` (client-side only, never sent to third parties)
+- [ ] Add `ANTHROPIC_API_KEY` env var and Claude provider support in `translator.py`
+- [ ] Mask API keys in UI after entry (show last 4 chars only)
+- [ ] Validate API key on entry (test call to provider's models endpoint)
+
+#### Contextual Model Picker
+- [ ] When OpenAI is selected, show dropdown with current models: `gpt-5.2`, `gpt-5.2-pro`, `gpt-4o-mini`, `gpt-4o`
+- [ ] When Claude is selected, show dropdown with current models: `claude-sonnet-4-6`, `claude-haiku-4-5`, `claude-opus-4-6`
+- [ ] When Ollama/LM Studio is selected, populate from live `/api/tags` or `/v1/models` query (existing behavior)
+- [ ] Show estimated cost per provider/model (cheap indicator for nano/haiku, expensive for pro/opus)
+- [ ] Persist model selection per provider in `data/llm_settings.json`
+
+#### Documentation
+- [ ] Add "Using Cloud Providers" section to README/SETUP.md explaining how users without a GPU can run Habla with a cloud API key
+- [ ] Document cost expectations per provider (e.g., "~$0.01-0.05 per conversation hour with gpt-4o-mini")
+- [ ] Note that cloud providers require internet but eliminate the GPU/VRAM requirement
+
+### 7.4.1 Claude as Translation Provider (Backend)
+
+Add Anthropic/Claude as a fourth LLM provider alongside Ollama, LM Studio, and OpenAI.
+
+> **Reference:** Claude API uses `anthropic` Python SDK with `messages` API format.
+
+| Provider | Endpoint | Request Format | Response Format |
+|----------|----------|---------------|-----------------|
+| **Claude** (cloud) | `POST https://api.anthropic.com/v1/messages` | `messages` array + `system` param | `content[0].text` |
+
+- [ ] Add `anthropic` to `requirements.txt`
+- [ ] Add `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` to `config.py` with env var support
+- [ ] Add `"claude"` provider option in `translator.py` `_call_llm()` routing
+- [ ] Handle Claude response parsing (`content[0].text`)
+- [ ] Add Claude to provider probe in `GET /api/llm/providers` (check API key exists, list available models)
+- [ ] Add Claude to `GET /api/llm/models?provider=claude`
+- [ ] Add Claude to model validation in `POST /api/llm/select`
+- [ ] Add Claude cost tracking (input/output token pricing per model)
+- [ ] Add Claude to health check in `health.py`
+- [ ] Update `.env.example` with `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` entries
+
+### 7.5 Native Android Client (Kotlin/KMM)
 - [ ] Background audio capture (works with screen off)
 - [ ] Persistent WebSocket through Android lifecycle
 - [ ] Notification integration for incoming translations
 - [ ] Offline vocab review from synced local DB
 
-### 7.5 Spanish Grammar Rule Engine (from ConjugationGameKMM)
+### 7.6 Spanish Grammar Rule Engine (from ConjugationGameKMM)
 
-> **Reference:** `C:\Users\clint\AndroidStudioProjects\ConjugationGameKMM` — conjugation rule engine with irregular verb handling
+> **Design reference:** ConjugationGameKMM — conjugation rule engine with irregular verb handling
 
 - [ ] Port Spanish conjugation rules to Python for server-side use
 - [ ] Use rule engine in classroom mode to validate LLM grammar corrections against known patterns
 - [ ] Generate targeted grammar drill suggestions based on errors detected in live conversation
 
-### 7.6 Vocab Review Streaks & Motivation (from StoryTimeLanguageKMM)
+### 7.7 Vocab Review Streaks & Motivation (from StoryTimeLanguageKMM)
 
-> **Reference:** `C:\Users\clint\AndroidStudioProjects\StoryTimeLanguageKMM` — `DailyLoginManager`, streak tracking
+> **Design reference:** StoryTimeLanguageKMM — `DailyLoginManager`, streak tracking
 
 - [ ] Track daily vocab review activity (date + cards reviewed count) in DB
 - [ ] Calculate current streak (consecutive days with at least 1 review)
@@ -439,13 +480,186 @@ Bigger features that extend the platform. Not required for "fully functional" bu
 - [ ] Add `GET /api/vocab/streak` endpoint — current streak, longest streak, total review days
 - [ ] Optional: daily review goal (configurable, e.g., "review 10 cards/day")
 
-### 7.7 Conversation Export / Study Review (from GeneralizedServiceChatbot)
+### 7.8 Conversation Export / Study Review (from GeneralizedServiceChatbot)
 
-> **Reference:** `C:\Users\clint\GeneralizedServiceChatbot` — `ConversationLogger`, `ContentFormatter`
+> **Design reference:** GeneralizedServiceChatbot — `ConversationLogger`, `ContentFormatter`
 
 - [ ] Structured export of session exchanges (JSON, CSV) with speaker labels and corrections
 - [ ] "Study summary" generation — LLM-produced session recap highlighting key vocab, corrections, and idioms encountered
 - [ ] Export format compatible with Anki bulk import (extend existing TSV export to include exchange context)
+
+### 7.9 Multi-Language Support
+
+Expand beyond hardcoded Spanish ⇄ English to support arbitrary language pairs. WhisperX already supports 90+ languages; the LLM handles most translation pairs.
+
+#### Backend — Language Configuration
+- [ ] Replace hardcoded `es_to_en` / `en_to_es` direction with configurable `source_lang` + `target_lang` pair
+- [ ] Add language registry with display names, ISO codes, and WhisperX language codes (e.g., `{"es": "Spanish", "en": "English", "fr": "French", ...}`)
+- [ ] Update `config.py` with `DEFAULT_SOURCE_LANG` and `DEFAULT_TARGET_LANG` env vars
+- [ ] Update translation prompts in `prompts.py` to be language-agnostic (parameterize language names)
+- [ ] Update orchestrator direction toggle to cycle or select from configured language pairs
+- [ ] Verify WhisperX model size supports target languages (some languages need `medium` or `large-v2`)
+
+#### Backend — Idiom & Vocab Adaptation
+- [ ] Make idiom pattern DB language-aware (currently `idioms/spain.json` is Spanish-only)
+- [ ] Add idiom pattern file structure: `idioms/{lang_code}.json` (e.g., `fr.json`, `de.json`)
+- [ ] Update vocab save to tag items with source/target language pair
+- [ ] Update SRS review to filter by active language pair or show all
+
+#### Frontend — Language Picker
+- [ ] Replace direction toggle button with language pair selector (two dropdowns or a swap-able pair widget)
+- [ ] Persist selected language pair in `localStorage` and `data/llm_settings.json`
+- [ ] Show language flags or ISO codes on exchange cards instead of hardcoded "ES"/"EN" labels
+- [ ] Add `GET /api/system/languages` endpoint returning supported languages
+
+#### API Changes
+- [ ] Update `POST /api/system/direction` to accept `source_lang` + `target_lang` instead of `es_to_en`/`en_to_es`
+- [ ] Update WebSocket `set_direction` control message format
+- [ ] Backward-compatible: map old `es_to_en`/`en_to_es` values to new format during transition
+
+### 7.10 Always-Listening Mode (Hands-Free)
+
+Continuous translation without push-to-talk — critical for classroom and conference use where the user can't hold a button.
+
+- [ ] Add `listening_mode` toggle: `push_to_talk` (current) vs `continuous`
+- [ ] In continuous mode, client streams audio constantly; server relies on VAD to segment speech
+- [ ] Add silence gap threshold setting (how long a pause before finalizing a segment — default ~1.5s)
+- [ ] Add client UI toggle button (mic icon changes to indicate always-listening state)
+- [ ] Add visual indicator of VAD activity (pulsing border or waveform showing when speech is detected)
+- [ ] Add energy gate / noise floor calibration — let user calibrate for room ambient noise on session start
+- [ ] Handle long-running segments gracefully (cap at ~30s, force-finalize and start new segment)
+- [ ] Add server-side `max_continuous_segment_duration` config
+- [ ] Power management: reduce audio quality/sample rate in continuous mode to save bandwidth on mobile
+- [ ] Add WebSocket control message `set_listening_mode` to switch at runtime
+
+### 7.11 Auto Language Detection
+
+Automatically detect which language is being spoken instead of requiring manual direction toggle.
+
+- [ ] WhisperX returns detected language — extract and use it to auto-set translation direction
+- [ ] Add `auto_detect` as a third direction option (alongside explicit source→target pairs)
+- [ ] When auto-detect is active, determine target language from the detected source (if detected=Spanish, target=English and vice versa)
+- [ ] Show detected language badge on each exchange card ("Detected: ES")
+- [ ] Handle detection confidence — if WhisperX is uncertain, fall back to manually set direction
+- [ ] Handle mixed-language speech gracefully (code-switching is common in bilingual classrooms)
+- [ ] Add `ASR_AUTO_LANGUAGE` env var (already scaffolded in config) to enable by default
+- [ ] Combine with multi-language support (7.9): auto-detect from the full set of configured languages
+
+### 7.12 Content Import & Study
+
+Paste an article, URL, or text block to get paragraph-by-paragraph translation with vocab/idiom extraction. Turns Habla into a reading comprehension tool.
+
+#### Backend
+- [ ] Add `POST /api/translate/text` endpoint — accepts plain text or URL, returns translated paragraphs
+- [ ] For URLs: fetch page content, extract article text (strip nav/ads using `readability` or `trafilatura` library)
+- [ ] Split text into paragraphs, translate each through the LLM pipeline (reuse `translator._call_llm()`)
+- [ ] Run idiom scanner on each paragraph, return detected idioms alongside translation
+- [ ] Extract vocab candidates (unfamiliar words, false friends) using LLM or frequency analysis
+- [ ] Store imported content as a special session type (`session_type: "import"` vs `"live"`)
+
+#### Frontend
+- [ ] Add "Import" tab or button on main page (paste text or enter URL)
+- [ ] Display side-by-side original and translated text, paragraph-aligned
+- [ ] Highlight detected idioms and vocab candidates inline (clickable to save)
+- [ ] Allow saving individual sentences or paragraphs to vocab for study
+- [ ] Show in session history as imported content (distinct icon from live sessions)
+
+### 7.13 Pronunciation Practice
+
+Record yourself saying a phrase and get feedback on pronunciation quality. Pairs with vocab SRS and audio clip storage.
+
+- [ ] Add "Practice" button on vocab cards and exchange cards that have saved audio
+- [ ] Record user's attempt via mic (reuse existing audio capture pipeline)
+- [ ] Compare user recording against original audio clip using audio similarity scoring
+- [ ] Scoring approach: use Whisper to transcribe both clips, compare at text level (word error rate) as a baseline
+- [ ] Advanced scoring: pitch contour comparison or audio embedding similarity (e.g., `resemblyzer` or `speechbrain`)
+- [ ] Show visual feedback: waveform overlay of original vs user attempt
+- [ ] Track pronunciation scores over time per vocab item (store in DB alongside SRS data)
+- [ ] Add `GET /api/vocab/{id}/pronunciation` endpoint for score history
+- [ ] Integrate with SRS: poor pronunciation = lower quality rating, triggering more frequent review
+
+### 7.14 Conversation Bookmarks
+
+Tap to bookmark interesting moments during live translation for quick review later.
+
+- [ ] Add bookmark button on each exchange card (small flag/pin icon)
+- [ ] `POST /api/sessions/{id}/exchanges/{eid}/bookmark` — toggle bookmark with optional note
+- [ ] Add `is_bookmarked` field to exchanges table and API responses
+- [ ] Add `GET /api/sessions/{id}/bookmarks` — return all bookmarked exchanges for a session
+- [ ] Add `GET /api/bookmarks/recent` — return recent bookmarks across all sessions
+- [ ] Show bookmark filter in session history view (view only bookmarked moments)
+- [ ] Add keyboard shortcut or gesture for quick bookmarking during live translation
+- [ ] Persist bookmarks to DB immediately (don't lose them if session disconnects)
+
+### 7.15 Session Study Summary
+
+After a session ends, auto-generate an LLM-produced summary of what was learned.
+
+- [ ] On session close (WebSocket disconnect), queue a background summary generation task
+- [ ] LLM prompt: given all exchanges from the session, produce a structured study report:
+  - Key vocabulary encountered (with frequency)
+  - Grammar patterns observed
+  - Corrections made (by teacher or LLM)
+  - Idioms detected
+  - Suggested review topics
+- [ ] Store summary in `sessions` table (`study_summary` column)
+- [ ] Add `GET /api/sessions/{id}/summary` endpoint
+- [ ] Show summary card at the top of session replay view
+- [ ] Option to regenerate summary on demand (if user wants a different focus)
+- [ ] Make summary generation configurable (auto vs manual, which LLM provider to use)
+
+### 7.16 Failed Segment Tracking & Auto-Tuning Feedback Loop
+
+When VAD detects speech but ASR produces empty or garbage output, the segment is silently dropped. This feature tracks those failures, surfaces them for review, and feeds them into the auto-tuning pipeline so the system learns from its mistakes.
+
+> **Detailed plan:** [PLAN-Failed-Segment-Tracking.md](.dev/docs/PLAN-Failed-Segment-Tracking.md)
+
+#### Partial Implementations to Complete
+
+These items have scaffolding or partial code already in place but are not connected end-to-end.
+
+- [ ] **Wire `quality_metrics` DB table** — schema exists in `database.py:132-148` with the right columns (`confidence`, `audio_rms`, `duration_seconds`, `speaker_id`, `clipped_onset`, `processing_time_ms`, `vad_threshold`, `model_name`) but nothing ever INSERTs into it. Add `status TEXT DEFAULT 'ok'` column + indexes. Write `_record_quality_metric()` method in orchestrator and call it on every segment outcome.
+- [ ] **Connect `_is_bad_transcript()` rejection path** — detection logic exists in `orchestrator.py:1083-1096` and correctly identifies garbage ASR, but on rejection (line 903-905) it just logs a WARNING and returns empty. Need to: record to `quality_metrics`, increment metrics, enrich recorder metadata with `asr_status`/`asr_reject_reason`.
+- [ ] **Enrich segment metadata on ASR failure** — `audio_recorder.py:add_segment_metadata()` already accepts arbitrary keys and `websocket.py:410-416` already enriches successful segments with `raw_transcript`, `confidence`, `speaker`. But rejected segments never reach this code path. Need a parallel path for failures.
+- [ ] **Unify VAD threshold config** — `config.py` has `asr.vad_threshold = 0.35` and `vad_buffer.py:VADConfig` has `speech_threshold = 0.35` independently. `websocket.py:118` instantiates VADConfig with hardcoded values ignoring app config. Consolidate so there's a single source of truth, needed for recording `vad_threshold` in quality_metrics.
+- [ ] **Complete `clipped_onset` detection** — `quality_metrics` table has the column, `auto_tune_parameters.py:76-90` has clipped Spanish word detection logic, but nothing in the live pipeline computes or records it. Need to: detect in orchestrator (check if first word matches clipped pattern), set flag in quality_metrics row.
+- [ ] **Connect `auto_tune_parameters.py` to quality_metrics** — script currently only reads `metadata.json` files from disk. It should also query the `quality_metrics` DB table to correlate failures with audio conditions (RMS, VAD threshold, duration, speaker).
+
+#### New Implementation Required
+
+These items have no existing code.
+
+- [ ] Compute audio RMS in `vad_buffer.py:_emit_segment()` — `np.sqrt(np.mean(samples**2))` on segment PCM bytes
+- [ ] Track average VAD probability per segment — accumulate `_speech_prob_sum` during speech frames in `vad_buffer.py:_is_speech_frame()` (currently computes `prob` at line 128 but discards it), divide by `_speech_frames` at emission
+- [ ] Extend VAD callback signature from `on_segment(pcm_bytes, duration)` to `on_segment(pcm_bytes, duration, audio_rms, vad_avg_prob)` — update all callers: `websocket.py:_on_speech_segment()`, test mocks
+- [ ] Forward `audio_rms` and `vad_avg_prob` through websocket handler to recorder metadata and orchestrator
+- [ ] Add `asr_rejected_count` and `asr_empty_count` to `orchestrator._metrics` dict (currently missing from lines 96-108)
+- [ ] Expose `asr_rejected_count`, `asr_empty_count`, and `quality_metrics` status breakdown in `GET /api/system/metrics`
+- [ ] Add `GET /api/corrections/failed-segments` endpoint — return recordings with ASR-rejected segments paired with WAV filenames for review
+- [ ] Extend `auto_tune_parameters.py` to correlate ASR rejection rate with `audio_rms`, `vad_avg_prob`, `duration_seconds`, and speaker — generate recommendations (low RMS → AGC, borderline VAD → raise threshold, short duration → raise min_speech_ms)
+- [ ] Add "Failed Segments" tab/filter to `corrections.html` — play audio, see RMS/VAD stats, manually transcribe or mark as `[noise]`
+- [ ] Update `prepare_dataset.py` to filter `[noise]` markers and include corrected formerly-failed segments (highest-value training data)
+
+### 7.17 Whisper Fine-Tuning Data Pipeline
+
+Correction workflow and dataset assembly for LoRA fine-tuning. Built alongside the failed segment tracking (7.16) to create a complete data pipeline from raw classroom audio to training-ready dataset.
+
+> **Reference:** [WHISPER_FINE_TUNING_PLAN.md](docs/WHISPER_FINE_TUNING_PLAN.md)
+
+#### Backend — Correction API
+- [x] `GET /api/recordings/{id}/ground-truth` — returns corrected (preferred) or original ground truth
+- [x] `PUT /api/recordings/{id}/ground-truth` — saves corrected segments atomically to `corrected_ground_truth.json`
+- [x] `GET /api/corrections/stats` — aggregate progress across all recordings
+
+#### Frontend — Transcript Correction UI
+- [x] Build `corrections.html` — recording list view with progress bars, segment correction view with audio playback
+- [x] Keyboard navigation: Space=play, Enter=confirm+next, arrows=prev/next
+- [x] Debounced auto-save on confirm (500ms)
+
+#### Dataset Assembly Script
+- [x] `scripts/prepare_dataset.py` — walks recordings, reads corrected/original ground truth, filters, builds 80/10/10 HuggingFace DatasetDict
+- [x] CLI flags: `--min-duration`, `--max-duration`, `--min-confidence`, `--seed`
+- [x] `requirements-finetune.txt` for offline fine-tuning dependencies (datasets, soundfile)
 
 ---
 
@@ -509,10 +723,48 @@ ML models are shared singletons and have their own concurrency limits:
 If single-server capacity is exceeded:
 
 - [ ] Extract ML models into separate microservices (WhisperX service, translation service)
-- [ ] Add Redis or similar for inter-process job queuing (reference: StoryTime's Bull queue pattern at `C:\Users\clint\story-server\queues\storyQueue.js`)
+- [ ] Add Redis or similar for inter-process job queuing (reference: StoryTime's Bull queue pattern)
 - [ ] Sticky sessions or session affinity for WebSocket connections behind a load balancer
 - [ ] Shared state store (Redis) for cross-instance session data
 - [ ] GPU pool management for WhisperX across multiple GPUs/machines
+
+---
+
+## Phase 9: Open Source Release & Distribution
+
+Prepare the project for public GitHub visibility, first tagged release, and community engagement.
+
+### 9.1 Public Repo Cleanup
+- [x] Create MIT LICENSE file at project root
+- [x] Create root README.md (project overview, architecture, quick start, usage)
+- [x] Remove CLAUDE.md from git tracking (contains personal paths, kept local via .gitignore)
+- [x] Fix service worker cache version mismatch (v31 → v33)
+- [x] Update OpenAI model list to current real models
+- [x] Sanitize `start-habla.bat` — use placeholder FQDN instead of hardcoded Tailscale hostname
+- [x] Sanitize `AGENTS.md` — remove personal paths and Tailscale IP
+- [x] Sanitize `TASKS.md` — remove or genericize personal machine paths in reference project table
+- [x] Add `.dockerignore` (exclude `.env`, `*.db`, `*.log`, `data/audio/recordings/`, `.git/`, `tests/`)
+- [x] Add `CONTRIBUTING.md` — how to report bugs, submit PRs, code style expectations, test requirements
+- [x] Review git history for any accidentally committed secrets — found HF token in deleted `start_server_with_recording.sh` (rotated, no longer in tracked files; history cleanup via `git filter-repo` recommended before first public release)
+
+### 9.2 GitHub Releases Workflow
+- [ ] Define version numbering scheme (semver: `v0.1.0` for first public release)
+- [ ] Create release checklist script that verifies before tagging:
+  - No hardcoded personal paths in tracked files
+  - Service worker versions in sync
+  - All tests passing
+  - `.env.example` up to date with all supported env vars
+  - No `*.db`, `*.log`, `*.crt`, `*.key` files tracked
+- [ ] Create first tagged release (`v0.1.0`) with release notes
+- [ ] Create `CHANGELOG.md` to track changes between releases
+- [ ] Add release notes template (features, fixes, breaking changes, upgrade instructions)
+
+### 9.3 Community & Funding
+- [ ] Set up GitHub Sponsors or Buy Me a Coffee account
+- [ ] Add sponsor/tip badge to README.md (replace the TODO comment)
+- [ ] Add GitHub issue templates (bug report, feature request)
+- [ ] Add GitHub Discussions or link to Discord for community Q&A
+- [ ] Create a short demo video or GIF showing the translator in action (for README)
 
 ---
 
