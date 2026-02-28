@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Habla - Scroll Fix Test</title>
+<style>
+:root{
+  --bg:#0f1419;--bg2:#1a2027;--bg3:#1e272f;--bg4:#253340;
+  --fg:#e7e9ea;--fg2:#8b98a5;--fg3:#536471;
+  --accent:#1d9bf0;--green:#00ba7c;--amber:#f59e0b;--red:#f4212e;
+  --r:12px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,system-ui,'Segoe UI',sans-serif;background:var(--bg);color:var(--fg);padding:20px;max-width:500px;margin:0 auto}
+h2{margin-bottom:12px;font-size:16px}
+.ex{background:var(--bg3);border-radius:var(--r);padding:10px;border-left:3px solid var(--accent);margin-bottom:12px}
+.ex-spk{display:flex;align-items:center;gap:5px;margin-bottom:6px;font-size:11px;font-weight:600}
+.spk-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;background:var(--accent)}
+.ex-src{font-size:13px;color:var(--fg2);margin-bottom:3px;line-height:1.35;max-height:clamp(60px,12vh,120px);overflow-y:auto}
+.ex-tgt{font-size:14px;line-height:1.35;font-weight:500;max-height:clamp(60px,15vh,200px);overflow-y:auto}
+.ex-meta{display:flex;gap:6px;margin-top:4px;font-size:10px;color:var(--fg3)}
+
+.controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.controls button{padding:8px 16px;border-radius:8px;border:none;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--accent);color:#fff}
+.controls button:active{transform:scale(.95)}
+.controls button.secondary{background:var(--bg4);color:var(--fg)}
+.controls button.danger{background:var(--red);color:#fff}
+
+.log{background:var(--bg2);border-radius:8px;padding:10px;font-family:monospace;font-size:11px;line-height:1.6;max-height:200px;overflow-y:auto;margin-top:16px;white-space:pre-wrap}
+.log .pass{color:var(--green)}
+.log .fail{color:var(--red)}
+.log .info{color:var(--fg3)}
+
+.status-bar{display:flex;gap:12px;margin-bottom:12px;font-size:11px;color:var(--fg3);background:var(--bg2);padding:8px 12px;border-radius:8px}
+.status-bar span{display:flex;align-items:center;gap:4px}
+</style>
+</head>
+<body>
+
+<h2>Inner Scroll Box Test (v33)</h2>
+
+<div class="controls">
+  <button onclick="doMerge()">Merge Exchange</button>
+  <button onclick="doAutoMerge()" class="secondary">Auto-merge x5</button>
+  <button onclick="resetCard()" class="danger">Reset</button>
+</div>
+
+<div class="status-bar" id="statusBar">
+  <span>Merges: <b id="mergeCount">0</b></span>
+  <span>src scrollTop: <b id="srcScroll">0</b></span>
+  <span>tgt scrollTop: <b id="tgtScroll">0</b></span>
+</div>
+
+<div class="ex" id="testCard">
+  <div class="ex-spk"><span class="spk-dot"></span> Speaker A</div>
+  <div class="ex-src" id="srcBox"></div>
+  <div class="ex-tgt" id="tgtBox"></div>
+  <div class="ex-meta"><span id="metaTime"></span></div>
+</div>
+
+<div class="log" id="log"></div>
+
+<script>
+// --- Helpers copied from ui.js ---
+function _isNearBottom(el) {
+  if (!el) return true;
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 20;
+}
+
+function _trackUserScroll(el) {
+  if (!el || el._scrollTracked) return;
+  el._scrollTracked = true;
+  el._userScrolled = false;
+  const mark = () => { el._userScrolled = true; };
+  el.addEventListener('wheel', mark, { passive: true });
+  el.addEventListener('touchstart', mark, { passive: true });
+}
+
+function _forceScrollBottom(el) {
+  if (!el) return;
+  void el.offsetHeight;
+  el.scrollTop = el.scrollHeight;
+  requestAnimationFrame(() => {
+    el.scrollTop = el.scrollHeight;
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+  });
+}
+
+function _shouldAutoScroll(el) {
+  if (!el) return true;
+  if (!el._userScrolled) return true;
+  return _isNearBottom(el);
+}
+
+// --- Test state ---
+let merges = 0;
+let srcText = '';
+let tgtText = '';
+const srcBox = document.getElementById('srcBox');
+const tgtBox = document.getElementById('tgtBox');
+
+const spanishSentences = [
+  'Hola, buenos dias. Como estas hoy?',
+  'Estoy muy bien, gracias por preguntar.',
+  'El profesor nos explico la leccion de historia ayer.',
+  'No entendi nada de lo que dijo sobre la guerra civil.',
+  'Vamos a tomar un cafe despues de clase?',
+  'Me parece una idea estupenda, necesito descansar.',
+  'La verdad es que este tema es bastante complicado.',
+  'Tienes razon, pero con practica se entiende mejor.',
+  'Manana tenemos examen de matematicas, no?',
+  'Si, hay que estudiar mucho esta noche.',
+  'El fin de semana pasado fui a la playa con mi familia.',
+  'Que suerte, yo me quede estudiando todo el fin de semana.',
+  'A veces me gustaria poder viajar mas seguido.',
+  'Yo tambien, especialmente durante las vacaciones.',
+  'Bueno, nos vemos manana en clase entonces.',
+];
+
+const englishSentences = [
+  'Hello, good morning. How are you today?',
+  'I am very well, thanks for asking.',
+  'The teacher explained the history lesson to us yesterday.',
+  'I did not understand anything he said about the civil war.',
+  'Shall we go for a coffee after class?',
+  'That sounds like a great idea, I need a break.',
+  'The truth is this topic is quite complicated.',
+  'You are right, but with practice it becomes clearer.',
+  'We have a math exam tomorrow, right?',
+  'Yes, we need to study a lot tonight.',
+  'Last weekend I went to the beach with my family.',
+  'How lucky, I stayed studying all weekend.',
+  'Sometimes I wish I could travel more often.',
+  'Me too, especially during the holidays.',
+  'Well, see you tomorrow in class then.',
+];
+
+_trackUserScroll(srcBox);
+_trackUserScroll(tgtBox);
+
+// Initial content
+srcText = spanishSentences[0];
+tgtText = englishSentences[0];
+srcBox.innerHTML = srcText;
+tgtBox.innerHTML = tgtText;
+document.getElementById('metaTime').textContent = new Date().toLocaleTimeString();
+updateStatus();
+
+function log(msg, cls) {
+  const el = document.getElementById('log');
+  const line = document.createElement('div');
+  line.className = cls || 'info';
+  line.textContent = msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+function updateStatus() {
+  document.getElementById('mergeCount').textContent = merges;
+  document.getElementById('srcScroll').textContent =
+    `${Math.round(srcBox.scrollTop)}/${srcBox.scrollHeight - srcBox.clientHeight}`;
+  document.getElementById('tgtScroll').textContent =
+    `${Math.round(tgtBox.scrollTop)}/${tgtBox.scrollHeight - tgtBox.clientHeight}`;
+}
+
+function doMerge() {
+  merges++;
+  const idx = merges % spanishSentences.length;
+  srcText += ' ' + spanishSentences[idx];
+  tgtText += ' ' + englishSentences[idx];
+
+  const srcAutoScroll = _shouldAutoScroll(srcBox);
+  const tgtAutoScroll = _shouldAutoScroll(tgtBox);
+
+  log(`--- Merge #${merges} ---`, 'info');
+  log(`  srcAutoScroll=${srcAutoScroll} (userScrolled=${srcBox._userScrolled}, nearBottom=${_isNearBottom(srcBox)})`);
+  log(`  tgtAutoScroll=${tgtAutoScroll} (userScrolled=${tgtBox._userScrolled}, nearBottom=${_isNearBottom(tgtBox)})`);
+
+  // Simulate rebuildMergedCard: replace innerHTML then scroll
+  srcBox.innerHTML = srcText;
+  if (srcAutoScroll) _forceScrollBottom(srcBox);
+
+  tgtBox.innerHTML = tgtText;
+  if (tgtAutoScroll) _forceScrollBottom(tgtBox);
+
+  document.getElementById('metaTime').textContent = new Date().toLocaleTimeString();
+
+  // Verify after double-RAF settles
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const srcMax = srcBox.scrollHeight - srcBox.clientHeight;
+        const tgtMax = tgtBox.scrollHeight - tgtBox.clientHeight;
+        const srcOk = !srcAutoScroll || srcMax <= 0 || Math.abs(srcBox.scrollTop - srcMax) < 2;
+        const tgtOk = !tgtAutoScroll || tgtMax <= 0 || Math.abs(tgtBox.scrollTop - tgtMax) < 2;
+
+        if (srcAutoScroll) {
+          log(`  src: scrollTop=${Math.round(srcBox.scrollTop)} max=${srcMax} ${srcOk ? 'PASS' : 'FAIL'}`, srcOk ? 'pass' : 'fail');
+        } else {
+          log(`  src: skipped (user scrolled up)`, 'info');
+        }
+        if (tgtAutoScroll) {
+          log(`  tgt: scrollTop=${Math.round(tgtBox.scrollTop)} max=${tgtMax} ${tgtOk ? 'PASS' : 'FAIL'}`, tgtOk ? 'pass' : 'fail');
+        } else {
+          log(`  tgt: skipped (user scrolled up)`, 'info');
+        }
+        updateStatus();
+      });
+    });
+  });
+}
+
+function doAutoMerge() {
+  let i = 0;
+  function next() {
+    if (i >= 5) {
+      log('=== Auto-merge complete ===', 'info');
+      return;
+    }
+    i++;
+    doMerge();
+    setTimeout(next, 400);
+  }
+  next();
+}
+
+function resetCard() {
+  merges = 0;
+  srcText = spanishSentences[0];
+  tgtText = englishSentences[0];
+  srcBox.innerHTML = srcText;
+  tgtBox.innerHTML = tgtText;
+  srcBox.scrollTop = 0;
+  tgtBox.scrollTop = 0;
+  srcBox._userScrolled = false;
+  tgtBox._userScrolled = false;
+  document.getElementById('log').innerHTML = '';
+  log('Card reset. Scroll boxes cleared.', 'info');
+  updateStatus();
+}
+
+// Keep status bar live
+setInterval(updateStatus, 200);
+</script>
+</body>
+</html>
