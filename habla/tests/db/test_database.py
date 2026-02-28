@@ -82,7 +82,10 @@ class TestInitDb:
         )
         index_names = sorted(row[0] for row in rows)
         expected = sorted([
+            "idx_exchanges_bookmarked",
             "idx_exchanges_session",
+            "idx_quality_metrics_session",
+            "idx_quality_metrics_status",
             "idx_vocab_next_review",
             "idx_vocab_term",
         ])
@@ -225,7 +228,7 @@ class TestTableSchema:
         col_names = {row[1] for row in rows}
         expected = {
             "id", "pattern", "canonical", "literal",
-            "meaning", "region", "frequency", "examples",
+            "meaning", "region", "frequency",
         }
         assert col_names == expected
 

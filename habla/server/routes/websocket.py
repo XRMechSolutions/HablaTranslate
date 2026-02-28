@@ -112,14 +112,17 @@ class ClientSession:
         self.id = id(websocket)
         self.session_id = str(self.id)
 
-        # Audio processing
-        self.decoder = AudioDecoder(sample_rate=16000)
+        # Audio processing — derive VAD config from pipeline's app config
+        audio_cfg = pipeline.config.audio
+        asr_cfg = pipeline.config.asr
+        self.decoder = AudioDecoder(sample_rate=audio_cfg.sample_rate)
         self.vad = StreamingVADBuffer(
             config=VADConfig(
-                silence_duration_ms=600,
-                min_speech_ms=200,
-                max_segment_seconds=30.0,
-                speech_threshold=0.35,
+                sample_rate=audio_cfg.sample_rate,
+                silence_duration_ms=audio_cfg.vad_silence_ms,
+                min_speech_ms=audio_cfg.min_speech_ms,
+                max_segment_seconds=audio_cfg.max_segment_seconds,
+                speech_threshold=asr_cfg.vad_threshold,
                 frame_ms=32,
                 pre_speech_padding_ms=300,
             ),
@@ -148,6 +151,9 @@ class ClientSession:
         self._pending_pcm = bytearray()
         self._pending_duration = 0.0
         self._pending_task: asyncio.Task | None = None
+        self._pending_rms_sum = 0.0  # weighted RMS accumulator for merged segments
+        self._pending_prob_sum = 0.0  # weighted VAD prob accumulator for merged segments
+        self._pending_weight = 0.0  # total duration weight for averaging
         self._merge_gap_seconds = MERGE_GAP_SECONDS
         self._max_pending_seconds = MAX_PENDING_SECONDS
 
@@ -332,16 +338,22 @@ class ClientSession:
         except Exception as e:
             logger.error(f"Decode loop error: {e}")
 
-    async def _on_speech_segment(self, pcm_bytes: bytes, duration: float):
+    async def _on_speech_segment(self, pcm_bytes: bytes, duration: float,
+                                  audio_rms: float = 0.0, vad_avg_prob: float = 0.0):
         """Callback from VAD - queues segment for merge before translation."""
         self.pipeline.reset_partial_state()
-        await self._queue_segment(pcm_bytes, duration)
+        await self._queue_segment(pcm_bytes, duration, audio_rms, vad_avg_prob)
 
-    async def _queue_segment(self, pcm_bytes: bytes, duration: float):
+    async def _queue_segment(self, pcm_bytes: bytes, duration: float,
+                              audio_rms: float = 0.0, vad_avg_prob: float = 0.0):
         if not pcm_bytes:
             return
         self._pending_pcm.extend(pcm_bytes)
         self._pending_duration += duration
+        # Accumulate weighted audio metrics for merged segments
+        self._pending_rms_sum += audio_rms * duration
+        self._pending_prob_sum += vad_avg_prob * duration
+        self._pending_weight += duration
         if self._pending_duration >= self._max_pending_seconds:
             await self._flush_pending_now()
             return
@@ -367,25 +379,32 @@ class ClientSession:
             self._pending_task = None
         pcm_bytes = bytes(self._pending_pcm)
         duration = self._pending_duration
+        # Compute duration-weighted averages for merged segments
+        audio_rms = self._pending_rms_sum / self._pending_weight if self._pending_weight > 0 else 0.0
+        vad_avg_prob = self._pending_prob_sum / self._pending_weight if self._pending_weight > 0 else 0.0
         self._pending_pcm.clear()
         self._pending_duration = 0.0
-        await self._process_segment(pcm_bytes, duration)
+        self._pending_rms_sum = 0.0
+        self._pending_prob_sum = 0.0
+        self._pending_weight = 0.0
+        await self._process_segment(pcm_bytes, duration, audio_rms, vad_avg_prob)
 
-    async def _process_segment(self, pcm_bytes: bytes, duration: float):
+    async def _process_segment(self, pcm_bytes: bytes, duration: float,
+                                audio_rms: float = 0.0, vad_avg_prob: float = 0.0):
         """Runs full translation pipeline on the merged segment via the orchestrator queue."""
         self._segment_counter += 1
         seg = self._segment_counter
 
-        logger.info(f"Segment #{seg} ({duration:.1f}s)")
+        logger.info(f"Segment #{seg} ({duration:.1f}s, RMS={audio_rms:.0f}, VAD={vad_avg_prob:.2f})")
 
         # Save segment if recording enabled
         if self.recorder:
-            logger.info(f"Saving segment #{seg} to recording ({len(pcm_bytes)} bytes PCM)")
             self.recorder.save_pcm_segment(pcm_bytes, metadata={
                 "segment_id": seg,
                 "duration_seconds": duration,
+                "audio_rms": round(audio_rms, 1),
+                "vad_avg_prob": round(vad_avg_prob, 3),
             })
-            logger.info(f"Segment #{seg} saved to recording")
         else:
             logger.info(f"No recorder active, segment #{seg} not saved")
 
@@ -398,7 +417,9 @@ class ClientSession:
                 _write_wav(f, pcm_bytes, sample_rate=16000)
 
             start = time.monotonic()
-            exchange = await self.pipeline.process_wav(wav_path)
+            exchange = await self.pipeline.process_wav(
+                wav_path, audio_rms=audio_rms, vad_avg_prob=vad_avg_prob
+            )
             elapsed = time.monotonic() - start
 
             if exchange:
@@ -414,6 +435,10 @@ class ClientSession:
                     self.recorder.add_segment_metadata(seg, "speaker", exchange.speaker_label)
                     self.recorder.add_segment_metadata(seg, "confidence", exchange.confidence)
                     self.recorder.add_segment_metadata(seg, "idioms_detected", len(exchange.idioms))
+            else:
+                # ASR produced nothing — enrich recording with failure info
+                if self.recorder:
+                    self.recorder.add_segment_metadata(seg, "asr_status", "rejected")
 
         except Exception as e:
             logger.error(f"Segment #{seg} error: {e}")

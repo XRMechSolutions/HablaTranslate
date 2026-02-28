@@ -127,27 +127,17 @@ async def set_recording(req: RecordingRequest):
     from server.routes.websocket import set_recording_config
 
     logger = logging.getLogger("habla.api")
-    logger.info(f"[RECORDING API] Request to set recording: enabled={req.enabled}")
 
     if not app_config:
         raise HTTPException(503, "Server not initialized")
 
-    # Update the global config
-    logger.info(f"[RECORDING API] Before update: app_config.recording.enabled={app_config.recording.enabled}")
     app_config.recording.enabled = req.enabled
-    logger.info(f"[RECORDING API] After update: app_config.recording.enabled={app_config.recording.enabled}")
-
-    # Update websocket handler's config reference
-    logger.info(f"[RECORDING API] Calling set_recording_config with enabled={req.enabled}")
     set_recording_config(app_config.recording)
 
-    # Create recordings directory if enabling
     if req.enabled:
-        logger.info(f"[RECORDING API] Creating recordings directory: {app_config.recording.output_dir}")
         app_config.recording.output_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"[RECORDING API] Directory created/verified")
 
-    logger.info(f"[RECORDING API] Final state: recording_enabled={app_config.recording.enabled}")
+    logger.info(f"Recording toggled: enabled={req.enabled}")
     return {
         "recording_enabled": app_config.recording.enabled,
         "output_dir": str(app_config.recording.output_dir)
@@ -208,6 +198,14 @@ async def system_metrics():
     """)
     processing = dict(proc_rows[0]) if proc_rows else {}
 
+    # Quality metrics breakdown from DB
+    qm_rows = await db.execute_fetchall("""
+        SELECT status, COUNT(*) as cnt
+        FROM quality_metrics
+        GROUP BY status
+    """)
+    quality_breakdown = {r["status"]: r["cnt"] for r in qm_rows} if qm_rows else {}
+
     # Pipeline in-memory metrics
     pipeline_metrics = pipeline.metrics
     translator_metrics = pipeline.translator.metrics
@@ -239,9 +237,12 @@ async def system_metrics():
             "translations_completed": pipeline_metrics.get("translations_completed", 0),
             "translation_errors": pipeline_metrics.get("translation_errors", 0),
             "low_confidence_count": pipeline_metrics.get("low_confidence_count", 0),
+            "asr_rejected_count": pipeline_metrics.get("asr_rejected_count", 0),
+            "asr_empty_count": pipeline_metrics.get("asr_empty_count", 0),
             "queue_depth": pipeline_metrics.get("queue_depth", 0),
             "peak_queue_depth": pipeline_metrics.get("peak_queue_depth", 0),
         },
+        "quality_metrics": quality_breakdown,
         "translator": {
             "provider": translator_metrics.get("provider"),
             "model": translator_metrics.get("model"),

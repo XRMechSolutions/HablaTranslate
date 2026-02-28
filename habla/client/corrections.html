@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0f1419">
+<title>Habla - Corrections</title>
+<style>
+:root{
+  --bg:#0f1419;--bg2:#1a2027;--bg3:#1e272f;--bg4:#253340;
+  --fg:#e7e9ea;--fg2:#8b98a5;--fg3:#536471;
+  --accent:#1d9bf0;--green:#00ba7c;--amber:#f59e0b;--red:#f4212e;
+  --r:12px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,system-ui,'Segoe UI',sans-serif;background:var(--bg);color:var(--fg);height:100dvh;display:flex;flex-direction:column;overflow:hidden;-webkit-tap-highlight-color:transparent}
+
+/* HEADER */
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg2);border-bottom:1px solid var(--bg4);flex-shrink:0}
+.hdr h1{font-size:18px;font-weight:700}
+.hdr-r{display:flex;gap:8px;align-items:center}
+.back-btn{padding:5px 10px;border-radius:8px;background:var(--bg4);color:var(--fg2);border:none;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:4px}
+.back-btn:active{transform:scale(.95)}
+
+/* STATS BAR */
+.stats-bar{display:flex;gap:12px;padding:8px 14px;background:var(--bg2);border-bottom:1px solid var(--bg4);flex-shrink:0;flex-wrap:wrap}
+.stat{font-size:11px;color:var(--fg3)}
+.stat b{color:var(--fg2);font-weight:600}
+
+/* MAIN CONTENT */
+.content{flex:1;overflow-y:auto;padding:10px 14px;-webkit-overflow-scrolling:touch}
+
+/* RECORDING CARDS */
+.r-card{background:var(--bg3);border-radius:var(--r);padding:12px;margin-bottom:8px;cursor:pointer;border-left:3px solid var(--fg3);animation:up .2s ease-out}
+@keyframes up{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.r-card.complete{border-left-color:var(--green)}
+.r-card.in-progress{border-left-color:var(--amber)}
+.r-card:active{background:var(--bg4)}
+.r-date{font-size:13px;font-weight:700;margin-bottom:2px}
+.r-meta{display:flex;gap:8px;font-size:11px;color:var(--fg3);flex-wrap:wrap;margin-bottom:6px}
+.r-progress{height:4px;background:var(--bg4);border-radius:2px;overflow:hidden}
+.r-progress-fill{height:100%;border-radius:2px;transition:width .3s}
+
+/* SEGMENT CORRECTION VIEW */
+.segment-view{display:none;flex-direction:column;height:100%}
+.segment-view.active{display:flex}
+.list-view.hidden{display:none}
+
+/* SEGMENT HEADER */
+.seg-hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg2);border-bottom:1px solid var(--bg4);flex-shrink:0}
+.seg-hdr-left{display:flex;align-items:center;gap:8px}
+.seg-counter{font-size:13px;font-weight:700}
+.seg-confidence{font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600}
+.seg-confidence.high{background:rgba(0,186,124,.15);color:var(--green)}
+.seg-confidence.med{background:rgba(245,158,11,.15);color:var(--amber)}
+.seg-confidence.low{background:rgba(244,33,46,.15);color:var(--red)}
+
+/* AUDIO PLAYER */
+.audio-row{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg2);border-bottom:1px solid var(--bg4);flex-shrink:0}
+.play-btn{width:44px;height:44px;border-radius:50%;background:var(--accent);color:#fff;border:none;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.play-btn:active{transform:scale(.9)}
+.audio-info{font-size:11px;color:var(--fg3)}
+
+/* TRANSCRIPT DISPLAY */
+.seg-body{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px;-webkit-overflow-scrolling:touch}
+.field-label{font-size:11px;font-weight:600;color:var(--fg3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+.original-text{background:var(--bg3);border-radius:var(--r);padding:10px 12px;font-size:14px;color:var(--fg2);line-height:1.5;border:1px solid var(--bg4)}
+.edit-area{background:var(--bg3);border:1px solid var(--bg4);border-radius:var(--r);padding:10px 12px;font-size:14px;color:var(--fg);line-height:1.5;resize:none;min-height:80px;font-family:inherit;outline:none;width:100%}
+.edit-area:focus{border-color:var(--accent)}
+.reviewed-badge{display:inline-block;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;background:rgba(0,186,124,.15);color:var(--green)}
+
+/* NAV BUTTONS */
+.seg-nav{display:flex;gap:8px;padding:10px 14px;background:var(--bg2);border-top:1px solid var(--bg4);flex-shrink:0}
+.seg-nav button{flex:1;padding:12px;border-radius:var(--r);border:none;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+.seg-nav button:active{transform:scale(.97)}
+.btn-prev{background:var(--bg4);color:var(--fg2)}
+.btn-confirm{background:var(--green);color:#fff}
+.btn-next{background:var(--bg4);color:var(--fg2)}
+
+/* PROGRESS BAR (bottom) */
+.seg-progress{height:3px;background:var(--bg4);flex-shrink:0}
+.seg-progress-fill{height:100%;background:var(--accent);transition:width .3s}
+
+/* EMPTY STATE */
+.empty{text-align:center;color:var(--fg3);padding:40px 20px;font-size:13px;line-height:1.6}
+
+/* TOAST */
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg3);color:var(--fg);padding:10px 20px;border-radius:var(--r);font-size:13px;font-weight:600;border:1px solid var(--bg4);z-index:200;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.vis{opacity:1}
+</style>
+</head>
+<body>
+
+<!-- ===== LIST VIEW ===== -->
+<div class="list-view" id="listView">
+  <div class="hdr">
+    <h1>Corrections</h1>
+    <div class="hdr-r">
+      <a class="back-btn" href="/">< Habla</a>
+    </div>
+  </div>
+  <div class="stats-bar" id="statsBar">
+    <span class="stat">Loading stats...</span>
+  </div>
+  <div class="content" id="recordingList">
+    <div class="empty">Loading...</div>
+  </div>
+</div>
+
+<!-- ===== SEGMENT VIEW ===== -->
+<div class="segment-view" id="segmentView">
+  <div class="seg-hdr">
+    <div class="seg-hdr-left">
+      <button class="back-btn" onclick="showList()">< Back</button>
+      <span class="seg-counter" id="segCounter">1 / 10</span>
+    </div>
+    <span class="seg-confidence" id="segConfidence">0.95</span>
+  </div>
+  <div class="audio-row">
+    <button class="play-btn" id="playBtn" onclick="togglePlay()">&#9654;</button>
+    <audio id="audioEl" preload="auto"></audio>
+    <div class="audio-info" id="audioInfo">--</div>
+  </div>
+  <div class="seg-body">
+    <div>
+      <div class="field-label">Auto transcript</div>
+      <div class="original-text" id="originalText">--</div>
+    </div>
+    <div>
+      <div class="field-label">Corrected transcript <span class="reviewed-badge" id="reviewedBadge" style="display:none">Reviewed</span></div>
+      <textarea class="edit-area" id="editArea" rows="3"></textarea>
+    </div>
+    <div>
+      <div class="field-label">Translation</div>
+      <div class="original-text" id="translationText">--</div>
+    </div>
+    <div id="asrCorrectionsWrap" style="display:none">
+      <div class="field-label">ASR corrections noted</div>
+      <div class="original-text" id="asrCorrectionsText">--</div>
+    </div>
+  </div>
+  <div class="seg-nav">
+    <button class="btn-prev" onclick="prevSegment()">Prev</button>
+    <button class="btn-confirm" onclick="confirmSegment()">Confirm</button>
+    <button class="btn-next" onclick="nextSegment()">Next</button>
+  </div>
+  <div class="seg-progress"><div class="seg-progress-fill" id="segProgressFill"></div></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+
+/* ===== STATE ===== */
+let recordings=[];
+let currentRecId=null;
+let segments=[];
+let segIdx=0;
+let saveTimer=null;
+let originalTranscripts={};  // segment_id -> original transcript for diff detection
+
+/* ===== TOAST ===== */
+function toast(msg){
+  const t=$('#toast');
+  t.textContent=msg;
+  t.classList.add('vis');
+  setTimeout(()=>t.classList.remove('vis'),2000);
+}
+
+/* ===== API ===== */
+async function api(path,opts){
+  const r=await fetch(path,opts);
+  if(!r.ok){
+    const txt=await r.text().catch(()=>'');
+    throw new Error(`${r.status}: ${txt.slice(0,200)}`);
+  }
+  return r.json();
+}
+
+/* ===== LIST VIEW ===== */
+async function loadStats(){
+  try{
+    const s=await api('/api/corrections/stats');
+    $('#statsBar').innerHTML=`
+      <span class="stat"><b>${s.recordings_with_gt}</b> with GT</span>
+      <span class="stat"><b>${s.reviewed_segments}</b>/<b>${s.total_segments}</b> reviewed</span>
+      <span class="stat"><b>${s.corrected_segments}</b> corrected</span>
+      <span class="stat"><b>${Math.round(s.total_duration_seconds/60)}</b>m audio</span>
+    `;
+  }catch(e){
+    $('#statsBar').innerHTML=`<span class="stat" style="color:var(--red)">Stats error: ${e.message}</span>`;
+  }
+}
+
+async function loadRecordings(){
+  const list=$('#recordingList');
+  try{
+    const recs=await api('/api/recordings');
+    recordings=recs.filter(r=>r.has_ground_truth||r.segment_count>0);
+
+    if(!recordings.length){
+      list.innerHTML='<div class="empty">No recordings with ground truth yet.<br><span style="font-size:11px;color:var(--fg3)">Run generate_ground_truth.py on a recording first.</span></div>';
+      return;
+    }
+
+    // For each recording, check GT status
+    let html='';
+    for(const rec of recordings){
+      let reviewed=0,total=0,status='gray';
+      try{
+        const gt=await api(`/api/recordings/${rec.id}/ground-truth`);
+        const segs=gt.data.segments||[];
+        total=segs.length;
+        reviewed=segs.filter(s=>s.reviewed).length;
+        if(total>0&&reviewed===total) status='complete';
+        else if(reviewed>0) status='in-progress';
+      }catch(e){
+        // No GT available
+        if(!rec.has_ground_truth) continue;
+      }
+
+      if(total===0&&!rec.has_ground_truth) continue;
+
+      const date=rec.started_at?new Date(rec.started_at).toLocaleString():(rec.id.includes('_')?rec.id.split('_').slice(1).join(' '):'Unknown');
+      const dur=rec.total_duration_seconds?`${Math.round(rec.total_duration_seconds/60)}m`:'--';
+      const pct=total>0?Math.round(reviewed/total*100):0;
+      const pctColor=status==='complete'?'var(--green)':status==='in-progress'?'var(--amber)':'var(--fg3)';
+
+      html+=`
+        <div class="r-card ${status}" onclick="openRecording('${rec.id}')">
+          <div class="r-date">${date}</div>
+          <div class="r-meta">
+            <span>${total} segments</span>
+            <span>${dur}</span>
+            <span>${reviewed}/${total} reviewed (${pct}%)</span>
+          </div>
+          <div class="r-progress"><div class="r-progress-fill" style="width:${pct}%;background:${pctColor}"></div></div>
+        </div>`;
+    }
+    list.innerHTML=html||'<div class="empty">No recordings with ground truth found.</div>';
+  }catch(e){
+    list.innerHTML=`<div class="empty" style="color:var(--red)">Error: ${e.message}</div>`;
+  }
+}
+
+/* ===== SEGMENT VIEW ===== */
+async function openRecording(id){
+  currentRecId=id;
+  try{
+    const gt=await api(`/api/recordings/${id}/ground-truth`);
+    segments=(gt.data.segments||[]).map(s=>({...s, reviewed:!!s.reviewed, human_corrected:!!s.human_corrected}));
+    if(!segments.length){
+      toast('No segments in ground truth');
+      return;
+    }
+    // Store originals for diff detection
+    originalTranscripts={};
+    segments.forEach(s=>{originalTranscripts[s.segment_id]=s.transcript});
+    segIdx=0;
+    // Find first unreviewed
+    const firstUnreviewed=segments.findIndex(s=>!s.reviewed);
+    if(firstUnreviewed>=0) segIdx=firstUnreviewed;
+    showSegmentView();
+    renderSegment();
+  }catch(e){
+    toast('Error loading: '+e.message);
+  }
+}
+
+function showSegmentView(){
+  $('#listView').classList.add('hidden');
+  $('#segmentView').classList.add('active');
+}
+
+function showList(){
+  // Save before leaving
+  scheduleSave(true);
+  $('#segmentView').classList.remove('active');
+  $('#listView').classList.remove('hidden');
+  // Refresh list to show updated progress
+  loadRecordings();
+  loadStats();
+}
+
+function renderSegment(){
+  const seg=segments[segIdx];
+  if(!seg) return;
+
+  $('#segCounter').textContent=`${segIdx+1} / ${segments.length}`;
+
+  // Confidence badge
+  const conf=$('#segConfidence');
+  conf.textContent=(seg.confidence||0).toFixed(2);
+  conf.className='seg-confidence '+(seg.confidence>=0.8?'high':seg.confidence>=0.5?'med':'low');
+
+  // Audio
+  const audioEl=$('#audioEl');
+  audioEl.src=`/api/recordings/${currentRecId}/audio/${seg.filename}`;
+  audioEl.load();
+  $('#playBtn').innerHTML='&#9654;';
+  $('#audioInfo').textContent=seg.filename;
+
+  // Texts
+  // Show the original auto-generated transcript (from original GT, not the corrected one)
+  const origKey=seg.segment_id;
+  const origText=originalTranscripts[origKey]||seg.transcript||'';
+  $('#originalText').textContent=origText;
+  $('#editArea').value=seg.transcript||'';
+  $('#translationText').textContent=seg.translation||'(no translation)';
+
+  // ASR corrections
+  if(seg.asr_corrections){
+    $('#asrCorrectionsWrap').style.display='';
+    $('#asrCorrectionsText').textContent=seg.asr_corrections;
+  }else{
+    $('#asrCorrectionsWrap').style.display='none';
+  }
+
+  // Reviewed badge
+  $('#reviewedBadge').style.display=seg.reviewed?'':'none';
+
+  // Progress bar
+  const reviewed=segments.filter(s=>s.reviewed).length;
+  $('#segProgressFill').style.width=`${Math.round(reviewed/segments.length*100)}%`;
+}
+
+/* ===== AUDIO ===== */
+function togglePlay(){
+  const a=$('#audioEl');
+  if(a.paused){
+    a.play();
+    $('#playBtn').innerHTML='&#9646;&#9646;';
+  }else{
+    a.pause();
+    $('#playBtn').innerHTML='&#9654;';
+  }
+}
+
+$('#audioEl')?.addEventListener('ended',()=>{
+  $('#playBtn').innerHTML='&#9654;';
+});
+
+/* ===== NAVIGATION ===== */
+function confirmSegment(){
+  const seg=segments[segIdx];
+  const newText=$('#editArea').value.trim();
+  seg.transcript=newText;
+  seg.reviewed=true;
+  // Detect if user changed the text
+  const origText=originalTranscripts[seg.segment_id]||'';
+  if(newText!==origText) seg.human_corrected=true;
+  $('#reviewedBadge').style.display='';
+  // Update progress bar
+  const reviewed=segments.filter(s=>s.reviewed).length;
+  $('#segProgressFill').style.width=`${Math.round(reviewed/segments.length*100)}%`;
+  scheduleSave();
+  // Auto-advance
+  if(segIdx<segments.length-1){
+    segIdx++;
+    renderSegment();
+  }else{
+    toast('All segments reviewed!');
+  }
+}
+
+function prevSegment(){
+  if(segIdx>0){segIdx--;renderSegment();}
+}
+
+function nextSegment(){
+  if(segIdx<segments.length-1){segIdx++;renderSegment();}
+}
+
+/* ===== SAVE ===== */
+function scheduleSave(immediate){
+  if(saveTimer) clearTimeout(saveTimer);
+  if(immediate) return doSave();
+  saveTimer=setTimeout(doSave,500);
+}
+
+async function doSave(){
+  if(!currentRecId||!segments.length) return;
+  try{
+    await api(`/api/recordings/${currentRecId}/ground-truth`,{
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({segments}),
+    });
+  }catch(e){
+    toast('Save error: '+e.message);
+  }
+}
+
+/* ===== KEYBOARD ===== */
+document.addEventListener('keydown',e=>{
+  if(!$('#segmentView').classList.contains('active')) return;
+  // Don't capture when editing textarea (except specific shortcuts)
+  const inTextarea=document.activeElement===$('#editArea');
+
+  if(e.code==='Space'&&!inTextarea){
+    e.preventDefault();
+    togglePlay();
+  }else if(e.code==='Enter'&&!e.shiftKey){
+    e.preventDefault();
+    confirmSegment();
+  }else if(e.code==='ArrowLeft'&&!inTextarea){
+    e.preventDefault();
+    prevSegment();
+  }else if(e.code==='ArrowRight'&&!inTextarea){
+    e.preventDefault();
+    nextSegment();
+  }
+});
+
+/* ===== INIT ===== */
+loadStats();
+loadRecordings();
+</script>
+</body>
+</html>

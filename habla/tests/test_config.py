@@ -88,7 +88,6 @@ class TestDefaults:
         c = RecordingConfig()
         assert c.enabled is False
         assert c.save_raw_audio is True
-        assert c.save_decoded_pcm is False
         assert c.max_recordings == 100
 
     def test_websocket_config_defaults(self):

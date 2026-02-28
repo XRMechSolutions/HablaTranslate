@@ -36,14 +36,16 @@ Based on research ([Fine-tuning Whisper on Low-Resource Languages](https://arxiv
 
 ### Hardware Requirements
 
-✅ **Your RTX 3060 12GB is sufficient** for fine-tuning Whisper Small/Medium:
+✅ **Your RTX 4070 8GB is sufficient** for fine-tuning Whisper Small with LoRA:
 
-| Model | VRAM (Training) | Training Time (20h dataset) | Inference VRAM |
-|-------|----------------|----------------------------|----------------|
-| **Small** | 8-10GB | ~12 hours | ~1GB |
-| **Medium** | 10-12GB (tight) | ~24 hours | ~2.5GB |
+| Approach | Model | VRAM (Training) | Training Time (20h dataset) | Inference VRAM |
+|----------|-------|----------------|----------------------------|----------------|
+| **LoRA (recommended)** | **Small** | **4-6GB** | **~8 hours** | **~1GB** |
+| LoRA | Medium | 6-8GB (tight) | ~16 hours | ~2.5GB |
+| Full fine-tuning | Small | 8-10GB | ~12 hours | ~1GB |
+| Full fine-tuning | Medium | 10-12GB | ~24 hours | ~2.5GB |
 
-**Recommendation**: Start with Small model fine-tuning. Your 12GB VRAM is comfortable for Small, tight for Medium.
+**Recommendation**: Use **LoRA with Whisper Small**. LoRA trains only ~1% of parameters (2.3M out of 244M), produces comparable results to full fine-tuning for accent/domain adaptation, and fits comfortably in 8GB VRAM. Full fine-tuning of Small may OOM on 8GB; full fine-tuning of Medium won't fit.
 
 ### Software Requirements
 
@@ -289,11 +291,14 @@ def prepare_dataset(batch):
 # Process dataset
 dataset = dataset.map(prepare_dataset, remove_columns=["audio", "sentence"])
 
-# Training arguments (conservative for RTX 3060 12GB)
+# Training arguments (conservative for RTX 4070 8GB)
+# NOTE: For 8GB VRAM, prefer LoRA (Step 3) over full fine-tuning.
+# Full fine-tuning of Small may OOM. If it does, reduce batch size to 2
+# or switch to LoRA.
 training_args = Seq2SeqTrainingArguments(
     output_dir="./whisper-small-andalusian",
-    per_device_train_batch_size=4,        # Adjust based on VRAM
-    gradient_accumulation_steps=4,        # Effective batch size = 16
+    per_device_train_batch_size=2,        # Conservative for 8GB VRAM
+    gradient_accumulation_steps=8,        # Effective batch size = 16
     learning_rate=1e-5,
     warmup_steps=500,
     max_steps=5000,                       # ~10-12 hours for 20h dataset
@@ -340,7 +345,7 @@ trainer = Seq2SeqTrainer(
 )
 
 # Start fine-tuning
-print("Starting fine-tuning... (this will take ~12 hours on RTX 3060)")
+print("Starting fine-tuning... (this will take ~8-12 hours on RTX 4070)")
 trainer.train()
 
 # Save final model
@@ -350,9 +355,9 @@ processor.save_pretrained("./whisper-small-andalusian-final")
 print("Fine-tuning complete!")
 ```
 
-### Step 3: Parameter-Efficient Fine-Tuning (LoRA) - Optional
+### Step 3: Parameter-Efficient Fine-Tuning (LoRA) - Recommended for 8GB VRAM
 
-If you encounter VRAM issues, use LoRA to reduce memory footprint by 50%:
+Use LoRA to reduce memory footprint by ~50%. **This is the recommended approach for the RTX 4070 8GB** — full fine-tuning may OOM:
 
 ```python
 from peft import LoraConfig, get_peft_model
@@ -375,7 +380,7 @@ model.print_trainable_parameters()
 # Train as normal with Seq2SeqTrainer
 ```
 
-**Trade-off**: LoRA trains only 1% of parameters (faster, less VRAM) but may give slightly lower accuracy than full fine-tuning. For domain adaptation, LoRA is usually sufficient.
+**Trade-off**: LoRA trains only 1% of parameters (faster, less VRAM) but may give slightly lower accuracy than full fine-tuning. For accent/domain adaptation (as opposed to learning a new language from scratch), LoRA typically produces comparable results to full fine-tuning.
 
 ---
 
@@ -464,66 +469,55 @@ for pred, ref in zip(predictions[:10], references[:10]):
 
 ## Deployment in Habla
 
-Once fine-tuned, integrate your custom model:
+### Step 1: Convert to CTranslate2 Format (REQUIRED)
 
-### Option 1: Replace Base Model (Simple)
-
-```python
-# In habla/server/pipeline/orchestrator.py, line 100:
-
-self._whisperx_model = whisperx.load_model(
-    "/path/to/whisper-small-andalusian-final",  # Your fine-tuned model
-    device=self.config.asr.device,
-    compute_type=self.config.asr.compute_type,
-    language="es",
-)
-```
-
-### Option 2: Configurable via Environment Variable
-
-```python
-# In habla/server/config.py, add:
-
-class ASRConfig(BaseModel):
-    model_size: str = "small"
-    model_path: str = ""  # NEW: path to custom model
-
-# In orchestrator.py:
-model_path = self.config.asr.model_path or self.config.asr.model_size
-self._whisperx_model = whisperx.load_model(
-    model_path,
-    device=self.config.asr.device,
-    compute_type=self.config.asr.compute_type,
-)
-```
+**Do not skip this step.** Loading HuggingFace Transformers models directly into WhisperX has a [known bug](https://github.com/m-bain/whisperX/issues/1237) (`AttributeError: 'WhisperForConditionalGeneration' object has no attribute 'hf_tokenizer'`). Converting to CTranslate2/faster-whisper format avoids this entirely and gives 3-6x faster inference.
 
 ```bash
-# Use custom model:
-export WHISPER_MODEL_PATH=/path/to/whisper-small-andalusian-final
-uvicorn server.main:app --host 0.0.0.0 --port 8002
+pip install ctranslate2
 
-# Fallback to base model:
-export WHISPER_MODEL=small
-uvicorn server.main:app --host 0.0.0.0 --port 8002
+# Convert HuggingFace model to CTranslate2 format
+ct2-transformers-converter \
+    --model ./whisper-small-andalusian-final \
+    --output_dir ./whisper-small-andalusian-ct2 \
+    --copy_files tokenizer.json preprocessor_config.json \
+    --quantization int8
 ```
 
-### Option 3: A/B Testing (Advanced)
-
-Load both models and compare side-by-side:
+For LoRA models, merge the adapter weights first:
 
 ```python
-# Load base + fine-tuned
-self._whisperx_base = whisperx.load_model("small", ...)
-self._whisperx_finetuned = whisperx.load_model("/path/to/finetuned", ...)
+from peft import PeftModel
+from transformers import WhisperForConditionalGeneration
 
-# Transcribe with both, log WER differences
-base_result = self._whisperx_base.transcribe(audio)
-finetuned_result = self._whisperx_finetuned.transcribe(audio)
+# Load base + LoRA adapter
+base_model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-small")
+model = PeftModel.from_pretrained(base_model, "./whisper-small-andalusian-lora")
 
-# Use fine-tuned for production, log comparison
+# Merge LoRA weights into base model
+merged_model = model.merge_and_unload()
+merged_model.save_pretrained("./whisper-small-andalusian-merged")
+
+# Then convert with ct2-transformers-converter as above
 ```
 
-**VRAM cost**: 2x model size (~2GB for two Small models). Only feasible if you have headroom.
+### Step 2: Deploy via Environment Variable (No Code Changes Needed)
+
+The existing `WHISPER_MODEL` env var in `habla/.env` already accepts a local directory path — `whisperx.load_model()` handles both size strings ("small") and paths. No code changes to `orchestrator.py` or `config.py` are required.
+
+```bash
+# In habla/.env — point to converted model:
+WHISPER_MODEL=C:/Projects/HablaTranslate/models/whisper-small-andalusian-ct2
+
+# Or revert to base model:
+WHISPER_MODEL=small
+```
+
+### Optional: A/B Testing
+
+Load both models and compare side-by-side by running two server instances on different ports, one with `WHISPER_MODEL=small` and one with your fine-tuned path.
+
+**VRAM cost**: 2x model size (~2GB for two Small models). With 8GB total and ~5GB used, this doesn't fit alongside the LLM. Run A/B tests with the LLM stopped, or use a text-only comparison script.
 
 ---
 
@@ -535,7 +529,7 @@ finetuned_result = self._whisperx_finetuned.transcribe(audio)
 |-------|----------|--------|-------|
 | **Data collection** | 4-8 weeks | Passive | Record during normal classroom use |
 | **Data annotation** | 20-40 hours | Active | Most labor-intensive step |
-| **Fine-tuning** | 12-24 hours | Passive | Let RTX 3060 run overnight |
+| **Fine-tuning** | 8-16 hours | Passive | Let RTX 4070 run overnight (use LoRA) |
 | **Evaluation** | 2-4 hours | Active | Test and compare |
 | **Integration** | 1-2 hours | Active | Update Habla config |
 | **Total** | 2-3 months | 25-50 human hours | Most time is waiting/recording |
@@ -618,20 +612,55 @@ Tag each version with:
 
 ---
 
+## Thread Safety and Multi-Client Considerations
+
+### Why WhisperX Can't Parallelize on a Single GPU
+
+The thread-safety constraint that forces serialized ASR in Habla (`self._asr_lock` in orchestrator.py) comes from CTranslate2, the C++ inference engine under faster-whisper under WhisperX:
+
+- CTranslate2 **forces `inter_threads=1` on GPU** — hardcoded, not configurable
+- The model's KV cache and internal CUDA buffers aren't designed for concurrent access
+- Two simultaneous `generate()` calls would corrupt each other's intermediate results
+
+This applies equally to base and fine-tuned models. Fine-tuning does not change the threading model.
+
+### Workaround: Dual Model Instances
+
+For 2-3 simultaneous clients, you could load **two separate WhisperX model instances**, each with its own lock. They'd share VRAM for weights but have independent KV caches:
+
+- 1 instance: ~1GB VRAM (current)
+- 2 instances: ~1.5-2GB VRAM (weights partially shared by CUDA, KV caches separate)
+
+On 8GB VRAM with ~5GB used, this is tight but potentially feasible. Would need testing.
+
+---
+
 ## Alternative: Transfer Learning from Similar Dialects
 
-If collecting 20+ hours is too much effort, consider **transfer learning** from existing Andalusian datasets:
+If collecting 20+ hours is too much effort, consider **two-stage transfer learning**:
 
-### Public Datasets (If Available)
+### Pre-Existing Spanish Whisper Models on HuggingFace
 
-Check Hugging Face Hub for:
-- `google/fleurs` (Spanish variants)
-- `mozilla-foundation/common_voice_13_0` (Spain Spanish subset)
-- Academic corpora (search "Andalusian Spanish corpus")
+**No Andalusian-specific models exist** (as of Feb 2026). Available Spanish fine-tunes are all standard Castilian/Latin American:
+
+| Model | Base | Training Data | WER |
+|-------|------|--------------|-----|
+| [adriszmar/whisper-large-v3-turbo-es](https://huggingface.co/adriszmar/whisper-large-v3-turbo-es) | Large-v3-turbo | Common Voice v17 | 5.34% |
+| [clu-ling/whisper-large-v2-spanish](https://huggingface.co/clu-ling/whisper-large-v2-spanish) | Large-v2 | Common Voice v11 | ~8% |
+| [Sandiago21/whisper-large-v2-spanish](https://huggingface.co/Sandiago21/whisper-large-v2-spanish) | Large-v2 | Common Voice v13 | ~7% |
+
+None target Andalusian features (seseo, consonant dropping, vowel merging, fast speech). This is a gap a fine-tuned model would fill.
+
+### Public Datasets for Bootstrapping
+
+- `mozilla-foundation/common_voice_17_0` — Spain Spanish subset (100+ hours, free)
+- `google/fleurs` — Spanish variants (includes some Iberian speakers)
+
+These are predominantly standard Castilian, but closer to Andalusian than the Latin American data Whisper was primarily trained on.
 
 **Workflow**:
-1. Fine-tune on public Andalusian data (if exists)
-2. Further fine-tune on your 5-10 hours classroom data
+1. Fine-tune on Common Voice Spain-Spanish subset (free, 100+ hours)
+2. Further fine-tune on your 5-10 hours of Andalusian classroom audio
 3. Get 80% of the benefit with 50% of the effort
 
 ### Example: Two-Stage Fine-Tuning

@@ -76,8 +76,8 @@ class AudioConfig(BaseModel):
     """Audio ingress settings."""
     sample_rate: int = 16000
     channels: int = 1
-    vad_silence_ms: int = 400  # ms of silence to finalize segment
-    min_speech_ms: int = 500  # minimum speech length to process
+    vad_silence_ms: int = 600  # ms of silence to finalize segment
+    min_speech_ms: int = 200  # minimum speech length to process
     max_segment_seconds: float = 30.0  # max segment before forced split
     buffer_max_seconds: float = 60.0  # ring buffer size
 
@@ -95,7 +95,6 @@ class RecordingConfig(BaseModel):
     """Audio recording settings for debugging/testing."""
     enabled: bool = False  # Master toggle
     save_raw_audio: bool = True  # Save incoming WebM/Opus from browser
-    save_decoded_pcm: bool = False  # Save decoded PCM (verbose)
     save_vad_segments: bool = True  # Save VAD-detected speech segments
     output_dir: Path = Path("data/audio/recordings")
     max_recordings: int = 100  # Auto-cleanup old recordings

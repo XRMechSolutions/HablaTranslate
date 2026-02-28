@@ -94,6 +94,7 @@ habla/tests/benchmark/results/
 # Claude Code local settings (machine-specific, not for sharing)
 # -----------------------------------------------------------------------------
 .claude/
+CLAUDE.md
 
 # -----------------------------------------------------------------------------
 # OS artifacts
@@ -105,6 +106,11 @@ desktop.ini
 # Windows NUL device artifacts (created by bash redirect accidents)
 /nul
 habla/nul
+
+# -----------------------------------------------------------------------------
+# Tool output artifacts
+# -----------------------------------------------------------------------------
+habla/tools/last_test_output.txt
 
 # -----------------------------------------------------------------------------
 # Temporary files

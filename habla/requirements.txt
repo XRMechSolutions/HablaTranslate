@@ -5,12 +5,11 @@ websockets==16.0
 python-multipart==0.0.22
 
 # ASR
-whisperx==3.7.6
-faster-whisper==1.2.1
+whisperx==3.8.1
+# faster-whisper and pyannote-audio are pulled by whisperx 3.8.1
 
 # Audio processing (ffmpeg binary required in PATH, called via subprocess)
-numpy==2.4.1
-scipy==1.15.2
+soundfile>=0.12.1
 
 # LLM interaction
 httpx==0.28.1

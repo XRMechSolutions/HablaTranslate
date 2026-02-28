@@ -1,0 +1,66 @@
+# =============================================================================
+# Habla Translate - .dockerignore
+# Excludes files from the Docker build context to keep images small and clean.
+# =============================================================================
+
+# Secrets
+.env
+.env.*
+*.crt
+*.key
+*.pem
+
+# Runtime data
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.log
+*.log.*
+data/last_session.json
+data/backups/
+data/audio/recordings/
+
+# Tests (not needed in production image)
+tests/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+venv/
+.venv/
+
+# Dev tooling
+.dev/
+.claude/
+.git/
+.gitignore
+.dockerignore
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Documentation (not needed at runtime)
+*.md
+docs/
+LICENSE
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Windows scripts (not used in container)
+*.bat
+*.ps1
+
+# Fine-tuning dependencies (separate workflow)
+requirements-finetune.txt
+scripts/
+tools/

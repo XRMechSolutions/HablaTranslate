@@ -42,6 +42,8 @@ $('#modeBtn').onclick = () => {
 };
 $('#vocabBtn').onclick = () => location.href = '/vocab';
 $('#historyBtn').onclick = () => location.href = '/history';
+$('#correctionsBtn').onclick = () => location.href = '/corrections';
+$('#bookmarksBtn').onclick = () => location.href = '/bookmarks';
 
 $('#saveBtn').onclick = () => {
   if (!state.sessionId) { toast('No active session', 'error'); return; }
