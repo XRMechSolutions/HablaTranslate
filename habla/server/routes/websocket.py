@@ -33,6 +33,7 @@ from server.pipeline.orchestrator import PipelineOrchestrator
 from server.pipeline.vad_buffer import StreamingVADBuffer, AudioDecoder, VADConfig
 from server.models.schemas import WSTranslation, WSPartialTranscript, WSSpeakersUpdate
 from server.services.audio_recorder import AudioRecorder
+from server.services.lmstudio_manager import LMStudioManager
 from server.config import RecordingConfig
 
 logger = logging.getLogger("habla.ws")
@@ -48,7 +49,6 @@ VALID_DIRECTIONS = ("es_to_en", "en_to_es")
 VALID_MODES = ("conversation", "classroom")
 
 # Only one client at a time — second connection gets rejected.
-_active_ws_lock = asyncio.Lock()
 
 # Module-level pipeline reference — updated on restart so active sessions
 # always use the current pipeline instead of a stale (closed) one.
@@ -493,164 +493,190 @@ def _write_wav(f, pcm_bytes: bytes, sample_rate: int = 16000):
 async def websocket_endpoint(websocket: WebSocket):
     """Main WebSocket handler. Only one client at a time.
 
-    Uses a lock so reconnecting clients wait for the previous connection's
-    cleanup to finish rather than being rejected during the brief teardown window.
-    A second tab will wait until the first disconnects (intended single-client behavior).
+    New connections immediately replace old ones (single-user app).
     """
+    global _active_session
     await websocket.accept()
 
-    async with _active_ws_lock:
-        global _active_session
-        session = ClientSession(websocket, _current_pipeline)
-        _active_session = session
-        db_session_created = False
-
+    # Close any stale session so the new one takes over immediately
+    old = _active_session
+    if old is not None:
+        logger.info("Replacing previous session for new connection")
+        _active_session = None
         try:
-            await session.initialize()
-            logger.info(f"Client connected: {session.id}")
+            await old.cleanup()
+        except Exception:
+            pass
+        try:
+            await old.websocket.close()
+        except Exception:
+            pass
 
-            # Create a DB session for this connection
-            await session.pipeline.create_session()
-            db_session_created = True
+    session = ClientSession(websocket, _current_pipeline)
+    _active_session = session
+    db_session_created = False
 
-            # Define callbacks (wired to current pipeline on connect and start_listening)
-            async def on_translation(msg: WSTranslation):
-                await session._send(msg.model_dump())
+    try:
+        await session.initialize()
+        logger.info(f"Client connected: {session.id}")
 
-            async def on_partial(msg: WSPartialTranscript):
-                await session._send(msg.model_dump())
+        # Create a DB session for this connection
+        await session.pipeline.create_session()
+        db_session_created = True
 
-            async def on_speakers(msg: WSSpeakersUpdate):
-                await session._send(msg.model_dump())
+        # Define callbacks (wired to current pipeline on connect and start_listening)
+        async def on_translation(msg: WSTranslation):
+            await session._send(msg.model_dump())
 
-            async def on_final_transcript(msg: dict):
-                await session._send(msg)
+        async def on_partial(msg: WSPartialTranscript):
+            await session._send(msg.model_dump())
 
-            async def on_error(msg: str):
-                await session._send({"type": "error", "message": msg})
+        async def on_speakers(msg: WSSpeakersUpdate):
+            await session._send(msg.model_dump())
 
-            session._wire_callbacks = lambda: session.pipeline.set_callbacks(
-                on_translation=on_translation,
-                on_partial=on_partial,
-                on_speakers=on_speakers,
-                on_final_transcript=on_final_transcript,
-                on_error=on_error,
-            )
-            session._wire_callbacks()
+        async def on_final_transcript(msg: dict):
+            await session._send(msg)
 
-            # Start heartbeat monitor
-            if _ws_config:
-                session._heartbeat_task = asyncio.create_task(
-                    session._heartbeat_monitor(
-                        _ws_config.ping_interval_seconds,
-                        _ws_config.missed_pings_threshold,
-                    )
+        async def on_error(msg: str):
+            await session._send({"type": "error", "message": msg})
+
+        session._wire_callbacks = lambda: session.pipeline.set_callbacks(
+            on_translation=on_translation,
+            on_partial=on_partial,
+            on_speakers=on_speakers,
+            on_final_transcript=on_final_transcript,
+            on_error=on_error,
+        )
+        session._wire_callbacks()
+
+        # Start heartbeat monitor
+        if _ws_config:
+            session._heartbeat_task = asyncio.create_task(
+                session._heartbeat_monitor(
+                    _ws_config.ping_interval_seconds,
+                    _ws_config.missed_pings_threshold,
                 )
+            )
 
-            p = session.pipeline
-            await session._send({
-                "type": "status",
-                "pipeline_ready": p.ready,
-                "session_id": p.session_id,
-                "direction": p.direction,
-                "mode": p.mode,
-                "speaker_count": len(p.speaker_tracker.speakers),
-            })
+        p = session.pipeline
+        await session._send({
+            "type": "status",
+            "pipeline_ready": p.ready,
+            "session_id": p.session_id,
+            "direction": p.direction,
+            "mode": p.mode,
+            "speaker_count": len(p.speaker_tracker.speakers),
+        })
 
-            while True:
-                message = await websocket.receive()
-                session._last_activity_time = time.monotonic()
-                if message.get("type") == "websocket.disconnect":
-                    logger.info(f"Client {session.id}: disconnect received")
-                    break
+        while True:
+            message = await websocket.receive()
+            session._last_activity_time = time.monotonic()
+            if message.get("type") == "websocket.disconnect":
+                logger.info(f"Client {session.id}: disconnect received")
+                break
 
-                if "bytes" in message and message["bytes"]:
-                    await session.handle_audio_chunk(message["bytes"])
+            if "bytes" in message and message["bytes"]:
+                await session.handle_audio_chunk(message["bytes"])
 
-                elif "text" in message and message["text"]:
-                    try:
-                        msg = json.loads(message["text"])
-                    except json.JSONDecodeError:
-                        continue
+            elif "text" in message and message["text"]:
+                try:
+                    msg = json.loads(message["text"])
+                except json.JSONDecodeError:
+                    continue
 
-                    t = msg.get("type", "")
+                t = msg.get("type", "")
 
-                    if t == "start_listening":
-                        logger.info(f"Client {session.id}: start_listening received")
-                        await session.start_listening()
+                if t == "start_listening":
+                    logger.info(f"Client {session.id}: start_listening received")
+                    await session.start_listening()
 
-                    elif t == "stop_listening":
-                        logger.info(f"Client {session.id}: stop_listening received")
+                elif t == "stop_listening":
+                    logger.info(f"Client {session.id}: stop_listening received")
+                    await session.stop_listening()
+
+                elif t == "segment_end":
+                    # Legacy push-to-talk: process accumulated audio
+                    pass  # continuous mode handles this via VAD
+
+                elif t == "text_input":
+                    text = msg.get("text", "").strip()
+                    spk = msg.get("speaker_id", "MANUAL")
+                    logger.info(f"Text input received (len={len(text)} spk={spk})")
+                    if text:
+                        asyncio.create_task(
+                            _process_text(session, text, spk)
+                        )
+
+                elif t == "toggle_direction":
+                    d = msg.get("direction", "es_to_en")
+                    if d not in VALID_DIRECTIONS:
+                        logger.warning(f"Invalid direction '{d}', ignoring")
+                        await session._send({"type": "error", "message": f"Invalid direction: {d}"})
+                    else:
+                        session.pipeline.set_direction(d)
+                        await session._send({"type": "direction_changed", "direction": d})
+                        # Persist so it survives server restarts
+                        _persist_ui_setting(session, "direction", d)
+
+                elif t == "set_mode":
+                    m = msg.get("mode", "conversation")
+                    if m not in VALID_MODES:
+                        logger.warning(f"Invalid mode '{m}', ignoring")
+                        await session._send({"type": "error", "message": f"Invalid mode: {m}"})
+                    else:
+                        session.pipeline.set_mode(m)
+                        await session._send({"type": "mode_changed", "mode": m})
+                        # Persist so it survives server restarts
+                        _persist_ui_setting(session, "mode", m)
+
+                elif t == "rename_speaker":
+                    sid = msg.get("speaker_id", "")
+                    name = msg.get("name", "")
+                    if sid and name:
+                        session.pipeline.speaker_tracker.rename(sid, name)
+                        await session._send(
+                            WSSpeakersUpdate(
+                                speakers=session.pipeline.speaker_tracker.get_all()
+                            ).model_dump()
+                        )
+
+                elif t == "new_session":
+                    logger.info(f"Client {session.id}: new_session requested")
+                    if session.listening:
                         await session.stop_listening()
+                    new_id = await session.pipeline.reset_session()
+                    if hasattr(session, '_wire_callbacks'):
+                        session._wire_callbacks()
+                    await session._send({
+                        "type": "session_reset",
+                        "session_id": new_id,
+                        "direction": session.pipeline.direction,
+                        "mode": session.pipeline.mode,
+                    })
 
-                    elif t == "segment_end":
-                        # Legacy push-to-talk: process accumulated audio
-                        pass  # continuous mode handles this via VAD
+                elif t == "ping":
+                    await session._send({"type": "pong"})
 
-                    elif t == "text_input":
-                        text = msg.get("text", "").strip()
-                        spk = msg.get("speaker_id", "MANUAL")
-                        logger.info(f"Text input received (len={len(text)} spk={spk})")
-                        if text:
-                            asyncio.create_task(
-                                _process_text(session, text, spk)
-                            )
+    except WebSocketDisconnect:
+        logger.info(f"Client disconnected: {session.id}")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+    finally:
+        _active_session = None
+        await session.cleanup()
+        if db_session_created:
+            await session.pipeline.close_session()
 
-                    elif t == "toggle_direction":
-                        d = msg.get("direction", "es_to_en")
-                        if d not in VALID_DIRECTIONS:
-                            logger.warning(f"Invalid direction '{d}', ignoring")
-                            await session._send({"type": "error", "message": f"Invalid direction: {d}"})
-                        else:
-                            session.pipeline.set_direction(d)
-                            await session._send({"type": "direction_changed", "direction": d})
 
-                    elif t == "set_mode":
-                        m = msg.get("mode", "conversation")
-                        if m not in VALID_MODES:
-                            logger.warning(f"Invalid mode '{m}', ignoring")
-                            await session._send({"type": "error", "message": f"Invalid mode: {m}"})
-                        else:
-                            session.pipeline.set_mode(m)
-                            await session._send({"type": "mode_changed", "mode": m})
-
-                    elif t == "rename_speaker":
-                        sid = msg.get("speaker_id", "")
-                        name = msg.get("name", "")
-                        if sid and name:
-                            session.pipeline.speaker_tracker.rename(sid, name)
-                            await session._send(
-                                WSSpeakersUpdate(
-                                    speakers=session.pipeline.speaker_tracker.get_all()
-                                ).model_dump()
-                            )
-
-                    elif t == "new_session":
-                        logger.info(f"Client {session.id}: new_session requested")
-                        if session.listening:
-                            await session.stop_listening()
-                        new_id = await session.pipeline.reset_session()
-                        if hasattr(session, '_wire_callbacks'):
-                            session._wire_callbacks()
-                        await session._send({
-                            "type": "session_reset",
-                            "session_id": new_id,
-                            "direction": session.pipeline.direction,
-                            "mode": session.pipeline.mode,
-                        })
-
-                    elif t == "ping":
-                        await session._send({"type": "pong"})
-
-        except WebSocketDisconnect:
-            logger.info(f"Client disconnected: {session.id}")
-        except Exception as e:
-            logger.error(f"WebSocket error: {e}")
-        finally:
-            _active_session = None
-            await session.cleanup()
-            if db_session_created:
-                await session.pipeline.close_session()
+def _persist_ui_setting(session, key: str, value: str):
+    """Save a UI setting (direction, mode) to llm_settings.json."""
+    try:
+        data_dir = session.pipeline.config.data_dir
+        settings = LMStudioManager.load_settings(data_dir)
+        settings[key] = value
+        LMStudioManager.save_settings(data_dir, settings)
+    except Exception as exc:
+        logger.warning("Could not persist %s=%s: %s", key, value, exc)
 
 
 async def _process_text(session, text, speaker_id):

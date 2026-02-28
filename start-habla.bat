@@ -18,6 +18,10 @@ if errorlevel 1 (
     echo.
 )
 
+:: --- Kill any existing server on our port ---
+echo [INFO] Checking for existing server on port %PORT%...
+powershell -Command "Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Write-Host '[INFO] Killing existing server (PID' $_.OwningProcess ')'; Stop-Process -Id $_.OwningProcess -Force }"
+
 :: --- Start Habla server ---
 echo [INFO] Starting Habla server on port %PORT%...
 echo [INFO] Press Ctrl+C to stop.

@@ -1,0 +1,7 @@
+{
+  "provider": "lmstudio",
+  "lmstudio_model": "ganymede-llama-3.3-3b-preview",
+  "quick_model": "translategemma-4b-it",
+  "ollama_model": "qwen3:4b",
+  "direction": "en_to_es"
+}
