@@ -195,6 +195,7 @@ class TestTableSchema:
             "id", "started_at", "ended_at", "mode",
             "direction", "speaker_count", "topic_summary", "notes",
             "llm_provider", "llm_input_tokens", "llm_output_tokens", "llm_cost_usd",
+            "recording_dir", "study_summary",
         }
         assert col_names == expected
 
@@ -581,6 +582,36 @@ class TestConcurrency:
 # ---------------------------------------------------------------------------
 # TestSessionCostPersistence
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestSessionRecordingDir:
+    """Tests for recording_dir column on the sessions table."""
+
+    async def test_recording_dir_column_exists(self, db):
+        """Sessions table has recording_dir column after init."""
+        rows = await db.execute_fetchall("PRAGMA table_info(sessions)")
+        col_names = [r["name"] for r in rows]
+        assert "recording_dir" in col_names
+
+    async def test_recording_dir_defaults_to_null(self, db):
+        """New session rows default to NULL recording_dir."""
+        await db.execute("INSERT INTO sessions (mode, direction) VALUES ('conversation', 'es_to_en')")
+        await db.commit()
+        rows = await db.execute_fetchall("SELECT recording_dir FROM sessions WHERE id = 1")
+        assert rows[0]["recording_dir"] is None
+
+    async def test_recording_dir_round_trip(self, db):
+        """Recording dir written to a session can be read back."""
+        await db.execute("INSERT INTO sessions (mode, direction) VALUES ('conversation', 'es_to_en')")
+        await db.commit()
+        await db.execute(
+            "UPDATE sessions SET recording_dir = ? WHERE id = 1",
+            ("140234567890_20260302_120000",),
+        )
+        await db.commit()
+        rows = await db.execute_fetchall("SELECT recording_dir FROM sessions WHERE id = 1")
+        assert rows[0]["recording_dir"] == "140234567890_20260302_120000"
 
 
 @pytest.mark.integration
