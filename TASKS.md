@@ -4,26 +4,31 @@ Comprehensive roadmap from current state to fully functional app. Tasks are orde
 
 ## Related Documents
 
-Detailed plans, standards, and audit results that support the tasks below.
+Detailed plans, standards, and audit results that support the tasks below. See **[Task-Planning-Standards.md](.dev/docs/Task-Planning-Standards.md)** for how to add new tasks and create plan files.
 
 | Document | Status | Contents |
 |----------|--------|----------|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Current | Full file tree, line counts, module dependency graph, tech table |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Current | Full file tree, line counts, module dependency graph, tech table, planned features |
+| [.dev/docs/Task-Planning-Standards.md](.dev/docs/Task-Planning-Standards.md) | Reference | How to add tasks, create plan files, and track status |
 | [.dev/docs/Audit-Checklist.md](.dev/docs/Audit-Checklist.md) | Reference | Code audit checklist (read before any audit) |
 | [.dev/docs/Testing-Standards.md](.dev/docs/Testing-Standards.md) | Reference | Test quality bar, naming conventions, anti-trivial-pass rules |
 | [.dev/docs/Test-Audit-Review-2026-02-24.md](.dev/docs/Test-Audit-Review-2026-02-24.md) | Complete | Audit of test suite against testing standards |
 | [.dev/docs/TMP-FIX-PLAN-01-Lifecycle-State-Management.md](.dev/docs/TMP-FIX-PLAN-01-Lifecycle-State-Management.md) | Complete | Lifecycle & state management fixes |
 | [.dev/docs/TMP-FIX-PLAN-02-API-Contract-Consistency.md](.dev/docs/TMP-FIX-PLAN-02-API-Contract-Consistency.md) | Complete | API contract consistency & input validation |
-| [.dev/docs/TMP-FIX-PLAN-03-Error-Handling-and-Degradation.md](.dev/docs/TMP-FIX-PLAN-03-Error-Handling-and-Degradation.md) | Not started | Error handling & graceful degradation (P1) |
-| [.dev/docs/TMP-FIX-PLAN-04-Operational-Hardening-and-Safety.md](.dev/docs/TMP-FIX-PLAN-04-Operational-Hardening-and-Safety.md) | Not started | Operational hardening & safety (P2) |
-| [.dev/docs/TMP-FIX-PLAN-05-Code-Organization-and-Documentation.md](.dev/docs/TMP-FIX-PLAN-05-Code-Organization-and-Documentation.md) | Partial | Route split + docstrings done; other steps pending (P2) |
+| [.dev/docs/TMP-FIX-PLAN-03-Error-Handling-and-Degradation.md](.dev/docs/TMP-FIX-PLAN-03-Error-Handling-and-Degradation.md) | Complete | Error handling & graceful degradation (P1) |
+| [.dev/docs/TMP-FIX-PLAN-04-Operational-Hardening-and-Safety.md](.dev/docs/TMP-FIX-PLAN-04-Operational-Hardening-and-Safety.md) | Complete | Operational hardening & safety (P2) |
+| [.dev/docs/TMP-FIX-PLAN-05-Code-Organization-and-Documentation.md](.dev/docs/TMP-FIX-PLAN-05-Code-Organization-and-Documentation.md) | Complete | Route split + docstrings + flow maps + runbook (P2) |
+| [.dev/docs/Flow-Maps.md](.dev/docs/Flow-Maps.md) | Reference | WebSocket protocol, audio processing flow, playback, session lifecycle, dependency map |
 | [.dev/docs/TMP-FIX-PLAN-06-Performance-and-Soak-Stability.md](.dev/docs/TMP-FIX-PLAN-06-Performance-and-Soak-Stability.md) | Complete | Performance & soak stability fixes |
 | [habla/tests/TEST_STATUS.md](habla/tests/TEST_STATUS.md) | Current | Test suite status: 668 tests, 659 passing, 9 skipped benchmarks |
 | [habla/tests/EDGE_CASES.md](habla/tests/EDGE_CASES.md) | Reference | Idiom detection edge case catalog |
 | [docs/AUDIO_TUNING_GUIDE.md](docs/AUDIO_TUNING_GUIDE.md) | Reference | Audio parameter tuning guide |
 | [docs/WHISPER_FINE_TUNING_PLAN.md](docs/WHISPER_FINE_TUNING_PLAN.md) | Reference | WhisperX fine-tuning plan |
 | [.dev/docs/PLAN-Phase1-Remaining.md](.dev/docs/PLAN-Phase1-Remaining.md) | Complete | Idiom client wiring + OpenAI cost persistence |
-| [.dev/docs/PLAN-Failed-Segment-Tracking.md](.dev/docs/PLAN-Failed-Segment-Tracking.md) | Not started | Failed segment tracking & auto-tuning feedback loop (7.16) |
+| [.dev/docs/PLAN-Failed-Segment-Tracking.md](.dev/docs/PLAN-Failed-Segment-Tracking.md) | Complete | Failed segment tracking & auto-tuning feedback loop (7.16) |
+| [.dev/docs/Documentation-Standards.md](.dev/docs/Documentation-Standards.md) | Not started | Template and rules for API reference, config reference, schema reference (9.1–9.3) |
+| [.dev/docs/PLAN-Cloud-Hosting-Evaluation.md](.dev/docs/PLAN-Cloud-Hosting-Evaluation.md) | Not started | Cloud hosting feasibility, cost model, StoryTime Language integration (Phase 10) |
+| [.dev/docs/PLAN-Phase8-Multi-Client.md](.dev/docs/PLAN-Phase8-Multi-Client.md) | Not started | Multi-client concurrency — ConversationContext refactor, per-client routing, queue backpressure (Phase 8) |
 
 ## Design References
 
@@ -290,11 +295,14 @@ Items found during codebase audit — code that was started but never connected,
 #### Partial Implementations (finish wiring)
 
 - [x] **No corrections page navigation** — added Corrections button to `index.html` nav bar + click handler in `app.js`
-- [ ] **LM Studio auto-restart on health failure** — `lmstudio_manager.py` has full `ensure_running()` / restart capability, and `health.py:run_llm_health_monitor()` detects when LM Studio goes down, but the monitor only logs a warning and notifies the client — it never calls `lmstudio_manager.ensure_running()` to attempt recovery. Wire the auto-recovery loop.
+- [x] **LM Studio auto-restart on health failure** — `lmstudio_manager.py` has full `ensure_running()` / restart capability, and `health.py:run_llm_health_monitor()` detects when LM Studio goes down, but the monitor only logs a warning and notifies the client — it never calls `lmstudio_manager.ensure_running()` to attempt recovery. Wire the auto-recovery loop.
 
 #### Cleanup
 
 - [x] **Remove `[RECORDING API]` debug logging** — reduced 7 verbose log lines to single `logger.info("Recording toggled: enabled=...")`
+- [x] **LM Studio platform guard** — add `if sys.platform != "win32"` check in `main.py` before LM Studio initialization; log a clear warning and fall back to Ollama if someone sets `LLM_PROVIDER=lmstudio` on Linux/cloud. Update `.env.example` to note Windows-only. 3-line fix — no plan file needed.
+- [x] **LM Studio `lms.exe` path lookup** — `lmstudio_manager.py:_get_lms_exe()` searches for `lms.exe` in cache dirs on all platforms. Add `exe_name = "lms.exe" if platform.system() == "Windows" else "lms"` guard so Linux falls through to PATH immediately.
+- [x] **LM Studio config default path** — `config.py:37` defaults to `"C:/Program Files/LM Studio/LM Studio.exe"`. Change default to `"lms"` (assumes PATH; Windows users override via `LMSTUDIO_EXECUTABLE` env var).
 
 ---
 
@@ -394,11 +402,11 @@ Improve usability for all users.
 Bigger features that extend the platform. Not required for "fully functional" but documented in project vision.
 
 ### 7.1 Piper TTS (Text-to-Speech)
-- [ ] Wire `tts_enabled` config flag to pipeline
-- [ ] Integrate Piper TTS (CPU-based, no VRAM impact)
-- [ ] Add TTS toggle button in client
-- [ ] Stream synthesized audio back to client via WebSocket binary frames
-- [ ] Add voice selection (Spanish/English voices)
+- [x] Wire `tts_enabled` config flag to pipeline
+- [x] Integrate Piper TTS (CPU-based, no VRAM impact)
+- [x] Add TTS toggle button in client
+- [x] Stream synthesized audio back to client via WebSocket binary frames
+- [x] Add voice selection (Spanish/English voices)
 
 ### 7.2 Audio Clip Storage
 - [x] Wire `save_audio_clips` config flag (saves normalized WAV after ASR preprocessing)
@@ -417,18 +425,18 @@ Bigger features that extend the platform. Not required for "fully functional" bu
 Allow users without a local GPU to use cloud LLM providers (OpenAI, Claude) by entering their own API key. Provide a contextual model picker that shows available models per provider.
 
 #### API Key Management
-- [ ] Add settings UI section for entering/removing API keys (OpenAI, Claude/Anthropic)
-- [ ] Store API keys in `.env` or browser `localStorage` (client-side only, never sent to third parties)
-- [ ] Add `ANTHROPIC_API_KEY` env var and Claude provider support in `translator.py`
-- [ ] Mask API keys in UI after entry (show last 4 chars only)
-- [ ] Validate API key on entry (test call to provider's models endpoint)
+- [x] Add settings UI section for entering/removing API keys (OpenAI, Claude/Anthropic)
+- [x] Store API keys server-side in `data/llm_settings.json` (gitignored, consistent with `.env` approach)
+- [x] Add `ANTHROPIC_API_KEY` env var and Claude provider support in `translator.py`
+- [x] Mask API keys in UI after entry (show last 4 chars only)
+- [x] Validate API key on entry (test call to provider's models endpoint)
 
 #### Contextual Model Picker
-- [ ] When OpenAI is selected, show dropdown with current models: `gpt-5.2`, `gpt-5.2-pro`, `gpt-4o-mini`, `gpt-4o`
-- [ ] When Claude is selected, show dropdown with current models: `claude-sonnet-4-6`, `claude-haiku-4-5`, `claude-opus-4-6`
-- [ ] When Ollama/LM Studio is selected, populate from live `/api/tags` or `/v1/models` query (existing behavior)
-- [ ] Show estimated cost per provider/model (cheap indicator for nano/haiku, expensive for pro/opus)
-- [ ] Persist model selection per provider in `data/llm_settings.json`
+- [x] When OpenAI is selected, show dropdown with current models: `gpt-5.2`, `gpt-5`, `gpt-4o`, `gpt-5-mini`, `gpt-4o-mini`, `gpt-5-nano`
+- [x] When Claude is selected, show dropdown with current models: `claude-sonnet-4-6`, `claude-haiku-4-5`, `claude-opus-4-6`
+- [x] When Ollama/LM Studio is selected, populate from live `/api/tags` or `/v1/models` query (existing behavior)
+- [x] Show estimated cost per provider/model ($, $$, $$$ tier labels + free for local)
+- [x] Persist model selection per provider in `data/llm_settings.json`
 
 #### Documentation
 - [ ] Add "Using Cloud Providers" section to README/SETUP.md explaining how users without a GPU can run Habla with a cloud API key
@@ -445,16 +453,16 @@ Add Anthropic/Claude as a fourth LLM provider alongside Ollama, LM Studio, and O
 |----------|----------|---------------|-----------------|
 | **Claude** (cloud) | `POST https://api.anthropic.com/v1/messages` | `messages` array + `system` param | `content[0].text` |
 
-- [ ] Add `anthropic` to `requirements.txt`
-- [ ] Add `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` to `config.py` with env var support
-- [ ] Add `"claude"` provider option in `translator.py` `_call_llm()` routing
-- [ ] Handle Claude response parsing (`content[0].text`)
-- [ ] Add Claude to provider probe in `GET /api/llm/providers` (check API key exists, list available models)
-- [ ] Add Claude to `GET /api/llm/models?provider=claude`
-- [ ] Add Claude to model validation in `POST /api/llm/select`
-- [ ] Add Claude cost tracking (input/output token pricing per model)
-- [ ] Add Claude to health check in `health.py`
-- [ ] Update `.env.example` with `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` entries
+- [x] `anthropic` SDK not needed — implemented via `httpx` direct POST (no extra dependency)
+- [x] Add `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` to `config.py` with env var support
+- [x] Add `"claude"` provider option in `translator.py` `_call_llm()` routing
+- [x] Handle Claude response parsing (`content[0].text`)
+- [x] Add Claude to provider probe in `GET /api/llm/providers` (check API key exists, list available models)
+- [x] Add Claude to `GET /api/llm/models?provider=claude`
+- [x] Add Claude to model validation in `POST /api/llm/select`
+- [x] Add Claude cost tracking (input/output token pricing per model)
+- [x] Add Claude to health check in `health.py`
+- [x] Update `.env.example` with `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL` entries
 
 ### 7.5 Native Android Client (Kotlin/KMM)
 - [ ] Background audio capture (works with screen off)
@@ -469,16 +477,6 @@ Add Anthropic/Claude as a fourth LLM provider alongside Ollama, LM Studio, and O
 - [ ] Port Spanish conjugation rules to Python for server-side use
 - [ ] Use rule engine in classroom mode to validate LLM grammar corrections against known patterns
 - [ ] Generate targeted grammar drill suggestions based on errors detected in live conversation
-
-### 7.7 Vocab Review Streaks & Motivation (from StoryTimeLanguageKMM)
-
-> **Design reference:** StoryTimeLanguageKMM — `DailyLoginManager`, streak tracking
-
-- [ ] Track daily vocab review activity (date + cards reviewed count) in DB
-- [ ] Calculate current streak (consecutive days with at least 1 review)
-- [ ] Show streak counter on vocab review page
-- [ ] Add `GET /api/vocab/streak` endpoint — current streak, longest streak, total review days
-- [ ] Optional: daily review goal (configurable, e.g., "review 10 cards/day")
 
 ### 7.8 Conversation Export / Study Review (from GeneralizedServiceChatbot)
 
@@ -521,16 +519,15 @@ Expand beyond hardcoded Spanish ⇄ English to support arbitrary language pairs.
 
 Continuous translation without push-to-talk — critical for classroom and conference use where the user can't hold a button.
 
-- [ ] Add `listening_mode` toggle: `push_to_talk` (current) vs `continuous`
-- [ ] In continuous mode, client streams audio constantly; server relies on VAD to segment speech
-- [ ] Add silence gap threshold setting (how long a pause before finalizing a segment — default ~1.5s)
-- [ ] Add client UI toggle button (mic icon changes to indicate always-listening state)
-- [ ] Add visual indicator of VAD activity (pulsing border or waveform showing when speech is detected)
-- [ ] Add energy gate / noise floor calibration — let user calibrate for room ambient noise on session start
-- [ ] Handle long-running segments gracefully (cap at ~30s, force-finalize and start new segment)
-- [ ] Add server-side `max_continuous_segment_duration` config
-- [ ] Power management: reduce audio quality/sample rate in continuous mode to save bandwidth on mobile
-- [ ] Add WebSocket control message `set_listening_mode` to switch at runtime
+- [x] Tap-to-toggle listening (no push-to-hold — was never PTT, already tap-toggle)
+- [x] Client streams audio constantly; server VAD detects utterance boundaries (`_continuous_decode_loop`)
+- [x] Client UI toggle: mic button shows active state, `listenBar` appears while listening
+- [x] WebSocket control messages: `start_listening` / `stop_listening`
+- [x] Silence gap handled by `StreamingVADBuffer` (configurable `silence_padding_ms`)
+- [x] Voice-reactive waveform animation — bars driven by Web Audio `AnalyserNode` frequency data
+- [x] Noise floor calibration — one-time room calibration on session start to improve VAD accuracy in noisy environments
+- [x] Max segment duration cap — force-finalize segments after ~30s (prevents runaway buffer if VAD never fires in noisy rooms)
+- [x] `max_continuous_segment_duration` server config + env var
 
 ### 7.11 Auto Language Detection
 
@@ -582,30 +579,30 @@ Record yourself saying a phrase and get feedback on pronunciation quality. Pairs
 
 Tap to bookmark interesting moments during live translation for quick review later.
 
-- [ ] Add bookmark button on each exchange card (small flag/pin icon)
-- [ ] `POST /api/sessions/{id}/exchanges/{eid}/bookmark` — toggle bookmark with optional note
-- [ ] Add `is_bookmarked` field to exchanges table and API responses
-- [ ] Add `GET /api/sessions/{id}/bookmarks` — return all bookmarked exchanges for a session
-- [ ] Add `GET /api/bookmarks/recent` — return recent bookmarks across all sessions
-- [ ] Show bookmark filter in session history view (view only bookmarked moments)
-- [ ] Add keyboard shortcut or gesture for quick bookmarking during live translation
-- [ ] Persist bookmarks to DB immediately (don't lose them if session disconnects)
+- [x] Add bookmark button on each exchange card (small flag/pin icon)
+- [x] `POST /api/sessions/{id}/exchanges/{eid}/bookmark` — toggle bookmark with optional note
+- [x] Add `is_bookmarked` field to exchanges table and API responses
+- [x] Add `GET /api/sessions/{id}/bookmarks` — return all bookmarked exchanges for a session
+- [x] Add `GET /api/bookmarks/recent` — return recent bookmarks across all sessions
+- [x] Show bookmark filter in session history view (view only bookmarked moments)
+- [x] Add keyboard shortcut or gesture for quick bookmarking during live translation
+- [x] Persist bookmarks to DB immediately (don't lose them if session disconnects)
 
 ### 7.15 Session Study Summary
 
 After a session ends, auto-generate an LLM-produced summary of what was learned.
 
-- [ ] On session close (WebSocket disconnect), queue a background summary generation task
-- [ ] LLM prompt: given all exchanges from the session, produce a structured study report:
+- [x] On session close (WebSocket disconnect), queue a background summary generation task
+- [x] LLM prompt: given all exchanges from the session, produce a structured study report:
   - Key vocabulary encountered (with frequency)
   - Grammar patterns observed
   - Corrections made (by teacher or LLM)
   - Idioms detected
   - Suggested review topics
-- [ ] Store summary in `sessions` table (`study_summary` column)
-- [ ] Add `GET /api/sessions/{id}/summary` endpoint
-- [ ] Show summary card at the top of session replay view
-- [ ] Option to regenerate summary on demand (if user wants a different focus)
+- [x] Store summary in `sessions` table (`study_summary` column)
+- [x] Add `GET /api/sessions/{id}/summary` endpoint
+- [x] Show summary card at the top of session replay view
+- [x] Option to regenerate summary on demand (if user wants a different focus)
 - [ ] Make summary generation configurable (auto vs manual, which LLM provider to use)
 
 ### 7.16 Failed Segment Tracking & Auto-Tuning Feedback Loop
@@ -618,27 +615,25 @@ When VAD detects speech but ASR produces empty or garbage output, the segment is
 
 These items have scaffolding or partial code already in place but are not connected end-to-end.
 
-- [ ] **Wire `quality_metrics` DB table** — schema exists in `database.py:132-148` with the right columns (`confidence`, `audio_rms`, `duration_seconds`, `speaker_id`, `clipped_onset`, `processing_time_ms`, `vad_threshold`, `model_name`) but nothing ever INSERTs into it. Add `status TEXT DEFAULT 'ok'` column + indexes. Write `_record_quality_metric()` method in orchestrator and call it on every segment outcome.
-- [ ] **Connect `_is_bad_transcript()` rejection path** — detection logic exists in `orchestrator.py:1083-1096` and correctly identifies garbage ASR, but on rejection (line 903-905) it just logs a WARNING and returns empty. Need to: record to `quality_metrics`, increment metrics, enrich recorder metadata with `asr_status`/`asr_reject_reason`.
-- [ ] **Enrich segment metadata on ASR failure** — `audio_recorder.py:add_segment_metadata()` already accepts arbitrary keys and `websocket.py:410-416` already enriches successful segments with `raw_transcript`, `confidence`, `speaker`. But rejected segments never reach this code path. Need a parallel path for failures.
-- [ ] **Unify VAD threshold config** — `config.py` has `asr.vad_threshold = 0.35` and `vad_buffer.py:VADConfig` has `speech_threshold = 0.35` independently. `websocket.py:118` instantiates VADConfig with hardcoded values ignoring app config. Consolidate so there's a single source of truth, needed for recording `vad_threshold` in quality_metrics.
-- [ ] **Complete `clipped_onset` detection** — `quality_metrics` table has the column, `auto_tune_parameters.py:76-90` has clipped Spanish word detection logic, but nothing in the live pipeline computes or records it. Need to: detect in orchestrator (check if first word matches clipped pattern), set flag in quality_metrics row.
-- [ ] **Connect `auto_tune_parameters.py` to quality_metrics** — script currently only reads `metadata.json` files from disk. It should also query the `quality_metrics` DB table to correlate failures with audio conditions (RMS, VAD threshold, duration, speaker).
+- [x] **Wire `quality_metrics` DB table** — `_record_quality_metric()` in orchestrator, called on every segment outcome. `status` column + indexes added.
+- [x] **Connect rejection path** — ASR empty/garbage returns `status='asr_rejected'` to quality_metrics; `asr_rejected_count` metric incremented.
+- [x] **Enrich segment metadata on ASR failure** — `websocket.py` writes `asr_status: rejected` to recorder metadata in the rejection branch.
+- [x] **Unify VAD threshold config** — `websocket.py` reads `asr_cfg.vad_threshold` when constructing `VADConfig`.
+- [x] **Complete `clipped_onset` detection** — `_has_clipped_onset()` + `_CLIPPED_ONSET_PAIRS` in orchestrator; flag written to quality_metrics at both call sites.
+- [x] **Connect `auto_tune_parameters.py` to quality_metrics** — `analyze_quality_metrics_db()` queries DB for rejection rate, RMS, short-segment rate, clipped-onset count.
 
 #### New Implementation Required
 
-These items have no existing code.
-
-- [ ] Compute audio RMS in `vad_buffer.py:_emit_segment()` — `np.sqrt(np.mean(samples**2))` on segment PCM bytes
-- [ ] Track average VAD probability per segment — accumulate `_speech_prob_sum` during speech frames in `vad_buffer.py:_is_speech_frame()` (currently computes `prob` at line 128 but discards it), divide by `_speech_frames` at emission
-- [ ] Extend VAD callback signature from `on_segment(pcm_bytes, duration)` to `on_segment(pcm_bytes, duration, audio_rms, vad_avg_prob)` — update all callers: `websocket.py:_on_speech_segment()`, test mocks
-- [ ] Forward `audio_rms` and `vad_avg_prob` through websocket handler to recorder metadata and orchestrator
-- [ ] Add `asr_rejected_count` and `asr_empty_count` to `orchestrator._metrics` dict (currently missing from lines 96-108)
-- [ ] Expose `asr_rejected_count`, `asr_empty_count`, and `quality_metrics` status breakdown in `GET /api/system/metrics`
-- [ ] Add `GET /api/corrections/failed-segments` endpoint — return recordings with ASR-rejected segments paired with WAV filenames for review
-- [ ] Extend `auto_tune_parameters.py` to correlate ASR rejection rate with `audio_rms`, `vad_avg_prob`, `duration_seconds`, and speaker — generate recommendations (low RMS → AGC, borderline VAD → raise threshold, short duration → raise min_speech_ms)
-- [ ] Add "Failed Segments" tab/filter to `corrections.html` — play audio, see RMS/VAD stats, manually transcribe or mark as `[noise]`
-- [ ] Update `prepare_dataset.py` to filter `[noise]` markers and include corrected formerly-failed segments (highest-value training data)
+- [x] Compute audio RMS in `vad_buffer.py:_emit_segment()` — `np.sqrt(np.mean(samples**2))` on segment PCM bytes
+- [x] Track average VAD probability per segment — `_speech_prob_sum` accumulates during speech frames, divided by `_speech_frames` at emission
+- [x] Extend VAD callback signature to `on_segment(pcm_bytes, duration, audio_rms, vad_avg_prob)` — all callers updated
+- [x] Forward `audio_rms` and `vad_avg_prob` through websocket handler to recorder metadata and orchestrator
+- [x] Add `asr_rejected_count` to `orchestrator._metrics` dict
+- [x] Expose `asr_rejected_count` and `quality_metrics` status breakdown in `GET /api/system/metrics`
+- [x] Add `GET /api/corrections/failed-segments` endpoint
+- [x] Extend `auto_tune_parameters.py` with DB-sourced recommendations (low RMS → AGC, high rejection rate → lower threshold, short-segment rate → raise min_speech_ms)
+- [x] Add "Failed Segments" tab to `corrections.html` — audio playback, RMS/duration/clipped-onset display
+- [x] Update `prepare_dataset.py` to filter `[noise]` markers and weight corrected formerly-rejected segments at 2.0
 
 ### 7.17 Whisper Fine-Tuning Data Pipeline
 
@@ -730,6 +725,88 @@ If single-server capacity is exceeded:
 
 ---
 
+## Phase 9: Formal Documentation
+
+**Intentionally last.** The API surface, config, and schema are still evolving
+through Phase 7. Writing these docs before the feature set stabilizes means
+rewriting them. Do Phase 9 once the codebase is in a state you'd be comfortable
+shipping — generate from the live code, not from memory.
+
+Reference docs that don't exist yet. Not required for the app to work, but
+required for the project to be maintainable long-term and understandable without
+reading source code.
+
+### 9.1 REST API Reference
+
+A single document covering every REST endpoint — the kind of thing you open
+when you want to know what a route accepts without grepping through source files.
+
+Currently endpoint contracts live only in route docstrings scattered across 9 modules.
+This consolidates them.
+
+> **Standard:** Before writing, create a Documentation-Standards.md defining the
+> template (method/path, description, request schema, response schema, error codes,
+> example curl). Use it as the template for 9.2 and 9.3 as well.
+
+- [ ] Create `.dev/docs/Documentation-Standards.md` — template for API reference, config reference, and schema reference docs
+- [ ] Document `api_vocab.py` endpoints (vocab CRUD, SM-2 review, search, export, stats)
+- [ ] Document `api_system.py` endpoints (status, direction, mode, ASR toggle, speakers, recording)
+- [ ] Document `api_sessions.py` endpoints (session list, session detail, exchange list, search, export)
+- [ ] Document `api_idioms.py` endpoints (idiom pattern CRUD)
+- [ ] Document `api_llm.py` endpoints (provider listing, model switching, current provider, costs)
+- [ ] Document `api_playback.py` endpoints (recording list, recording detail, audio files, playback start/stop)
+- [ ] Document `api_corrections.py` endpoints (ground truth CRUD, correction stats, failed segments)
+- [ ] Document `api_bookmarks.py` endpoints (bookmark toggle, listing)
+- [ ] Add to README.md Documentation section: link to REST API reference
+
+### 9.2 Configuration Reference
+
+All env vars in one place with type, default, valid range, and what breaks if wrong.
+`.env.example` exists but has no descriptions for many entries.
+
+- [ ] Table format: variable name, type, default, valid values, which component reads it, effect of misconfiguration
+- [ ] Group by component: Server, Audio, ASR, Translation, LLM Providers, Recording, WebSocket, Logging, Database
+- [ ] Flag which vars are required vs optional
+- [ ] Flag which vars trigger a restart to take effect vs hot-reloadable
+- [ ] Cross-reference with `.env.example` — update example to include all vars with inline comments
+
+### 9.3 Database Schema Reference
+
+The actual current schema, not just the rules for changing it.
+
+- [ ] Document each table: columns, types, constraints, purpose of each column
+- [ ] Document indexes and why each exists (query patterns they serve)
+- [ ] Document the FTS5 virtual table and trigger setup
+- [ ] Document relationships between tables (sessions → exchanges → vocab, etc.)
+- [ ] Include the `quality_metrics` table once 7.16 is implemented
+- [ ] Note which columns are written by which code path (e.g., `audio_path` is set by audio clip storage in 7.2)
+
+### 9.4 User Manual
+
+End-to-end guide to every feature in the app. Brief but complete — one place to
+look to understand what Habla does and how to use it, without needing to poke
+around the UI to discover things.
+
+Audience: the owner, plus anyone he shows the app to. Not a developer doc — no
+code, no internals. Pure "here's what you can do and how."
+
+- [ ] **Main translator page** — mic button, direction toggle, mode toggle, text input box, connection indicator, scroll-to-bottom button
+- [ ] **Live translation flow** — tap mic, speak, watch partials update, tap again to stop; what the final card shows (translation, speaker, idioms, confidence)
+- [ ] **Speaker management** — how diarization assigns labels, how to rename a speaker, what the colors mean
+- [ ] **Idiom cards** — what gets flagged (pattern DB vs LLM detection), how to save an idiom to vocab
+- [ ] **Classroom mode** — what changes vs conversation mode, what correction detection looks like, how correction cards differ from translation cards
+- [ ] **Settings panel** — LLM provider dropdown, model selection, TTS toggle, cost display; how to switch providers without restarting
+- [ ] **Vocab review page** — flashcard review flow, quality rating buttons (0–5 what they mean), browse all, search, filter by category, stats dashboard
+- [ ] **Anki export** — how to export vocab to TSV for import into Anki; what the fields are
+- [ ] **Session history page** — browsing past sessions, session replay, search across history, audio playback on exchange cards
+- [ ] **Corrections page** — what it's for (Whisper fine-tuning data), how to play a segment, correct the transcript, keyboard shortcuts
+- [ ] **Bookmarks** — how to bookmark an exchange, how to view bookmarks
+- [ ] **Text-only mode** — using the text input when mic is unavailable or in text-only fallback
+- [ ] **PWA install** — how to add to Android home screen, what works offline
+- [ ] **Recovering from connection loss** — reconnect behavior, what survives, what to do if translation stops working
+
+---
+
 ## Phase 9: Open Source Release & Distribution
 
 Prepare the project for public GitHub visibility, first tagged release, and community engagement.
@@ -765,6 +842,88 @@ Prepare the project for public GitHub visibility, first tagged release, and comm
 - [ ] Add GitHub issue templates (bug report, feature request)
 - [ ] Add GitHub Discussions or link to Discord for community Q&A
 - [ ] Create a short demo video or GIF showing the translator in action (for README)
+
+---
+
+## Phase 10: Cloud Hosting Evaluation
+
+Evaluate what would need to change to host Habla as a multi-tenant cloud service — a hosted language tool alongside StoryTime Language — rather than a personal self-hosted app. This phase is an analysis and decision document, not implementation. The goal is a clear go/no-go and a prioritized list of changes before any code is written.
+
+> **Detailed plan:** [PLAN-Cloud-Hosting-Evaluation.md](.dev/docs/PLAN-Cloud-Hosting-Evaluation.md)
+
+> **Hard prerequisite: Phase 8 multi-client work must be completed first.** The current codebase has a single global active session, shared pipeline callbacks, and a single processing queue. More than one concurrent user breaks the server today. The Phase 8 `ConversationContext` refactor, per-client callback registry, and queue backpressure work are required before any cloud deployment is viable. See the plan file for the full breakdown.
+
+### 10.0 Linux / Container Compatibility (prerequisite groundwork)
+
+Small targeted fixes that should land before any cloud deployment attempt. None require a plan file — they are isolated, low-risk changes.
+
+#### Code fixes
+- [ ] **LM Studio platform guard** — already tracked in §3.7 (move here once done)
+- [ ] **`lms.exe` path lookup** — already tracked in §3.7 (move here once done)
+- [ ] **LM Studio config default** — already tracked in §3.7 (move here once done)
+
+#### Dockerfile
+- [ ] **Verify ffmpeg is installed in the Dockerfile** — ffmpeg is called by name from Python but if it was assumed to be pre-installed on the host laptop it may not be in the Docker image. Check and add `RUN apt-get install -y ffmpeg` if missing.
+- [ ] **CPU-only Dockerfile variant** — current image almost certainly uses a CUDA base (~8GB). Add a `BUILD_TARGET=cpu|gpu` build argument: CPU target uses `python:3.11-slim`, GPU target keeps the CUDA base. Cuts CPU image size from ~8GB to ~2-3GB.
+- [ ] **Model cache persistent volumes** — WhisperX, Pyannote, and Silero VAD all download models to `~/.cache/huggingface/` and `~/.cache/torch/hub/` at first startup. Without persistent volumes these re-download (several GB) on every container restart. Add named volumes to docker-compose: `hf_cache:/root/.cache/huggingface` and `torch_cache:/root/.cache/torch/hub`.
+- [ ] **Tune memory limits for CPU deployment** — current docker-compose limits are set for the MSI laptop with GPU (8GB Habla, 6GB Ollama). CPU-only cloud deployment without Ollama needs different values (~4GB Habla, no Ollama service). Add a `docker-compose.cloud.yml` override or document the env-driven values.
+- [ ] **Ollama service optional in docker-compose** — Ollama is a required service in the current compose file (`depends_on`). For cloud deployments using Claude/OpenAI, Ollama should be optional. Add a `docker-compose.cloud.yml` that omits the Ollama service and removes the `depends_on` health check.
+
+#### Documentation
+- [ ] **Add `WHISPER_DEVICE=cpu` to `.env.example`** cloud section with a note that Small/int8 on 8+ vCPU achieves ~4-7s latency — acceptable for Tier 1 cloud without GPU.
+- [ ] **Document model pre-download step** in deployment docs — first-run startup can take 5-10 minutes downloading models; subsequent starts from cache are fast. Cloud operators need to know this.
+
+### 10.1 Architecture Gap Analysis
+
+- [ ] Identify every component that assumes single-user local deployment (WhisperX on local GPU, SQLite flat file, single active session, local audio recording paths, no auth)
+- [ ] Classify each component: replace with cloud equivalent, remove, make optional, or keep as-is
+- [ ] Confirm Phase 8 multi-client prerequisites are complete before proceeding to implementation
+
+### 10.2 ASR Strategy for Cloud
+
+- [ ] Confirm WhisperX CPU Tier 1 path: benchmark Small/int8 on target cloud instance against representative classroom audio samples
+- [ ] Evaluate Tier 2 cloud ASR: Deepgram Nova-2 vs AssemblyAI Universal-2 — test Spanish accuracy on same audio samples used above
+- [ ] Make go/no-go decision on cloud ASR: if Deepgram matches WhisperX quality, adopt it; if not, stick with CPU WhisperX and accept the concurrency ceiling
+- [ ] If cloud ASR: design `ASR_PROVIDER` abstraction (`"whisperx"` | `"deepgram"` | `"assemblyai"`) and new `CloudASRProcessor` class — add to implementation plan
+
+### 10.3 LLM Cost Model
+
+- [ ] Estimate per-user monthly translation cost using Claude (Haiku vs Sonnet vs Opus) at typical usage (1 hour/week classroom, 30 min/week casual)
+- [ ] Determine whether to pass API costs through to users or absorb them in a subscription
+- [ ] Compare Claude cost vs OpenAI cost for translation quality at this task
+
+### 10.4 Infrastructure Options
+
+- [ ] Survey hosting platforms for a FastAPI + WebSocket + async SQLite stack: Railway, Fly.io, Render, AWS App Runner, GCP Cloud Run
+- [ ] Identify constraints: WebSocket support, persistent disk for DB/audio, GPU availability if keeping local ASR, cold start latency
+- [ ] Estimate monthly infrastructure cost at 10, 100, 1000 users
+
+### 10.5 Auth & Multi-Tenancy
+
+- [ ] Decide on authentication approach: integrate StoryTime Language accounts, standalone auth, or third-party (Google OAuth, Auth0)
+- [ ] Define per-user data isolation requirements: sessions, vocab, speakers, audio recordings
+- [ ] Evaluate SQLite per-user file vs. PostgreSQL with user_id foreign keys
+- [ ] Identify session/vocab data model changes needed for multi-user
+
+### 10.6 StoryTime Language Integration Points
+
+- [ ] Define the vocab sync contract: what fields map between Habla vocab items and StoryTime Language's word list format
+- [ ] Evaluate whether to push vocab to StoryTime Language API on save (real-time) or batch sync
+- [ ] Assess whether Habla should remove its own SRS review UI entirely in favor of linking to StoryTime Language
+- [ ] Identify shared auth token reuse if StoryTime Language accounts are used
+
+### 10.7 Storage & Data Portability
+
+- [ ] Define cloud storage strategy for audio clips and session recordings (S3-compatible: AWS S3, Cloudflare R2, Backblaze B2)
+- [ ] Assess data retention and privacy obligations (audio of real conversations, potentially minors in classroom use)
+- [ ] Define data export/delete options required for GDPR/privacy compliance
+
+### 10.8 Decision Document
+
+- [ ] Write go/no-go recommendation with rationale
+- [ ] If go: produce prioritized migration plan (what must change before first hosted user, what can come later)
+- [ ] If go: define the two-tier model if applicable (self-hosted open source + hosted paid service)
+- [ ] Update TASKS.md and ARCHITECTURE.md to reflect the chosen direction
 
 ---
 

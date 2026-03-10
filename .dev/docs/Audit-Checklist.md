@@ -136,3 +136,28 @@ Skip this section for modules that don't interact with the database.
 - [ ] Docker configuration maintains non-root user, HEALTHCHECK, restart policy
 - [ ] VRAM budget respected (see Hardware Constraints in CLAUDE.md)
 - [ ] Mobile-first client design (primary access is Android phone over Tailscale)
+
+## 15. Ripple Effect Check
+
+Run this section after every fix, not just at initial audit. Changes that look local often have downstream consumers that break silently.
+
+**Function/method signature changes** (return type, parameter count, parameter order)
+- [ ] Grep all call sites for the changed function and verify each unpacks/uses the new signature
+- [ ] Check test mocks — mock return values must match the new signature or tests give false passes
+
+**New enum or status string values added to a column/field**
+- [ ] Grep all query sites filtering on that column (SQL `WHERE`, Python comparisons, dict lookups) and verify each handles the new value
+- [ ] Check UI code that renders or labels based on the value
+- [ ] Check any scripts or export paths that filter or aggregate by that value
+
+**Removed or renamed keys from a shared dict/schema** (e.g. `_metrics`, API response shape)
+- [ ] Grep all read sites for the old key name and confirm nothing still depends on it
+- [ ] Check tests that assert on specific keys in dicts or JSON responses
+
+**New keys added to a shared dict/schema**
+- [ ] Verify the `empty`/default value is correct for callers that existed before the key was added
+- [ ] Check API response consumers (client JS, scripts) handle the new field gracefully if present
+
+**DB schema additions** (new column, new table, new index)
+- [ ] Confirm migration logic exists for databases created before this change (ALTER TABLE or CREATE IF NOT EXISTS)
+- [ ] Check all INSERT statements for that table include the new column or have an appropriate DEFAULT
