@@ -39,7 +39,7 @@ export function connect() {
     clearPartial();
     // Sync client direction/mode to server (client localStorage is authoritative)
     const ld = localStorage.getItem('habla_direction');
-    if (ld === 'es_to_en' || ld === 'en_to_es') {
+    if (ld === 'es_to_en' || ld === 'en_to_es' || ld === 'auto') {
       send({ type: 'toggle_direction', direction: ld });
     }
     const lm = localStorage.getItem('habla_mode');
@@ -70,6 +70,10 @@ export function connect() {
     const _dl3 = $('#dotLabel'); if (_dl3) _dl3.textContent = 'Disconnected';
   };
   state.ws.onmessage = e => {
+    if (e.data instanceof ArrayBuffer) {
+      handleBinaryMsg(e.data);
+      return;
+    }
     if (window.HABLA_DEBUG) {
       try { console.log('[habla] ws msg', JSON.parse(e.data)); } catch {}
     }
@@ -97,6 +101,28 @@ function scheduleReconnect() {
   }, delay);
 }
 
+function handleBinaryMsg(buffer) {
+  if (!state.ttsIncoming) return;
+  state.ttsIncoming = false;
+  playTTSAudio(buffer);
+}
+
+async function playTTSAudio(buffer) {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const decoded = await ctx.decodeAudioData(buffer);
+    const src = ctx.createBufferSource();
+    src.buffer = decoded;
+    src.connect(ctx.destination);
+    src.start();
+    src.onended = () => ctx.close();
+  } catch (e) {
+    if (window.HABLA_DEBUG) console.warn('[habla] TTS playback error:', e);
+  }
+}
+
 function handleMsg(m) {
   switch (m.type) {
     case 'status':
@@ -112,8 +138,8 @@ function handleMsg(m) {
       if (m.pipeline_ready === false) showSvcNotice('ASR unavailable \u2014 text-only mode');
       else hideSvcNotice();
       break;
-    case 'partial': state.lastPartialTime = Date.now(); showPartialSource(m.text); break;
-    case 'partial_translation': state.lastPartialTime = Date.now(); showPartialTranslation(m.text); break;
+    case 'partial': state.lastPartialTime = Date.now(); showPartialSource(m.text, m.detected_language); break;
+    case 'partial_translation': state.lastPartialTime = Date.now(); showPartialTranslation(m.text, m.detected_language); break;
     case 'transcript_final': lockTranscript(m); break;
     case 'translation': finalizeExchange(m); break;
     case 'speakers_updated': updateSpeakers(m.speakers); break;
@@ -132,6 +158,10 @@ function handleMsg(m) {
         }
       }
       break;
+    case 'noise_calibration':
+      if (window.HABLA_DEBUG) console.log('[habla] noise calibration:', m.noise_level, 'RMS=' + m.noise_floor_rms);
+      if (m.noise_level === 'loud') toast('Loud room detected — VAD threshold raised', 'warning');
+      break;
     case 'listening_stopped':
       state.listening = false;
       $('#listenBtn').classList.remove('active');
@@ -144,12 +174,20 @@ function handleMsg(m) {
       state.mode = m.mode || state.mode;
       clearTranscript();
       updateDirUI(); updateModeUI();
+      if (state._onSessionReset) { const cb = state._onSessionReset; state._onSessionReset = null; cb(); }
       break;
     case 'playback_started':
     case 'playback_progress':
     case 'playback_finished':
     case 'playback_stopped':
       handlePlaybackMessage(m);
+      break;
+    case 'tts_audio_start':
+      if (state.ttsEnabled) state.ttsIncoming = true;
+      break;
+    case 'tts_changed':
+      state.ttsEnabled = !!m.enabled;
+      { const cb = $('#ttsToggle'); if (cb) cb.checked = state.ttsEnabled; }
       break;
     case 'pong':
       if (state.lastPingSent) {

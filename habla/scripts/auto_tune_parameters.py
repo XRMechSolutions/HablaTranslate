@@ -17,6 +17,7 @@ Usage:
 
 import json
 import argparse
+import sqlite3
 from pathlib import Path
 from typing import Dict, List, Tuple
 import numpy as np
@@ -104,12 +105,103 @@ def analyze_recordings(recordings_dir: Path) -> Tuple[Dict, Dict]:
     return results, recommendations
 
 
-def compute_recommendations(results: Dict) -> Dict:
+def analyze_quality_metrics_db(db_path: Path) -> Dict:
+    """Query the quality_metrics table for rejection statistics.
+
+    Returns a dict with:
+      available           — False if DB missing or query failed
+      total               — total segments tracked
+      rejected            — asr_rejected + asr_empty combined
+      asr_rejected_count  — segments where ASR ran but output was garbage
+      asr_empty_count     — segments where WhisperX returned no segments at all
+      rejection_rate      — rejected / total
+      avg_rms_ok          — avg RMS for ok/low_confidence segments
+      avg_rms_rejected    — avg RMS for asr_rejected + asr_empty segments
+      short_rejection_rate — rejection rate for segments under 1 second
+      clipped_onset_count — segments flagged as clipped-onset
+    """
+    empty: Dict = {
+        "available": False,
+        "total": 0,
+        "rejected": 0,          # asr_rejected + asr_empty combined
+        "asr_rejected_count": 0,  # garbage transcript (noise, digits-only)
+        "asr_empty_count": 0,     # zero segments from WhisperX VAD (audio too quiet)
+        "rejection_rate": 0.0,
+        "avg_rms_ok": None,
+        "avg_rms_rejected": None,
+        "avg_vad_ok": None,
+        "avg_vad_rejected": None,
+        "short_rejection_rate": 0.0,
+        "clipped_onset_count": 0,
+    }
+
+    if not db_path.exists():
+        return empty
+
+    try:
+        con = sqlite3.connect(str(db_path))
+        con.row_factory = sqlite3.Row
+        cur = con.cursor()
+
+        cur.execute("""
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN status IN ('asr_rejected','asr_empty') THEN 1 ELSE 0 END) as rejected,
+                SUM(CASE WHEN status = 'asr_rejected' THEN 1 ELSE 0 END) as asr_rejected_count,
+                SUM(CASE WHEN status = 'asr_empty'    THEN 1 ELSE 0 END) as asr_empty_count,
+                AVG(CASE WHEN status IN ('ok','low_confidence') THEN audio_rms END) as avg_rms_ok,
+                AVG(CASE WHEN status IN ('asr_rejected','asr_empty') THEN audio_rms END) as avg_rms_rejected,
+                SUM(CASE WHEN clipped_onset = 1 THEN 1 ELSE 0 END) as clipped_onset_count
+            FROM quality_metrics
+        """)
+        row = dict(cur.fetchone())
+
+        total = row["total"] or 0
+        rejected = row["rejected"] or 0
+        asr_rejected_count = row["asr_rejected_count"] or 0
+        asr_empty_count = row["asr_empty_count"] or 0
+
+        # Short-segment rejection: segments under 1 second
+        cur.execute("""
+            SELECT
+                COUNT(*) as short_total,
+                SUM(CASE WHEN status IN ('asr_rejected','asr_empty') THEN 1 ELSE 0 END) as short_rejected
+            FROM quality_metrics
+            WHERE duration_seconds < 1.0 AND duration_seconds > 0
+        """)
+        short_row = dict(cur.fetchone())
+        short_total = short_row["short_total"] or 0
+        short_rejected = short_row["short_rejected"] or 0
+
+        con.close()
+
+        return {
+            "available": True,
+            "total": total,
+            "rejected": rejected,
+            "asr_rejected_count": asr_rejected_count,
+            "asr_empty_count": asr_empty_count,
+            "rejection_rate": rejected / total if total > 0 else 0.0,
+            "avg_rms_ok": row["avg_rms_ok"],
+            "avg_rms_rejected": row["avg_rms_rejected"],
+            "avg_vad_ok": None,   # vad_avg_prob not stored in quality_metrics
+            "avg_vad_rejected": None,
+            "short_rejection_rate": short_rejected / short_total if short_total > 0 else 0.0,
+            "clipped_onset_count": row["clipped_onset_count"] or 0,
+        }
+
+    except Exception as e:
+        print(f"Warning: Failed to query quality_metrics DB: {e}")
+        return empty
+
+
+def compute_recommendations(results: Dict, db_stats: Dict | None = None) -> Dict:
     """Compute parameter recommendations based on analysis."""
 
     recommendations = {}
+    db = db_stats or {}
 
-    if results["total_segments"] == 0:
+    if results["total_segments"] == 0 and not db.get("total"):
         print("No segments found. Record some audio first.")
         return recommendations
 
@@ -181,10 +273,53 @@ def compute_recommendations(results: Dict) -> Dict:
         recommendations["whisper_model"] = "small"
         recommendations["whisper_model_reason"] = "Current model performs well"
 
+    # 7. DB-sourced recommendations (quality_metrics table)
+    # Use breakdown counts to give more precise advice:
+    #   asr_empty   → WhisperX VAD found no speech → audio too quiet → AGC
+    #   asr_rejected → transcript was garbage → noise/background audio → VAD/model
+    rejection_rate = db.get("rejection_rate", 0.0)
+    avg_rms_rejected = db.get("avg_rms_rejected")
+    short_rejection_rate = db.get("short_rejection_rate", 0.0)
+    asr_empty_count = db.get("asr_empty_count", 0)
+    asr_rejected_count = db.get("asr_rejected_count", 0)
+    total = db.get("total", 0)
+
+    if rejection_rate > 0.15:
+        # Check if the majority of failures are empty-segment (quiet audio) vs garbage output
+        empty_dominates = asr_empty_count > asr_rejected_count
+        if avg_rms_rejected is not None and avg_rms_rejected < 500:
+            recommendations["agc_db_reason"] = (
+                f"DB: {rejection_rate:.1%} rejection rate with low RMS on rejected segments "
+                f"({avg_rms_rejected:.0f}) — microphone input is too quiet. Enable AGC."
+            )
+            recommendations["enable_agc"] = True
+            recommendations["agc_reason"] = recommendations["agc_db_reason"]
+        elif empty_dominates and total > 0:
+            # Mostly no-segment failures at normal RMS: WhisperX VAD too aggressive
+            recommendations["agc_db_reason"] = (
+                f"DB: {rejection_rate:.1%} rejection rate — {asr_empty_count} of {total} segments "
+                f"produced no output from WhisperX VAD (audio present but not recognised as speech). "
+                f"Enable AGC or check for background noise masking speech."
+            )
+            recommendations["enable_agc"] = True
+            recommendations["agc_reason"] = recommendations["agc_db_reason"]
+        else:
+            recommendations["vad_threshold_db_reason"] = (
+                f"DB: {rejection_rate:.1%} rejection rate ({asr_rejected_count} garbage transcripts) — "
+                f"raise speech_threshold to filter more borderline audio before ASR, "
+                f"or upgrade to a larger Whisper model for better noise robustness."
+            )
+
+    if short_rejection_rate > 0.3:
+        recommendations["min_speech_ms_db_reason"] = (
+            f"DB: {short_rejection_rate:.1%} of short segments (<1s) are rejected — "
+            f"raise min_speech_duration_ms to skip very short noise bursts."
+        )
+
     return recommendations
 
 
-def print_report(results: Dict, recommendations: Dict):
+def print_report(results: Dict, recommendations: Dict, db_stats: Dict | None = None):
     """Print analysis report with recommendations."""
 
     print("\n" + "=" * 70)
@@ -279,6 +414,34 @@ def print_report(results: Dict, recommendations: Dict):
         for seg in low_conf[:5]:
             print(f"    {seg['confidence']:.2f}: \"{seg['transcript'][:50]}...\" [{seg['speaker']}]")
 
+    # DB quality_metrics section
+    db = db_stats or {}
+    if db.get("available"):
+        print("\n" + "-" * 70)
+        print("  QUALITY METRICS DB (quality_metrics table)")
+        print("-" * 70)
+        total = db["total"]
+        rejected = db["rejected"]
+        rejection_rate = db["rejection_rate"]
+        print(f"\n  Total segments tracked in DB: {total}")
+        print(f"  Total rejected: {rejected} ({rejection_rate:.1%})")
+        if db.get("asr_empty_count", 0) or db.get("asr_rejected_count", 0):
+            print(f"    asr_empty (no segments from WhisperX VAD): {db.get('asr_empty_count', 0)}")
+            print(f"    asr_rejected (garbage transcript):          {db.get('asr_rejected_count', 0)}")
+        if db.get("avg_rms_ok") is not None:
+            print(f"  Avg RMS (successful): {db['avg_rms_ok']:.0f}")
+        if db.get("avg_rms_rejected") is not None:
+            print(f"  Avg RMS (rejected):   {db['avg_rms_rejected']:.0f}")
+        if db.get("short_rejection_rate", 0) > 0:
+            print(f"  Short-segment (<1s) rejection rate: {db['short_rejection_rate']:.1%}")
+        if db.get("clipped_onset_count", 0) > 0:
+            print(f"  Clipped-onset segments detected: {db['clipped_onset_count']}")
+
+        # Print DB-sourced recommendation reasons
+        for key in ("agc_db_reason", "vad_threshold_db_reason", "min_speech_ms_db_reason"):
+            if key in recommendations:
+                print(f"\n  WARNING: {recommendations[key]}")
+
     print("\n" + "=" * 70)
 
 
@@ -342,21 +505,44 @@ def main():
         help="Output recommendations as JSON",
     )
 
+    parser.add_argument(
+        "--db",
+        type=Path,
+        default=None,
+        help="Path to habla.db for quality_metrics analysis (default: auto-detect near recordings dir)",
+    )
+
     args = parser.parse_args()
 
-    # Analyze recordings
-    results, recommendations = analyze_recordings(args.recordings_dir)
+    # Locate DB — try adjacent to recordings dir, then habla/data/habla.db
+    db_path = args.db
+    if db_path is None:
+        candidates = [
+            args.recordings_dir.parent.parent / "habla.db",  # data/habla.db
+            args.recordings_dir.parent / "habla.db",
+            Path("data/habla.db"),
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                db_path = candidate
+                break
+
+    # Analyze recordings and DB
+    results, _ = analyze_recordings(args.recordings_dir)
+    db_stats = analyze_quality_metrics_db(db_path) if db_path else {"available": False}
+    recommendations = compute_recommendations(results, db_stats)
 
     if args.json:
         # Output JSON for programmatic use
         output = {
             "results": results,
+            "db_stats": db_stats,
             "recommendations": {k: v for k, v in recommendations.items() if not k.endswith("_reason")},
         }
         print(json.dumps(output, indent=2))
     else:
         # Human-readable report
-        print_report(results, recommendations)
+        print_report(results, recommendations, db_stats)
 
         if args.apply and recommendations:
             config_path = Path("habla/server/pipeline/vad_buffer.py")

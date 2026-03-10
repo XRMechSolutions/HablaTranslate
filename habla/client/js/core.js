@@ -59,7 +59,22 @@ export const state = {
   audioDbTrimInProgress: false,
   audioDbFlushInProgress: false,
   audioDbSupported: false,
+  ttsEnabled: false,
+  ttsIncoming: false,
 };
+
+// Language registry — loaded from /api/system/languages on connect, with fallback
+export const langs = {
+  es: { name: 'Spanish', flag: '\u{1F1EA}\u{1F1F8}' },
+  en: { name: 'English', flag: '\u{1F1EC}\u{1F1E7}' },
+};
+export async function loadLanguages() {
+  try {
+    const r = await fetch('/api/system/languages');
+    const data = await r.json();
+    Object.assign(langs, data.languages);
+  } catch { /* keep defaults */ }
+}
 
 // WebSocket URL & reconnection constants
 const WS_SCHEME = location.protocol === 'https:' ? 'wss' : 'ws';

@@ -2,6 +2,12 @@
 
 import { $, state, send, sendBin, toast, showSvcNotice } from './core.js';
 
+// Voice-reactive waveform constants
+const VAD_BAR_MIN_H = 3;   // px — bar height at silence
+const VAD_BAR_MAX_H = 22;  // px — bar height at full volume
+// Five frequency bins spread across the voice range (~100Hz–2kHz at fftSize=32)
+const VAD_BIN_PICKS = [1, 2, 3, 5, 7];
+
 export async function startListening() {
   if (window.HABLA_DEBUG) {
     console.log('[habla] startListening called', { audioCompat: state.audioCompat, audioMime: state.audioMime });
@@ -47,6 +53,36 @@ export async function startListening() {
     }
 
     state.micStream = rawStream;  // Save raw stream for cleanup
+
+    // Voice-reactive waveform: tap AnalyserNode off the raw stream
+    try {
+      const actx = new AudioContext();
+      const src = actx.createMediaStreamSource(rawStream);
+      const analyser = actx.createAnalyser();
+      analyser.fftSize = 32;  // 16 frequency bins — plenty for 5 bars
+      analyser.smoothingTimeConstant = 0.75;
+      src.connect(analyser);
+      state._analyserCtx = actx;
+      state._analyser = analyser;
+
+      const bars = [...document.querySelectorAll('#listenBar .bar')];
+      const freqData = new Uint8Array(analyser.frequencyBinCount);
+
+      function driveBars() {
+        if (!state._analyser) return;  // nulled by stopListening — safe stop condition
+        analyser.getByteFrequencyData(freqData);
+        bars.forEach((bar, i) => {
+          const v = freqData[VAD_BIN_PICKS[i]] / 255;
+          bar.style.height = `${VAD_BAR_MIN_H + (VAD_BAR_MAX_H - VAD_BAR_MIN_H) * v}px`;
+        });
+        state._barRaf = requestAnimationFrame(driveBars);
+      }
+
+      $('#listenBar').classList.add('js-driven');
+      state._barRaf = requestAnimationFrame(driveBars);
+    } catch (_) {
+      // AnalyserNode unavailable — CSS animation fallback stays active
+    }
 
     // Use higher bitrate for better quality (especially important for quiet speech)
     const bitrate = compressionEnabled ? 128000 : 96000;  // 128kbps with compression, 96kbps without
@@ -111,6 +147,13 @@ export function stopListening() {
     state.audioContext.close().catch(() => {});
     state.audioContext = null;
   }
+
+  // Stop voice-reactive animation
+  if (state._barRaf) { cancelAnimationFrame(state._barRaf); state._barRaf = null; }
+  if (state._analyserCtx) { state._analyserCtx.close().catch(() => {}); state._analyserCtx = null; }
+  state._analyser = null;
+  document.querySelectorAll('#listenBar .bar').forEach(b => { b.style.height = ''; });
+  $('#listenBar').classList.remove('js-driven');
 
   // Release wake lock to save battery
   if (state.wakeLock) {

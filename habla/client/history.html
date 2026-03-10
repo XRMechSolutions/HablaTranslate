@@ -52,6 +52,12 @@ body{font-family:-apple-system,system-ui,'Segoe UI',sans-serif;background:var(--
 .s-tag{padding:2px 6px;border-radius:4px;font-weight:600;font-size:10px}
 .s-tag.saved{background:rgba(0,186,124,.15);color:var(--green)}
 .s-tag.mode{background:rgba(29,155,240,.15);color:var(--accent)}
+.s-tag.rec{background:rgba(245,158,11,.15);color:var(--amber)}
+.s-rec{margin-top:8px;padding:8px;background:var(--bg4);border-radius:8px}
+.s-rec audio{width:100%;margin-top:6px;height:32px}
+.s-rec .rec-btns{display:flex;gap:6px;margin-top:6px}
+.s-rec .rec-btns button{padding:4px 10px;border-radius:6px;border:none;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--accent);color:#fff}
+.s-rec .rec-btns button:active{transform:scale(.95)}
 
 /* EXPANDED EXCHANGES */
 .s-exchanges{max-height:0;overflow:hidden;transition:max-height .3s ease}
@@ -62,6 +68,13 @@ body{font-family:-apple-system,system-ui,'Segoe UI',sans-serif;background:var(--
 .ex-tgt{font-size:13px;color:var(--fg2)}
 .ex-time{font-size:10px;color:var(--fg3);margin-top:4px}
 .ex-correction{font-size:11px;color:var(--red);margin-top:3px}
+.ex-hdr{display:flex;justify-content:space-between;align-items:flex-start}
+.bkmk-btn{background:none;border:none;color:var(--fg3);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:4px;flex-shrink:0}
+.bkmk-btn:active{transform:scale(.9)}
+.bkmk-btn.active{color:var(--amber)}
+.bkmk-filter{background:var(--bg4);color:var(--fg2);border:none;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit}
+.bkmk-filter:active{transform:scale(.95)}
+.bkmk-filter.active{background:rgba(245,158,11,.25);color:var(--amber)}
 
 /* ACTIONS ROW */
 .s-actions{display:flex;gap:6px;margin-top:8px}
@@ -81,6 +94,27 @@ body{font-family:-apple-system,system-ui,'Segoe UI',sans-serif;background:var(--
 
 /* DIRECTION INDICATOR */
 .dir-arrow{font-size:10px;color:var(--fg3)}
+
+/* STUDY SUMMARY CARD */
+.summary-card{background:var(--bg4);border-radius:8px;padding:12px;margin-top:8px;border-left:3px solid var(--green)}
+.summary-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.summary-title{font-size:12px;font-weight:700;color:var(--green)}
+.summary-regen{padding:2px 8px;border-radius:6px;background:transparent;border:1px solid var(--fg3);color:var(--fg3);font-size:10px;font-weight:600;cursor:pointer;font-family:inherit}
+.summary-regen:active{transform:scale(.95)}
+.summary-overview{font-size:12px;color:var(--fg2);line-height:1.5;margin-bottom:8px}
+.summary-section{margin-top:6px}
+.summary-section-lbl{font-size:10px;font-weight:700;color:var(--fg3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
+.summary-chips{display:flex;flex-wrap:wrap;gap:4px}
+.summary-chip{padding:2px 7px;border-radius:10px;background:rgba(29,155,240,.15);color:var(--accent);font-size:11px}
+.summary-chip.green{background:rgba(0,186,124,.15);color:var(--green)}
+.summary-chip.amber{background:rgba(245,158,11,.15);color:var(--amber)}
+.summary-list{list-style:none;padding:0}
+.summary-list li{font-size:11px;color:var(--fg2);padding:2px 0;border-bottom:1px solid var(--bg3)}
+.summary-list li:last-child{border-bottom:none}
+.summary-correction{font-size:11px;color:var(--fg2)}
+.summary-correction .wrong{color:var(--red);text-decoration:line-through}
+.summary-correction .right{color:var(--green);font-weight:600}
+.summary-loading{font-size:12px;color:var(--fg3);padding:8px 0}
 </style>
 </head>
 <body>
@@ -161,6 +195,8 @@ function sessionCardHTML(s){
   const tags=[];
   if(s.notes) tags.push('<span class="s-tag saved">Saved</span>');
   tags.push(`<span class="s-tag mode">${esc(mode)}</span>`);
+  if(s.has_recording) tags.push('<span class="s-tag rec">Recording</span>');
+  if(s.study_summary) tags.push('<span class="s-tag" style="background:rgba(0,186,124,.15);color:var(--green)">Summary</span>');
 
   return `<div class="s-card ${saved}" id="sc-${s.id}" onclick="toggleSession(${s.id})">
     <div class="s-date">${date}</div>
@@ -173,9 +209,12 @@ function sessionCardHTML(s){
     ${notesHtml}
     ${topicHtml}
     <div class="s-snippets" id="snip-${s.id}"></div>
+    <div class="s-summary" id="sum-${s.id}"></div>
     <div class="s-exchanges" id="ex-${s.id}"></div>
     <div class="s-actions" onclick="event.stopPropagation()">
       <button onclick="downloadSession(${s.id})">Download</button>
+      <button onclick="showSummary(${s.id},this)">Summary</button>
+      <button class="bkmk-filter" id="bkf-${s.id}" onclick="filterBookmarks(${s.id},this)">Bookmarks</button>
       <button onclick="deleteSession(${s.id},this)">Delete</button>
     </div>
   </div>`;
@@ -210,6 +249,7 @@ async function toggleSession(id){
         api(`/${id}`)
       ]);
       exchangeCache[id]=exchanges;
+      exchangeCache[id]._sessionDetail=session;
       const spMap={};
       (session.speakers||[]).forEach(s=>{
         spMap[s.id]=s.custom_name||s.auto_label||s.id;
@@ -227,6 +267,9 @@ async function toggleSession(id){
     return;
   }
 
+  // Fetch session detail for recording info (already fetched above)
+  const session=exchangeCache[id]._sessionDetail;
+
   const spMap=speakerCache[id]||{};
   exDiv.innerHTML=exchanges.map(ex=>{
     const speaker=spMap[ex.speaker_id]||ex.speaker_id||'Speaker';
@@ -241,14 +284,35 @@ async function toggleSession(id){
         if(cd) corrHtml=`<div class="ex-correction">Correction: ${esc(cd.wrong||'')} -> ${esc(cd.right||'')}</div>`;
       }catch{}
     }
-    return `<div class="ex-item">
-      <div class="ex-speaker">${esc(speaker)}</div>
+    const bkmk=ex.bookmarked?'active':'';
+    return `<div class="ex-item" data-exid="${ex.id}">
+      <div class="ex-hdr">
+        <div class="ex-speaker">${esc(speaker)}</div>
+        ${ex.id?`<button class="bkmk-btn ${bkmk}" onclick="event.stopPropagation();toggleBookmark(this,${ex.id})" title="Bookmark">&#9873;</button>`:''}
+      </div>
       <div class="ex-src">${esc(src)}</div>
       <div class="ex-tgt">${esc(tgt)}</div>
       ${corrHtml}
       <div class="ex-time">${ts} ${dir}</div>
     </div>`;
   }).join('');
+
+  if(session&&session.has_recording&&session.recording_dir){
+    const recId=encodeURIComponent(session.recording_dir);
+    exDiv.insertAdjacentHTML('beforeend',`
+      <div class="s-rec" onclick="event.stopPropagation()">
+        <div style="font-size:11px;font-weight:600;color:var(--amber)">Recording</div>
+        <audio controls preload="none" src="/api/recordings/${recId}/audio"></audio>
+        <div class="rec-btns">
+          <button onclick="reprocessRecording('${recId}')">Reprocess</button>
+        </div>
+      </div>
+    `);
+  }
+}
+
+function reprocessRecording(encodedDir){
+  location.href='/?replay='+encodedDir;
 }
 
 function downloadSession(id){
@@ -288,6 +352,84 @@ async function deleteSession(id,btn){
   }catch{
     toast('Failed to delete — server unreachable');
   }
+}
+
+// --- Study Summary ---
+async function showSummary(id, btn){
+  const div=document.getElementById('sum-'+id);
+  if(!div) return;
+  // Toggle off if already showing
+  if(div.dataset.loaded==='1'){
+    div.innerHTML='';
+    div.dataset.loaded='';
+    if(btn) btn.style.color='';
+    return;
+  }
+  div.innerHTML='<div class="summary-loading">Loading summary...</div>';
+  if(btn) btn.style.color='var(--green)';
+  try{
+    const r=await fetch(`/api/sessions/${id}/summary`);
+    if(r.status===404){
+      // Not generated yet — offer to generate
+      div.innerHTML=`<div class="summary-card"><div class="summary-hdr"><span class="summary-title">Study Summary</span><button class="summary-regen" onclick="regenSummary(${id})">Generate</button></div><div class="summary-overview" style="color:var(--fg3)">No summary yet for this session.</div></div>`;
+      div.dataset.loaded='1';
+      return;
+    }
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const s=await r.json();
+    div.innerHTML=renderSummary(id,s);
+    div.dataset.loaded='1';
+  }catch(e){
+    div.innerHTML='<div class="summary-card"><div style="font-size:12px;color:var(--red)">Failed to load summary.</div></div>';
+    if(btn) btn.style.color='';
+  }
+}
+
+async function regenSummary(id){
+  const div=document.getElementById('sum-'+id);
+  if(div) div.innerHTML='<div class="summary-loading">Generating summary...</div>';
+  try{
+    const r=await fetch(`/api/sessions/${id}/summary/regenerate`,{method:'POST'});
+    if(!r.ok){
+      const err=await r.json().catch(()=>({}));
+      toast(err.detail||'Summary generation failed');
+      if(div) div.innerHTML='';
+      return;
+    }
+    const s=await r.json();
+    if(div){div.innerHTML=renderSummary(id,s);div.dataset.loaded='1';}
+    // Update the session card tag list to show Summary badge
+    const card=document.getElementById('sc-'+id);
+    if(card&&!card.querySelector('.s-tag[data-sum]')){
+      const meta=card.querySelector('.s-meta');
+      if(meta) meta.insertAdjacentHTML('beforeend','<span class="s-tag" data-sum="1" style="background:rgba(0,186,124,.15);color:var(--green)">Summary</span>');
+    }
+  }catch(e){
+    toast('Summary generation failed');
+    if(div) div.innerHTML='';
+  }
+}
+
+function renderSummary(id, s){
+  const vocabHtml=s.vocab&&s.vocab.length
+    ?`<div class="summary-section"><div class="summary-section-lbl">Vocab</div><div class="summary-chips">${s.vocab.map(v=>`<span class="summary-chip green" title="${esc(v.meaning)}">${esc(v.term)}${v.count>1?` ×${v.count}`:''}</span>`).join('')}</div></div>`:'';
+  const topicsHtml=s.review_topics&&s.review_topics.length
+    ?`<div class="summary-section"><div class="summary-section-lbl">Review Topics</div><div class="summary-chips">${s.review_topics.map(t=>`<span class="summary-chip amber">${esc(t)}</span>`).join('')}</div></div>`:'';
+  const idiomsHtml=s.idioms&&s.idioms.length
+    ?`<div class="summary-section"><div class="summary-section-lbl">Idioms</div><ul class="summary-list">${s.idioms.map(i=>`<li><b>${esc(i.phrase)}</b> — ${esc(i.meaning)}</li>`).join('')}</ul></div>`:'';
+  const corrHtml=s.corrections&&s.corrections.length
+    ?`<div class="summary-section"><div class="summary-section-lbl">Corrections</div><ul class="summary-list">${s.corrections.map(c=>`<li class="summary-correction"><span class="wrong">${esc(c.wrong)}</span> → <span class="right">${esc(c.right)}</span>${c.explanation?` — ${esc(c.explanation)}`:''}</li>`).join('')}</ul></div>`:'';
+  const grammarHtml=s.grammar&&s.grammar.length
+    ?`<div class="summary-section"><div class="summary-section-lbl">Grammar</div><ul class="summary-list">${s.grammar.map(g=>`<li>${esc(g)}</li>`).join('')}</ul></div>`:'';
+
+  return `<div class="summary-card">
+    <div class="summary-hdr">
+      <span class="summary-title">Study Summary</span>
+      <button class="summary-regen" onclick="regenSummary(${id})">Regenerate</button>
+    </div>
+    ${s.summary?`<div class="summary-overview">${esc(s.summary)}</div>`:''}
+    ${vocabHtml}${idiomsHtml}${corrHtml}${grammarHtml}${topicsHtml}
+  </div>`;
 }
 
 // --- Helpers ---
@@ -390,6 +532,50 @@ function highlight(text,q){
   const escaped=esc(text);
   const rx=new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi');
   return escaped.replace(rx,'<mark>$1</mark>');
+}
+
+// --- Bookmarks ---
+async function toggleBookmark(btn, exchangeId){
+  try{
+    const r=await fetch(`/api/exchanges/${exchangeId}/bookmark`,{method:'POST'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const data=await r.json();
+    btn.classList.toggle('active',data.bookmarked);
+    // Update cache
+    for(const sid in exchangeCache){
+      const exs=exchangeCache[sid];
+      if(!Array.isArray(exs)) continue;
+      const ex=exs.find(e=>e.id===exchangeId);
+      if(ex){ ex.bookmarked=data.bookmarked?1:0; break; }
+    }
+    toast(data.bookmarked?'Bookmarked':'Bookmark removed');
+  }catch(e){
+    console.error('Bookmark toggle failed:',e);
+    toast('Bookmark failed');
+  }
+}
+
+let bookmarkFilterActive={};
+
+function filterBookmarks(sessionId, btn){
+  const active=!bookmarkFilterActive[sessionId];
+  bookmarkFilterActive[sessionId]=active;
+  btn.classList.toggle('active',active);
+
+  const exDiv=document.getElementById('ex-'+sessionId);
+  if(!exDiv||!exchangeCache[sessionId]) return;
+
+  const items=exDiv.querySelectorAll('.ex-item[data-exid]');
+  const exchanges=exchangeCache[sessionId];
+  items.forEach(el=>{
+    const exid=parseInt(el.dataset.exid,10);
+    const ex=exchanges.find(e=>e.id===exid);
+    if(active){
+      el.style.display=(ex&&ex.bookmarked)?'':'none';
+    }else{
+      el.style.display='';
+    }
+  });
 }
 
 // --- Init ---

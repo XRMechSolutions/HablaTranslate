@@ -10,7 +10,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
 <title>Habla</title>
-<link rel="stylesheet" href="/static/styles.css?v=33">
+<link rel="stylesheet" href="/static/styles.css?v=34">
 </head>
 <body>
 
@@ -115,7 +115,30 @@
           <option value="ollama">Ollama (local)</option>
           <option value="lmstudio">LM Studio (local)</option>
           <option value="openai">OpenAI (cloud)</option>
+          <option value="claude">Claude (cloud)</option>
         </select>
+      </div>
+    </div>
+    <div class="set-section" id="apiKeySection">
+      <div class="set-label">API Keys (Cloud Providers)</div>
+      <div class="api-key-row" id="openaiKeyRow">
+        <span class="api-key-provider">OpenAI</span>
+        <input type="password" class="set-input api-key-input" id="openaiKeyInput"
+               placeholder="sk-..." autocomplete="off" />
+        <span class="api-key-mask" id="openaiKeyMask"></span>
+        <button class="set-refresh api-key-save" id="openaiKeySave">Save</button>
+        <button class="set-refresh api-key-remove" id="openaiKeyRemove" style="display:none">Remove</button>
+      </div>
+      <div class="api-key-row" id="claudeKeyRow">
+        <span class="api-key-provider">Claude</span>
+        <input type="password" class="set-input api-key-input" id="claudeKeyInput"
+               placeholder="sk-ant-..." autocomplete="off" />
+        <span class="api-key-mask" id="claudeKeyMask"></span>
+        <button class="set-refresh api-key-save" id="claudeKeySave">Save</button>
+        <button class="set-refresh api-key-remove" id="claudeKeyRemove" style="display:none">Remove</button>
+      </div>
+      <div class="set-info" style="font-size:11px;color:var(--fg3);margin-top:4px">
+        Keys stored on your server only — never sent to third parties.
       </div>
     </div>
     <div class="set-section">
@@ -196,6 +219,29 @@
       </div>
     </div>
     <div class="set-section">
+      <div class="set-label">Text-to-Speech</div>
+      <div class="set-row">
+        <label class="set-toggle">
+          <input type="checkbox" id="ttsToggle">
+          <span>Speak translations aloud</span>
+        </label>
+      </div>
+      <div class="set-row" id="ttsVoiceSection" style="display:none;margin-top:4px;gap:4px">
+        <select class="set-select" id="ttsVoiceEs" style="flex:1">
+          <option value="es_ES-carlfm-x_low">ES: carlfm (x-low)</option>
+          <option value="es_ES-davefx-medium">ES: davefx (medium)</option>
+        </select>
+        <select class="set-select" id="ttsVoiceEn" style="flex:1">
+          <option value="en_US-lessac-medium">EN: lessac (medium)</option>
+          <option value="en_US-ryan-medium">EN: ryan (medium)</option>
+          <option value="en_GB-alan-medium">EN: alan GB (medium)</option>
+        </select>
+      </div>
+      <div class="set-info" style="font-size: 11px; color: var(--fg3); margin-top: 4px;">
+        Requires Piper voice models in data/tts_models/ on the server.
+      </div>
+    </div>
+    <div class="set-section">
       <div class="set-label">Recording (for benchmarks)</div>
       <div class="set-row">
         <label class="set-toggle">
@@ -248,6 +294,6 @@
   </div>
 </div>
 
-<script type="module" src="/static/js/app.js?v=33"></script>
+<script type="module" src="/static/js/app.js?v=34"></script>
 </body>
 </html>

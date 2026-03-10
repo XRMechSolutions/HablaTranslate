@@ -1,16 +1,16 @@
 // Habla Service Worker — app shell caching only
 // Does NOT cache API responses, WebSocket data, or audio
 
-const CACHE_NAME = 'habla-v33';
+const CACHE_NAME = 'habla-v35';
 const SHELL_URLS = [
   '/',
-  '/static/styles.css?v=33',
-  '/static/js/core.js?v=33',
-  '/static/js/ui.js?v=33',
-  '/static/js/audio.js?v=33',
-  '/static/js/settings.js?v=33',
-  '/static/js/websocket.js?v=33',
-  '/static/js/app.js?v=33',
+  '/static/styles.css?v=35',
+  '/static/js/core.js?v=35',
+  '/static/js/ui.js?v=35',
+  '/static/js/audio.js?v=35',
+  '/static/js/settings.js?v=35',
+  '/static/js/websocket.js?v=35',
+  '/static/js/app.js?v=35',
   '/static/manifest.json',
   '/static/icon-192.png',
   '/static/icon-512.png',

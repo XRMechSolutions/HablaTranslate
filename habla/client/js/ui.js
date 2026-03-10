@@ -1,6 +1,18 @@
 // Habla — UI rendering, interactions, vocab saving, ground truth comparison
 
-import { $, esc, escA, escRx, state, send, toast } from './core.js';
+import { $, esc, escA, escRx, state, send, toast, langs } from './core.js';
+
+// --- Language-aware flag helper ---
+function dirFlags(dir) {
+  const d = dir || state.direction;
+  if (d === 'auto') return { src: '', tgt: '' };
+  const parts = d.split('_to_');
+  const src = parts[0], tgt = parts[1] || 'en';
+  return {
+    src: (langs[src]?.flag || src.toUpperCase()) + ' ',
+    tgt: (langs[tgt]?.flag || tgt.toUpperCase()) + ' ',
+  };
+}
 
 // --- Smart auto-scroll ---
 // Only auto-scroll if user is near the bottom; pause when they scroll up to read.
@@ -80,8 +92,7 @@ function rebuildMergedCard(el, data) {
   const tgtAutoScroll = _shouldAutoScroll(tgtEl);
 
   // Build new source HTML (with idiom highlights)
-  const srcFlag = state.direction === 'es_to_en' ? '\u{1F1EA}\u{1F1F8}' : '\u{1F1EC}\u{1F1E7}';
-  const tgtFlag = state.direction === 'es_to_en' ? '\u{1F1EC}\u{1F1E7}' : '\u{1F1EA}\u{1F1F8}';
+  const {src: srcFlag, tgt: tgtFlag} = dirFlags(data.effective_direction);
   const srcRaw = data.source || data.corrected || '';
   let srcH = esc(srcRaw);
   (data.idioms || []).forEach(i => {
@@ -141,7 +152,7 @@ function expirePending(el) {
   el.style.opacity = '0.5';
   const tgtEl = el.querySelector('.ex-tgt');
   if (tgtEl) {
-    const tgtFlag = state.direction === 'es_to_en' ? '\u{1F1EC}\u{1F1E7}' : '\u{1F1EA}\u{1F1F8}';
+    const {tgt: tgtFlag} = dirFlags(el._pendingDirection);
     tgtEl.innerHTML = `${tgtFlag} <em style="color:var(--fg3)">[Translation unavailable]</em>`;
     tgtEl.style.opacity = '1';
   }
@@ -171,12 +182,13 @@ export function ensurePartialCard() {
   return state.partialEl;
 }
 
-export function showPartialSource(text) {
+export function showPartialSource(text, detectedLang) {
   const card = ensurePartialCard();
-  const srcFlag = state.direction === 'es_to_en' ? '\u{1F1EA}\u{1F1F8}' : '\u{1F1EC}\u{1F1E7}';
+  const partialDir = detectedLang ? detectedLang + '_to_' + (detectedLang === 'en' ? 'es' : 'en') : null;
+  const {src: srcFlag} = dirFlags(partialDir);
   state.partialSrcText = text;
   const srcEl = card.querySelector('.partial-src');
-  srcEl.innerHTML = `${srcFlag} ${esc(state.partialSrcText)} <span style="color:var(--accent)">\u258B</span>`;
+  srcEl.innerHTML = `${srcFlag}${esc(state.partialSrcText)} <span style="color:var(--accent)">\u258B</span>`;
   srcEl.scrollTop = srcEl.scrollHeight;
   const area = $('#transcript');
   if (area.lastElementChild !== card) area.appendChild(card);
@@ -186,11 +198,12 @@ export function showPartialSource(text) {
   // User requirement: displayed content must never be auto-cleared.
 }
 
-export function showPartialTranslation(text) {
+export function showPartialTranslation(text, detectedLang) {
   const card = ensurePartialCard();
-  const tgtFlag = state.direction === 'es_to_en' ? '\u{1F1EC}\u{1F1E7}' : '\u{1F1EA}\u{1F1F8}';
+  const partialDir = detectedLang ? detectedLang + '_to_' + (detectedLang === 'en' ? 'es' : 'en') : null;
+  const {tgt: tgtFlag} = dirFlags(partialDir);
   state.partialTgtText = text;
-  card.querySelector('.partial-tgt').innerHTML = `${tgtFlag} ${esc(state.partialTgtText)}`;
+  card.querySelector('.partial-tgt').innerHTML = `${tgtFlag}${esc(state.partialTgtText)}`;
 }
 
 export function clearPartial() {
@@ -222,8 +235,7 @@ export function lockTranscript(msg) {
   const ph = $('#placeholder');
   if (ph) ph.remove();
 
-  const srcFlag = msg.direction === 'es_to_en' ? '\u{1F1EA}\u{1F1F8}' : '\u{1F1EC}\u{1F1E7}';
-  const tgtFlag = msg.direction === 'es_to_en' ? '\u{1F1EC}\u{1F1E7}' : '\u{1F1EA}\u{1F1F8}';
+  const {src: srcFlag, tgt: tgtFlag} = dirFlags(msg.direction);
   const name = msg.speaker?.custom_name || msg.speaker?.label || 'Speaker';
   const color = safeColor(msg.speaker?.color);
 
@@ -287,6 +299,8 @@ export function finalizeExchange(msg) {
       last.is_correction = last.is_correction || msg.is_correction;
       last.correction_detail = last.correction_detail || msg.correction_detail;
       last.confidence = msg.confidence || last.confidence;
+      last.effective_direction = msg.effective_direction || last.effective_direction;
+      last.detected_language = msg.detected_language || last.detected_language;
       last.timestamp = msg.timestamp;
       last._ts = msg._ts;
       if (last._el) {
@@ -361,6 +375,8 @@ export function addExchange(msg, insertBefore = null) {
     last.is_correction = last.is_correction || msg.is_correction;
     last.correction_detail = last.correction_detail || msg.correction_detail;
     last.confidence = msg.confidence || last.confidence;
+    last.effective_direction = msg.effective_direction || last.effective_direction;
+    last.detected_language = msg.detected_language || last.detected_language;
     last.timestamp = msg.timestamp;
     last._ts = msgTs;
     if (last._el) {
@@ -401,8 +417,7 @@ function buildExchangeHTML(msg) {
   const name = msg.speaker?.custom_name || msg.speaker?.label || 'Speaker';
   const role = msg.speaker?.role_hint ? ` \u00b7 ${msg.speaker.role_hint}` : '';
   const color = safeColor(msg.speaker?.color);
-  const srcFlag = state.direction === 'es_to_en' ? '\u{1F1EA}\u{1F1F8}' : '\u{1F1EC}\u{1F1E7}';
-  const tgtFlag = state.direction === 'es_to_en' ? '\u{1F1EC}\u{1F1E7}' : '\u{1F1EA}\u{1F1F8}';
+  const {src: srcFlag, tgt: tgtFlag} = dirFlags(msg.effective_direction);
 
   // Highlight idioms in source
   const srcRaw = msg.source || msg.corrected || '';
@@ -455,17 +470,22 @@ function buildExchangeHTML(msg) {
     ? `<button class="bkmk-btn${msg.bookmarked ? ' active' : ''}" onclick="toggleBookmark(this,${msg.exchange_id})" title="Bookmark">&#9873;</button>`
     : '';
 
+  const langBadge = msg.detected_language
+    ? `<span class="lang-badge">${msg.detected_language.toUpperCase()}</span>`
+    : '';
+
   return `
     <div class="ex-spk">
       <div class="spk-dot" style="background:${color}"></div>
       <span class="spk-name" style="color:${color}" onclick="promptRename('${escA(msg.speaker?.id || '')}')">${esc(name)}</span>
       <span class="spk-role">${esc(role)}</span>
     </div>
-    <div class="ex-src" title="${escA(srcRaw)}">${srcFlag} ${srcH}</div>
-    <div class="ex-tgt">${tgtFlag} ${esc(msg.translated)}</div>
+    <div class="ex-src" title="${escA(srcRaw)}">${srcFlag}${srcH}</div>
+    <div class="ex-tgt">${tgtFlag}${esc(msg.translated)}</div>
     ${notesH}
     <div class="ex-meta">
       <span>${new Date(msg.timestamp).toLocaleTimeString()}</span>
+      ${langBadge}
       ${msg.confidence ? `<span>${Math.round(msg.confidence * 100)}%</span>` : ''}
       ${audioBtn}
       ${bkmkBtn}
@@ -536,10 +556,16 @@ export function updateSpeakers(speakers) {
 
 // --- Direction / mode UI ---
 export function updateDirUI() {
-  if (state.direction === 'es_to_en') {
-    $('#srcLang').textContent = 'ES'; $('#tgtLang').textContent = 'EN';
+  const btn = $('#dirBtn');
+  if (state.direction === 'auto') {
+    $('#srcLang').textContent = 'AUTO';
+    $('#tgtLang').textContent = '';
+    btn.classList.add('auto-mode');
   } else {
-    $('#srcLang').textContent = 'EN'; $('#tgtLang').textContent = 'ES';
+    btn.classList.remove('auto-mode');
+    const parts = state.direction.split('_to_');
+    $('#srcLang').textContent = (parts[0] || 'ES').toUpperCase();
+    $('#tgtLang').textContent = (parts[1] || 'EN').toUpperCase();
   }
 }
 

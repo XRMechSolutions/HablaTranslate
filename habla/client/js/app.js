@@ -1,9 +1,9 @@
 // Habla — application entry point
 
-import { $, state, send, toast, initAudioSpool } from './core.js';
+import { $, state, send, toast, initAudioSpool, loadLanguages } from './core.js';
 import { updateDirUI, updateModeUI, clearTranscript, initUI } from './ui.js';
 import { startListening, stopListening, initAudio } from './audio.js';
-import { initSettings } from './settings.js';
+import { initSettings, autoStartPlayback } from './settings.js';
 import { connect, initWebSocket } from './websocket.js';
 
 // Initialize all modules
@@ -31,7 +31,9 @@ $('#sendBtn').onclick = () => {
 $('#txtIn').onkeydown = e => { if (e.key === 'Enter') $('#sendBtn').click(); };
 
 $('#dirBtn').onclick = () => {
-  state.direction = state.direction === 'es_to_en' ? 'en_to_es' : 'es_to_en';
+  if (state.direction === 'es_to_en') state.direction = 'en_to_es';
+  else if (state.direction === 'en_to_es') state.direction = 'auto';
+  else state.direction = 'es_to_en';
   localStorage.setItem('habla_direction', state.direction);
   send({ type: 'toggle_direction', direction: state.direction }); updateDirUI();
 };
@@ -81,6 +83,15 @@ $('#clearBtn').onclick = () => {
   clearTranscript();
 };
 
+// Keyboard shortcut: B to bookmark the most recent exchange
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'b' && e.key !== 'B') return;
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+  const cards = document.querySelectorAll('.ex .bkmk-btn');
+  if (cards.length) cards[cards.length - 1].click();
+});
+
 // Keepalive with latency tracking
 setInterval(() => {
   state.lastPingSent = Date.now();
@@ -94,10 +105,12 @@ if ('serviceWorker' in navigator) {
 
 // Restore direction/mode from localStorage before connecting
 const savedDir = localStorage.getItem('habla_direction');
-if (savedDir === 'es_to_en' || savedDir === 'en_to_es') {
+if (savedDir === 'es_to_en' || savedDir === 'en_to_es' || savedDir === 'auto') {
   state.direction = savedDir;
   updateDirUI();
 }
+// Load language registry from server
+loadLanguages();
 const savedMode = localStorage.getItem('habla_mode');
 if (savedMode === 'conversation' || savedMode === 'classroom') {
   state.mode = savedMode;
@@ -106,3 +119,21 @@ if (savedMode === 'conversation' || savedMode === 'classroom') {
 
 // Connect
 connect();
+
+// Auto-replay from history page
+const replayParam = new URLSearchParams(location.search).get('replay');
+if (replayParam) {
+  const waitForWs = setInterval(() => {
+    if (state.ws && state.ws.readyState === 1 && state.sessionId) {
+      clearInterval(waitForWs);
+      state._onSessionReset = () => autoStartPlayback(replayParam);
+      send({ type: 'new_session' });
+      clearTranscript();
+      // Timeout: if session_reset never arrives, start anyway
+      setTimeout(() => {
+        if (state._onSessionReset) { state._onSessionReset = null; autoStartPlayback(replayParam); }
+      }, 5000);
+    }
+  }, 200);
+  setTimeout(() => clearInterval(waitForWs), 10000);
+}

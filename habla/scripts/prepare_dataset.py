@@ -53,12 +53,44 @@ def wav_duration_seconds(wav_path: Path) -> float:
     return max(0, (size - 44)) / 32000.0
 
 
+_NOISE_MARKERS = frozenset([
+    "[noise]", "[inaudible]", "[unintelligible]", "[silence]", "...",
+])
+
+
+def _is_noise_marker(transcript: str) -> bool:
+    """Return True if the transcript is a noise/silence placeholder."""
+    t = transcript.strip().lower()
+    return t in _NOISE_MARKERS or t.startswith("[noise]")
+
+
+def _load_segment_metadata(session_dir: Path) -> dict[int, dict]:
+    """Load per-segment metadata from metadata.json.
+
+    Returns a dict keyed by segment_id with raw metadata keys.
+    """
+    meta_path = session_dir / "metadata.json"
+    if not meta_path.exists():
+        return {}
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        return {
+            int(k): v for k, v in raw.get("segments", {}).items()
+        }
+    except (json.JSONDecodeError, OSError, ValueError):
+        return {}
+
+
 def collect_samples(input_dir: Path, min_duration: float, max_duration: float, min_confidence: float):
     """Walk recording dirs and collect (wav_path, transcript) pairs."""
     samples = []
-    stats = {"sessions_scanned": 0, "sessions_with_gt": 0, "skipped_empty": 0,
-             "skipped_inaudible": 0, "skipped_missing_wav": 0,
-             "skipped_duration": 0, "skipped_confidence": 0}
+    stats = {
+        "sessions_scanned": 0, "sessions_with_gt": 0, "skipped_empty": 0,
+        "skipped_noise": 0, "skipped_inaudible": 0, "skipped_missing_wav": 0,
+        "skipped_duration": 0, "skipped_confidence": 0,
+        "corrected_failures": 0,
+    }
 
     if not input_dir.exists():
         print(f"Error: input directory does not exist: {input_dir}")
@@ -85,6 +117,8 @@ def collect_samples(input_dir: Path, min_duration: float, max_duration: float, m
             print(f"  Warning: could not read {gt_path}: {e}")
             continue
 
+        seg_meta = _load_segment_metadata(session_dir)
+
         for seg in data.get("segments", []):
             transcript = seg.get("transcript", "").strip()
 
@@ -93,8 +127,13 @@ def collect_samples(input_dir: Path, min_duration: float, max_duration: float, m
                 stats["skipped_empty"] += 1
                 continue
 
-            # Filter [inaudible] and similar markers
-            if transcript.lower() in ("[inaudible]", "[unintelligible]", "[silence]", "..."):
+            # Filter [noise] and similar silence/noise markers
+            if _is_noise_marker(transcript):
+                stats["skipped_noise"] += 1
+                continue
+
+            # Filter legacy [inaudible] markers (kept separate for stats clarity)
+            if transcript.lower() in ("[inaudible]", "[unintelligible]", "..."):
                 stats["skipped_inaudible"] += 1
                 continue
 
@@ -116,10 +155,23 @@ def collect_samples(input_dir: Path, min_duration: float, max_duration: float, m
                 stats["skipped_confidence"] += 1
                 continue
 
+            # Detect if this is a corrected formerly-rejected segment.
+            # These are high-value training examples: the model failed on this
+            # audio, a human fixed it — so they get a weight hint for fine-tuning.
+            seg_id = seg.get("segment_id")
+            raw_meta = seg_meta.get(seg_id, {}) if seg_id is not None else {}
+            was_rejected = raw_meta.get("asr_status") == "rejected"
+            is_corrected_failure = was_rejected and seg.get("human_corrected", False)
+            if is_corrected_failure:
+                stats["corrected_failures"] += 1
+
             samples.append({
                 "audio_path": str(wav_path.resolve()),
                 "sentence": transcript,
                 "duration": round(duration, 2),
+                "corrected_failure": is_corrected_failure,
+                # weight hint for fine-tuning: corrected failures are double-weighted
+                "sample_weight": 2.0 if is_corrected_failure else 1.0,
             })
 
     return samples, stats
@@ -138,6 +190,8 @@ def build_dataset(samples: list[dict], output_dir: Path, seed: int):
     ds = Dataset.from_dict({
         "audio": [s["audio_path"] for s in samples],
         "sentence": [s["sentence"] for s in samples],
+        "corrected_failure": [s.get("corrected_failure", False) for s in samples],
+        "sample_weight": [s.get("sample_weight", 1.0) for s in samples],
     })
 
     # Cast audio column to Audio feature (16kHz)
@@ -173,14 +227,17 @@ def main():
         args.input, args.min_duration, args.max_duration, args.min_confidence,
     )
 
-    print(f"Sessions scanned:    {stats['sessions_scanned']}")
-    print(f"Sessions with GT:    {stats['sessions_with_gt']}")
-    print(f"Valid segments:      {len(samples)}")
-    print(f"Skipped (empty):     {stats['skipped_empty']}")
-    print(f"Skipped (inaudible): {stats['skipped_inaudible']}")
-    print(f"Skipped (no WAV):    {stats['skipped_missing_wav']}")
-    print(f"Skipped (duration):  {stats['skipped_duration']}")
-    print(f"Skipped (confidence):{stats['skipped_confidence']}")
+    print(f"Sessions scanned:      {stats['sessions_scanned']}")
+    print(f"Sessions with GT:      {stats['sessions_with_gt']}")
+    print(f"Valid segments:        {len(samples)}")
+    print(f"Skipped (empty):       {stats['skipped_empty']}")
+    print(f"Skipped ([noise]):     {stats['skipped_noise']}")
+    print(f"Skipped (inaudible):   {stats['skipped_inaudible']}")
+    print(f"Skipped (no WAV):      {stats['skipped_missing_wav']}")
+    print(f"Skipped (duration):    {stats['skipped_duration']}")
+    print(f"Skipped (confidence):  {stats['skipped_confidence']}")
+    if stats['corrected_failures']:
+        print(f"Corrected failures:    {stats['corrected_failures']} (weight 2.0 — high value)")
     print()
 
     if not samples:
