@@ -13,7 +13,9 @@ from server.models.schemas import (
     Exchange, FlaggedPhrase, SpeakerProfile, TranslationResult,
     WSTranslation, WSPartialTranscript, CorrectionDetail,
 )
-from server.pipeline.orchestrator import PipelineOrchestrator, _is_bad_transcript
+from server.pipeline.orchestrator import (
+    PipelineOrchestrator, _is_bad_transcript, _has_clipped_onset,
+)
 from server.services.idiom_scanner import IdiomMatch
 
 
@@ -55,11 +57,11 @@ def _make_translation_result(**overrides):
 def orchestrator(app_config):
     """A PipelineOrchestrator with the translator mocked out and marked ready."""
     orch = PipelineOrchestrator(app_config)
-    orch.translator = MagicMock()
-    orch.translator.translate = AsyncMock(return_value=_make_translation_result())
-    orch.translator.update_topic_summary = AsyncMock(return_value="updated summary")
-    orch.translator.close = AsyncMock()
-    orch.translator.metrics = {"requests": 0, "successes": 0, "failures": 0}
+    orch.context_manager.translator = MagicMock()
+    orch.context_manager.translator.translate = AsyncMock(return_value=_make_translation_result())
+    orch.context_manager.translator.update_topic_summary = AsyncMock(return_value="updated summary")
+    orch.context_manager.translator.close = AsyncMock()
+    orch.context_manager.translator.metrics = {"requests": 0, "successes": 0, "failures": 0}
     orch._ready = True
     return orch
 
@@ -73,12 +75,12 @@ class TestInit:
 
     def test_init_sets_direction_from_config(self, app_config):
         orch = PipelineOrchestrator(app_config)
-        assert orch.direction == "es_to_en"
+        assert orch.context_manager.direction == "es_to_en"
 
     def test_init_sets_mode_from_config(self, app_config):
         app_config.session.mode = "classroom"
         orch = PipelineOrchestrator(app_config)
-        assert orch.mode == "classroom"
+        assert orch.context_manager.mode == "classroom"
 
     def test_init_not_ready(self, app_config):
         orch = PipelineOrchestrator(app_config)
@@ -86,15 +88,15 @@ class TestInit:
 
     def test_init_empty_exchanges(self, app_config):
         orch = PipelineOrchestrator(app_config)
-        assert len(orch.recent_exchanges) == 0
+        assert len(orch.context_manager.recent_exchanges) == 0
 
     def test_init_topic_summary_empty(self, app_config):
         orch = PipelineOrchestrator(app_config)
-        assert orch.topic_summary == ""
+        assert orch.context_manager.topic_summary == ""
 
     def test_init_session_id_none(self, app_config):
         orch = PipelineOrchestrator(app_config)
-        assert orch.session_id is None
+        assert orch.context_manager.session_id is None
 
     def test_init_queue_maxsize(self, app_config):
         orch = PipelineOrchestrator(app_config)
@@ -102,7 +104,7 @@ class TestInit:
 
     def test_init_language_votes_maxlen(self, app_config):
         orch = PipelineOrchestrator(app_config)
-        assert orch._language_votes.maxlen == 5
+        assert orch.audio_processor._language_votes.maxlen == 5
 
     def test_init_callbacks_none(self, app_config):
         orch = PipelineOrchestrator(app_config)
@@ -121,25 +123,40 @@ class TestDirectionMode:
     """Test direction/mode switching and the _source_language property."""
 
     def test_source_language_es_to_en(self, orchestrator):
-        orchestrator.direction = "es_to_en"
+        orchestrator.context_manager.direction = "es_to_en"
         assert orchestrator._source_language == "es"
 
     def test_source_language_en_to_es(self, orchestrator):
-        orchestrator.direction = "en_to_es"
+        orchestrator.context_manager.direction = "en_to_es"
         assert orchestrator._source_language == "en"
 
     def test_set_direction_updates_direction(self, orchestrator):
         orchestrator.set_direction("en_to_es")
-        assert orchestrator.direction == "en_to_es"
+        assert orchestrator.context_manager.direction == "en_to_es"
 
     def test_set_direction_clears_detected_language(self, orchestrator):
-        orchestrator._last_detected_language = "es"
+        orchestrator.audio_processor._last_detected_language = "es"
         orchestrator.set_direction("en_to_es")
-        assert orchestrator._last_detected_language is None
+        assert orchestrator.audio_processor._last_detected_language is None
 
     def test_set_mode_updates_mode(self, orchestrator):
         orchestrator.set_mode("classroom")
-        assert orchestrator.mode == "classroom"
+        assert orchestrator.context_manager.mode == "classroom"
+
+    def test_set_direction_clears_language_votes(self, orchestrator):
+        orchestrator.audio_processor._language_votes.extend(["es", "es", "en"])
+        orchestrator.set_direction("en_to_es")
+        assert len(orchestrator.audio_processor._language_votes) == 0
+
+    def test_source_language_auto_uses_detected(self, orchestrator):
+        orchestrator.context_manager.direction = "auto"
+        orchestrator.audio_processor._last_detected_language = "es"
+        assert orchestrator._source_language == "es"
+
+    def test_audio_processor_source_language_matches_orchestrator(self, orchestrator):
+        orchestrator.context_manager.direction = "auto"
+        orchestrator.audio_processor._last_detected_language = "en"
+        assert orchestrator.audio_processor._source_language == orchestrator._source_language
 
 
 # ---------------------------------------------------------------------------
@@ -189,7 +206,7 @@ class TestCallbacks:
 
     @pytest.mark.asyncio
     async def test_translate_and_notify_fires_error_callback_on_failure(self, orchestrator):
-        orchestrator.translator.translate = AsyncMock(side_effect=RuntimeError("LLM down"))
+        orchestrator.context_manager.translator.translate = AsyncMock(side_effect=RuntimeError("LLM down"))
         on_error = AsyncMock()
         orchestrator.set_callbacks(on_error=on_error)
 
@@ -214,36 +231,36 @@ class TestSessionLifecycle:
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(return_value=mock_cursor)
 
-        with patch("server.pipeline.orchestrator.get_db", AsyncMock(return_value=mock_db)):
+        with patch("server.pipeline.session_manager.get_db", AsyncMock(return_value=mock_db)):
             session_id = await orchestrator.create_session()
 
         assert session_id == 42
-        assert orchestrator.session_id == 42
+        assert orchestrator.context_manager.session_id == 42
 
     @pytest.mark.asyncio
     async def test_create_session_db_failure_returns_zero(self, orchestrator):
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(side_effect=Exception("DB locked"))
 
-        with patch("server.pipeline.orchestrator.get_db", AsyncMock(return_value=mock_db)):
+        with patch("server.pipeline.session_manager.get_db", AsyncMock(return_value=mock_db)):
             session_id = await orchestrator.create_session()
 
         assert session_id == 0
 
     @pytest.mark.asyncio
     async def test_close_session_noop_without_session_id(self, orchestrator):
-        orchestrator.session_id = None
+        orchestrator.context_manager.session_id = None
         # Should not raise
         await orchestrator.close_session()
 
     @pytest.mark.asyncio
     async def test_close_session_persists_speakers(self, orchestrator):
-        orchestrator.session_id = 1
-        orchestrator.speaker_tracker.record_utterance("SPEAKER_00")
-        orchestrator.speaker_tracker.record_utterance("SPEAKER_01")
+        orchestrator.context_manager.session_id = 1
+        orchestrator.context_manager.speaker_tracker.record_utterance("SPEAKER_00")
+        orchestrator.context_manager.speaker_tracker.record_utterance("SPEAKER_01")
 
         mock_db = AsyncMock()
-        with patch("server.pipeline.orchestrator.get_db", AsyncMock(return_value=mock_db)):
+        with patch("server.pipeline.session_manager.get_db", AsyncMock(return_value=mock_db)):
             await orchestrator.close_session()
 
         # 1 session UPDATE + 2 speaker INSERTs + 1 commit = at least 3 execute calls
@@ -252,23 +269,23 @@ class TestSessionLifecycle:
     @pytest.mark.asyncio
     async def test_reset_session_clears_state(self, orchestrator):
         # Populate some state
-        orchestrator.recent_exchanges.append({"source": "test"})
-        orchestrator.topic_summary = "some topic"
-        orchestrator._last_partial_text = "partial"
+        orchestrator.context_manager.recent_exchanges.append({"source": "test"})
+        orchestrator.context_manager.topic_summary = "some topic"
+        orchestrator.audio_processor._last_partial_text = "partial"
 
         mock_cursor = MagicMock()
         mock_cursor.lastrowid = 99
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(return_value=mock_cursor)
 
-        with patch("server.pipeline.orchestrator.get_db", AsyncMock(return_value=mock_db)):
-            orchestrator.session_id = 1
+        with patch("server.pipeline.session_manager.get_db", AsyncMock(return_value=mock_db)):
+            orchestrator.context_manager.session_id = 1
             new_id = await orchestrator.reset_session()
 
         assert new_id == 99
-        assert len(orchestrator.recent_exchanges) == 0
-        assert orchestrator.topic_summary == ""
-        assert orchestrator._last_partial_text == ""
+        assert len(orchestrator.context_manager.recent_exchanges) == 0
+        assert orchestrator.context_manager.topic_summary == ""
+        assert orchestrator.audio_processor._last_partial_text == ""
 
 
 # ---------------------------------------------------------------------------
@@ -294,7 +311,7 @@ class TestProcessText:
 
         await orchestrator.process_text("Hello world")
 
-        call_kwargs = orchestrator.translator.translate.call_args[1]
+        call_kwargs = orchestrator.context_manager.translator.translate.call_args[1]
         assert call_kwargs["direction"] == "en_to_es"
 
     @pytest.mark.asyncio
@@ -303,7 +320,7 @@ class TestProcessText:
 
         await orchestrator.process_text("Hola")
 
-        call_kwargs = orchestrator.translator.translate.call_args[1]
+        call_kwargs = orchestrator.context_manager.translator.translate.call_args[1]
         assert call_kwargs["mode"] == "classroom"
 
     @pytest.mark.asyncio
@@ -321,80 +338,80 @@ class TestProcessText:
         await orchestrator.process_text("Hola", speaker_id="SPK")
         await orchestrator.process_text("Mundo", speaker_id="SPK")
 
-        profile = orchestrator.speaker_tracker.speakers["SPK"]
+        profile = orchestrator.context_manager.speaker_tracker.speakers["SPK"]
         assert profile.utterance_count == 2
 
     @pytest.mark.asyncio
     async def test_process_text_passes_context_exchanges(self, orchestrator):
         # Pre-populate context
-        orchestrator.recent_exchanges.append({"speaker_label": "A", "source": "prev"})
+        orchestrator.context_manager.recent_exchanges.append({"speaker_label": "A", "source": "prev"})
 
         await orchestrator.process_text("Hola")
 
-        call_kwargs = orchestrator.translator.translate.call_args[1]
+        call_kwargs = orchestrator.context_manager.translator.translate.call_args[1]
         assert len(call_kwargs["context_exchanges"]) == 1
         assert call_kwargs["context_exchanges"][0]["source"] == "prev"
 
     @pytest.mark.asyncio
     async def test_process_text_passes_topic_summary(self, orchestrator):
-        orchestrator.topic_summary = "Discussing weather"
+        orchestrator.context_manager.topic_summary = "Discussing weather"
 
         await orchestrator.process_text("Hola")
 
-        call_kwargs = orchestrator.translator.translate.call_args[1]
+        call_kwargs = orchestrator.context_manager.translator.translate.call_args[1]
         assert call_kwargs["topic_summary"] == "Discussing weather"
 
     @pytest.mark.asyncio
     async def test_process_text_updates_recent_exchanges(self, orchestrator):
         await orchestrator.process_text("Hola mundo")
 
-        assert len(orchestrator.recent_exchanges) == 1
-        entry = orchestrator.recent_exchanges[0]
+        assert len(orchestrator.context_manager.recent_exchanges) == 1
+        entry = orchestrator.context_manager.recent_exchanges[0]
         assert entry["source"] == "Hola mundo"
         assert entry["corrected"] == "Corrected text"
         assert entry["translated"] == "Translated text"
 
     @pytest.mark.asyncio
     async def test_process_text_sets_speaker_hint(self, orchestrator):
-        orchestrator.translator.translate = AsyncMock(
+        orchestrator.context_manager.translator.translate = AsyncMock(
             return_value=_make_translation_result(speaker_hint="teacher")
         )
 
         await orchestrator.process_text("Hola", speaker_id="SPK_HINT")
 
-        profile = orchestrator.speaker_tracker.speakers["SPK_HINT"]
+        profile = orchestrator.context_manager.speaker_tracker.speakers["SPK_HINT"]
         assert profile.role_hint == "teacher"
 
     @pytest.mark.asyncio
     async def test_process_text_skips_hint_if_custom_name(self, orchestrator):
-        orchestrator.translator.translate = AsyncMock(
+        orchestrator.context_manager.translator.translate = AsyncMock(
             return_value=_make_translation_result(speaker_hint="student")
         )
         # Pre-create speaker with custom name
-        orchestrator.speaker_tracker.record_utterance("NAMED")
-        orchestrator.speaker_tracker.rename("NAMED", "Maria")
+        orchestrator.context_manager.speaker_tracker.record_utterance("NAMED")
+        orchestrator.context_manager.speaker_tracker.rename("NAMED", "Maria")
 
         await orchestrator.process_text("Hola", speaker_id="NAMED")
 
-        profile = orchestrator.speaker_tracker.speakers["NAMED"]
+        profile = orchestrator.context_manager.speaker_tracker.speakers["NAMED"]
         assert profile.role_hint is None, "Should not overwrite when custom_name exists"
 
     @pytest.mark.asyncio
     async def test_process_text_saves_exchange_to_db(self, orchestrator):
-        orchestrator.session_id = 10
+        orchestrator.context_manager.session_id = 10
         mock_cursor = MagicMock()
         mock_cursor.lastrowid = 77
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(return_value=mock_cursor)
 
-        with patch("server.pipeline.orchestrator.get_db", AsyncMock(return_value=mock_db)):
+        with patch("server.pipeline.session_manager.get_db", AsyncMock(return_value=mock_db)):
             exchange = await orchestrator.process_text("Hola")
 
         assert exchange.id == 77
 
     @pytest.mark.asyncio
     async def test_process_text_no_save_without_session(self, orchestrator):
-        orchestrator.session_id = None
+        orchestrator.context_manager.session_id = None
         exchange = await orchestrator.process_text("Hola")
         assert exchange.id is None
 
@@ -417,7 +434,7 @@ class TestProcessWav:
         """process_wav should put an item into the queue and wait for the future."""
         # We won't start the worker; instead, manually consume from the queue
         async def fake_worker():
-            kind, payload, future = await orchestrator._queue.get()
+            kind, payload, future, *rest = await orchestrator._queue.get()
             assert kind == "wav"
             assert payload == "/fake/path.wav"
             future.set_result(None)
@@ -437,58 +454,58 @@ class TestContextManagement:
 
     @pytest.mark.asyncio
     async def test_recent_exchanges_maxlen_is_10(self, orchestrator):
-        assert orchestrator.recent_exchanges.maxlen == 10
+        assert orchestrator.context_manager.recent_exchanges.maxlen == 10
 
     @pytest.mark.asyncio
     async def test_context_window_holds_exactly_10(self, orchestrator):
         for i in range(12):
             await orchestrator.process_text(f"Utterance {i}")
 
-        assert len(orchestrator.recent_exchanges) == 10, "Deque should cap at 10"
+        assert len(orchestrator.context_manager.recent_exchanges) == 10, "Deque should cap at 10"
 
     @pytest.mark.asyncio
     async def test_context_window_drops_oldest(self, orchestrator):
         for i in range(12):
             await orchestrator.process_text(f"Utterance {i}")
 
-        oldest = orchestrator.recent_exchanges[0]
+        oldest = orchestrator.context_manager.recent_exchanges[0]
         assert oldest["source"] == "Utterance 2", "Oldest two should have been evicted"
 
     @pytest.mark.asyncio
     async def test_topic_summary_updated_via_fire_and_forget(self, orchestrator):
         """_update_topic is launched as a fire-and-forget task from process_text."""
-        orchestrator.translator.update_topic_summary = AsyncMock(return_value="new topic")
+        orchestrator.context_manager.translator.update_topic_summary = AsyncMock(return_value="new topic")
 
         await orchestrator.process_text("Hola mundo")
         # Give the fire-and-forget task time to complete
         await asyncio.sleep(0.05)
 
-        assert orchestrator.topic_summary == "new topic"
+        assert orchestrator.context_manager.topic_summary == "new topic"
 
     @pytest.mark.asyncio
     async def test_topic_summary_unchanged_on_update_failure(self, orchestrator):
-        orchestrator.topic_summary = "old topic"
-        orchestrator.translator.update_topic_summary = AsyncMock(side_effect=RuntimeError("fail"))
+        orchestrator.context_manager.topic_summary = "old topic"
+        orchestrator.context_manager.translator.update_topic_summary = AsyncMock(side_effect=RuntimeError("fail"))
 
         await orchestrator.process_text("Hola")
         await asyncio.sleep(0.05)
 
-        assert orchestrator.topic_summary == "old topic"
+        assert orchestrator.context_manager.topic_summary == "old topic"
 
     @pytest.mark.asyncio
     async def test_topic_summary_unchanged_when_update_returns_none(self, orchestrator):
-        orchestrator.topic_summary = "old topic"
-        orchestrator.translator.update_topic_summary = AsyncMock(return_value=None)
+        orchestrator.context_manager.topic_summary = "old topic"
+        orchestrator.context_manager.translator.update_topic_summary = AsyncMock(return_value=None)
 
         await orchestrator.process_text("Hola")
         await asyncio.sleep(0.05)
 
-        assert orchestrator.topic_summary == "old topic"
+        assert orchestrator.context_manager.topic_summary == "old topic"
 
     def test_reset_partial_state_clears_last_partial(self, orchestrator):
-        orchestrator._last_partial_text = "some partial"
+        orchestrator.audio_processor._last_partial_text = "some partial"
         orchestrator.reset_partial_state()
-        assert orchestrator._last_partial_text == ""
+        assert orchestrator.audio_processor._last_partial_text == ""
 
 
 # ---------------------------------------------------------------------------
@@ -590,69 +607,69 @@ class TestLanguageDetection:
     """Test _update_detected_language voting and supermajority logic."""
 
     def test_first_detection_accepted(self, orchestrator):
-        orchestrator._last_detected_language = None
-        orchestrator._update_detected_language("es")
-        assert orchestrator._last_detected_language == "es"
+        orchestrator.audio_processor._last_detected_language = None
+        orchestrator.audio_processor._update_detected_language("es")
+        assert orchestrator.audio_processor._last_detected_language == "es"
 
     def test_same_language_stays(self, orchestrator):
-        orchestrator._last_detected_language = "es"
-        orchestrator._language_votes.clear()
+        orchestrator.audio_processor._last_detected_language = "es"
+        orchestrator.audio_processor._language_votes.clear()
         for _ in range(3):
-            orchestrator._update_detected_language("es")
-        assert orchestrator._last_detected_language == "es"
+            orchestrator.audio_processor._update_detected_language("es")
+        assert orchestrator.audio_processor._last_detected_language == "es"
 
     def test_switch_requires_supermajority(self, orchestrator):
         """A single disagreeing detection should not switch the language."""
-        orchestrator._last_detected_language = "es"
-        orchestrator._language_votes.clear()
-        orchestrator._language_votes.extend(["es", "es", "es"])
+        orchestrator.audio_processor._last_detected_language = "es"
+        orchestrator.audio_processor._language_votes.clear()
+        orchestrator.audio_processor._language_votes.extend(["es", "es", "es"])
 
-        orchestrator._update_detected_language("en")
+        orchestrator.audio_processor._update_detected_language("en")
 
         # 1 en out of 4 = 25%, below 70% threshold
-        assert orchestrator._last_detected_language == "es"
+        assert orchestrator.audio_processor._last_detected_language == "es"
 
     def test_switch_happens_at_supermajority(self, orchestrator):
         """Language should switch when the new language reaches 70%+ of votes."""
-        orchestrator._last_detected_language = "es"
-        orchestrator._language_votes.clear()
+        orchestrator.audio_processor._last_detected_language = "es"
+        orchestrator.audio_processor._language_votes.clear()
 
         # Fill deque (maxlen=5) with enough "en" votes
         for _ in range(4):
-            orchestrator._update_detected_language("en")
+            orchestrator.audio_processor._update_detected_language("en")
 
         # 4 out of 4 = 100% -> should switch
-        assert orchestrator._last_detected_language == "en"
+        assert orchestrator.audio_processor._last_detected_language == "en"
 
     def test_votes_deque_capped_at_maxlen(self, orchestrator):
-        orchestrator._last_detected_language = "es"
-        orchestrator._language_votes.clear()
+        orchestrator.audio_processor._last_detected_language = "es"
+        orchestrator.audio_processor._language_votes.clear()
 
         for _ in range(10):
-            orchestrator._update_detected_language("es")
+            orchestrator.audio_processor._update_detected_language("es")
 
-        assert len(orchestrator._language_votes) == 5
+        assert len(orchestrator.audio_processor._language_votes) == 5
 
     def test_gradual_switch(self, orchestrator):
         """Simulate a realistic gradual language switch."""
-        orchestrator._last_detected_language = "es"
-        orchestrator._language_votes.clear()
+        orchestrator.audio_processor._last_detected_language = "es"
+        orchestrator.audio_processor._language_votes.clear()
 
         # Start with Spanish majority
-        orchestrator._update_detected_language("es")
-        orchestrator._update_detected_language("es")
-        orchestrator._update_detected_language("en")  # stray detection
-        assert orchestrator._last_detected_language == "es"
+        orchestrator.audio_processor._update_detected_language("es")
+        orchestrator.audio_processor._update_detected_language("es")
+        orchestrator.audio_processor._update_detected_language("en")  # stray detection
+        assert orchestrator.audio_processor._last_detected_language == "es"
 
         # Now push English to supermajority
-        orchestrator._update_detected_language("en")
-        orchestrator._update_detected_language("en")
+        orchestrator.audio_processor._update_detected_language("en")
+        orchestrator.audio_processor._update_detected_language("en")
         # Votes now: [es, es, en, en, en] -> 60% en, not enough
-        assert orchestrator._last_detected_language == "es"
+        assert orchestrator.audio_processor._last_detected_language == "es"
 
-        orchestrator._update_detected_language("en")
+        orchestrator.audio_processor._update_detected_language("en")
         # Votes now: [es, en, en, en, en] -> 80% en, above threshold
-        assert orchestrator._last_detected_language == "en"
+        assert orchestrator.audio_processor._last_detected_language == "en"
 
 
 # ---------------------------------------------------------------------------
@@ -710,18 +727,298 @@ class TestBadTranscript:
 
 
 # ---------------------------------------------------------------------------
+# TestClippedOnset
+# ---------------------------------------------------------------------------
+
+class TestClippedOnset:
+    """Test the module-level _has_clipped_onset function."""
+
+    def test_clipped_hola(self):
+        assert _has_clipped_onset("ola que tal") is True
+
+    def test_clipped_bueno(self):
+        assert _has_clipped_onset("ueno dias") is True
+
+    def test_clipped_gracias(self):
+        assert _has_clipped_onset("racias por todo") is True
+
+    def test_not_clipped_full_word(self):
+        assert _has_clipped_onset("hola que tal") is False
+
+    def test_not_clipped_english(self):
+        assert _has_clipped_onset("good morning") is False
+
+    def test_empty_string(self):
+        assert _has_clipped_onset("") is False
+
+    def test_whitespace_only(self):
+        assert _has_clipped_onset("   ") is False
+
+    def test_case_insensitive(self):
+        assert _has_clipped_onset("OLA mundo") is True
+
+    def test_non_clipped_ola_lookalike(self):
+        """'ola' as a standalone word could be a legitimate transcript."""
+        # The detector flags it — that's intentional (false positive is acceptable
+        # since it only sets a hint, not a rejection)
+        assert _has_clipped_onset("ola") is True
+
+    @pytest.mark.parametrize("text,expected", [
+        ("ola", True),
+        ("ueno", True),
+        ("racias", True),
+        ("hola", False),
+        ("bueno", False),
+        ("stoy bien", True),
+        ("estoy bien", False),
+        ("", False),
+    ])
+    def test_parametrized(self, text, expected):
+        assert _has_clipped_onset(text) is expected
+
+
+# ---------------------------------------------------------------------------
+# TestRecordQualityMetric
+# ---------------------------------------------------------------------------
+
+class TestRecordQualityMetric:
+    """Test _record_quality_metric writes the correct fields to the DB."""
+
+    @pytest.mark.asyncio
+    async def test_inserts_duration_seconds(self, orchestrator):
+        """duration_seconds should be stored, not left at 0.0."""
+        orchestrator.context_manager.session_id = 1
+        inserted_rows = []
+
+        async def fake_execute(sql, params=None):
+            if "INSERT INTO quality_metrics" in sql:
+                inserted_rows.append(params)
+
+        mock_db = AsyncMock()
+        mock_db.execute = fake_execute
+        mock_db.commit = AsyncMock()
+
+        with patch("server.pipeline.session_manager.get_db", return_value=mock_db):
+            await orchestrator.session_manager.record_quality_metric(
+                status="asr_rejected",
+                confidence=None,
+                meta={"audio_rms": 1234.0, "segment_id": 7},
+                processing_ms=120,
+                duration_seconds=2.5,
+            )
+
+        assert inserted_rows, "Expected one INSERT"
+        params = inserted_rows[0]
+        # duration_seconds is the 6th param (index 5): session_id, segment_id, status,
+        # confidence, audio_rms, duration_seconds, speaker_id, processing_time_ms, ...
+        param_dict = dict(zip(
+            ["session_id", "segment_id", "status", "confidence", "audio_rms",
+             "duration_seconds", "speaker_id", "processing_time_ms",
+             "vad_threshold", "model_name", "clipped_onset"],
+            params,
+        ))
+        assert param_dict["duration_seconds"] == 2.5
+        assert param_dict["audio_rms"] == 1234.0
+        assert param_dict["segment_id"] == 7
+
+    @pytest.mark.asyncio
+    async def test_inserts_clipped_onset_true(self, orchestrator):
+        """clipped_onset=True should be stored in the DB row."""
+        orchestrator.context_manager.session_id = 1
+        inserted_rows = []
+
+        async def fake_execute(sql, params=None):
+            if "INSERT INTO quality_metrics" in sql:
+                inserted_rows.append(params)
+
+        mock_db = AsyncMock()
+        mock_db.execute = fake_execute
+        mock_db.commit = AsyncMock()
+
+        with patch("server.pipeline.session_manager.get_db", return_value=mock_db):
+            await orchestrator.session_manager.record_quality_metric(
+                status="ok",
+                confidence=0.9,
+                clipped_onset=True,
+            )
+
+        assert inserted_rows
+        params = inserted_rows[0]
+        param_dict = dict(zip(
+            ["session_id", "segment_id", "status", "confidence", "audio_rms",
+             "duration_seconds", "speaker_id", "processing_time_ms",
+             "vad_threshold", "model_name", "clipped_onset"],
+            params,
+        ))
+        assert param_dict["clipped_onset"] is True
+
+    @pytest.mark.asyncio
+    async def test_no_session_id_skips_insert(self, orchestrator):
+        """Without session_id set, no INSERT should happen."""
+        orchestrator.context_manager.session_id = None
+        mock_db = AsyncMock()
+
+        with patch("server.pipeline.session_manager.get_db", return_value=mock_db):
+            await orchestrator.session_manager.record_quality_metric(status="ok", confidence=0.9)
+
+        mock_db.execute.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# TestAsrRejectionCounters
+# ---------------------------------------------------------------------------
+
+class TestAsrRejectionCounters:
+    """Test that asr_rejected_count and asr_empty_count increment on the right reason codes.
+
+    These counters track distinct failure modes:
+    - asr_empty_count:    WhisperX returned zero segments (VAD found no speech)
+    - asr_rejected_count: ASR ran but produced garbage output (bad_transcript)
+    """
+
+    @pytest.mark.asyncio
+    async def test_no_segments_increments_asr_empty_count(self, orchestrator):
+        """reject_reason='no_segments' should increment asr_empty_count, not asr_rejected_count."""
+        orchestrator.context_manager.session_id = 1
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock()
+        mock_db.commit = AsyncMock()
+
+        with (
+            patch("server.pipeline.session_manager.get_db", return_value=mock_db),
+            patch("server.pipeline.orchestrator.wave.open", side_effect=Exception("no wav")),
+            patch.object(
+                orchestrator.audio_processor, "_normalize_wav",
+                new=AsyncMock(return_value="/fake/path.wav"),
+            ),
+            patch.object(
+                orchestrator.context_manager, "_save_audio_clip", return_value=None
+            ),
+            patch(
+                "server.pipeline.orchestrator.asyncio.to_thread",
+                new=AsyncMock(return_value=("", [], None, "no_segments")),
+            ),
+        ):
+            await orchestrator._process_audio_segment_from_wav("/fake/path.wav", meta={})
+
+        assert orchestrator._metrics["asr_empty_count"] == 1
+        assert orchestrator._metrics["asr_rejected_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_bad_transcript_increments_asr_rejected_count(self, orchestrator):
+        """reject_reason='bad_transcript' should increment asr_rejected_count, not asr_empty_count."""
+        orchestrator.context_manager.session_id = 1
+
+        mock_db = AsyncMock()
+        mock_db.execute = AsyncMock()
+        mock_db.commit = AsyncMock()
+
+        with (
+            patch("server.pipeline.session_manager.get_db", return_value=mock_db),
+            patch("server.pipeline.orchestrator.wave.open", side_effect=Exception("no wav")),
+            patch.object(
+                orchestrator.audio_processor, "_normalize_wav",
+                new=AsyncMock(return_value="/fake/path.wav"),
+            ),
+            patch.object(
+                orchestrator.context_manager, "_save_audio_clip", return_value=None
+            ),
+            patch(
+                "server.pipeline.orchestrator.asyncio.to_thread",
+                new=AsyncMock(return_value=("", [], None, "bad_transcript")),
+            ),
+        ):
+            await orchestrator._process_audio_segment_from_wav("/fake/path.wav", meta={})
+
+        assert orchestrator._metrics["asr_rejected_count"] == 1
+        assert orchestrator._metrics["asr_empty_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_no_segments_writes_asr_empty_status_to_db(self, orchestrator):
+        """quality_metrics row should use status='asr_empty' for no_segments rejections."""
+        orchestrator.context_manager.session_id = 1
+        inserted_statuses = []
+
+        async def capture_execute(sql, params=None):
+            if params and "INSERT INTO quality_metrics" in sql:
+                # status is the 3rd param (index 2): session_id, segment_id, status, ...
+                inserted_statuses.append(params[2])
+
+        mock_db = AsyncMock()
+        mock_db.execute = capture_execute
+        mock_db.commit = AsyncMock()
+
+        with (
+            patch("server.pipeline.session_manager.get_db", return_value=mock_db),
+            patch("server.pipeline.orchestrator.wave.open", side_effect=Exception("no wav")),
+            patch.object(
+                orchestrator.audio_processor, "_normalize_wav",
+                new=AsyncMock(return_value="/fake/path.wav"),
+            ),
+            patch.object(
+                orchestrator.context_manager, "_save_audio_clip", return_value=None
+            ),
+            patch(
+                "server.pipeline.orchestrator.asyncio.to_thread",
+                new=AsyncMock(return_value=("", [], None, "no_segments")),
+            ),
+        ):
+            await orchestrator._process_audio_segment_from_wav("/fake/path.wav", meta={})
+
+        assert inserted_statuses == ["asr_empty"], (
+            "no_segments rejection should write 'asr_empty' to quality_metrics, not 'asr_rejected'"
+        )
+
+    @pytest.mark.asyncio
+    async def test_bad_transcript_writes_asr_rejected_status_to_db(self, orchestrator):
+        """quality_metrics row should use status='asr_rejected' for bad_transcript rejections."""
+        orchestrator.context_manager.session_id = 1
+        inserted_statuses = []
+
+        async def capture_execute(sql, params=None):
+            if params and "INSERT INTO quality_metrics" in sql:
+                inserted_statuses.append(params[2])
+
+        mock_db = AsyncMock()
+        mock_db.execute = capture_execute
+        mock_db.commit = AsyncMock()
+
+        with (
+            patch("server.pipeline.session_manager.get_db", return_value=mock_db),
+            patch("server.pipeline.orchestrator.wave.open", side_effect=Exception("no wav")),
+            patch.object(
+                orchestrator.audio_processor, "_normalize_wav",
+                new=AsyncMock(return_value="/fake/path.wav"),
+            ),
+            patch.object(
+                orchestrator.context_manager, "_save_audio_clip", return_value=None
+            ),
+            patch(
+                "server.pipeline.orchestrator.asyncio.to_thread",
+                new=AsyncMock(return_value=("", [], None, "bad_transcript")),
+            ),
+        ):
+            await orchestrator._process_audio_segment_from_wav("/fake/path.wav", meta={})
+
+        assert inserted_statuses == ["asr_rejected"], (
+            "bad_transcript rejection should write 'asr_rejected' to quality_metrics, not 'asr_empty'"
+        )
+
+
+# ---------------------------------------------------------------------------
 # TestStatePersistence
 # ---------------------------------------------------------------------------
 
 class TestStatePersistence:
-    """Test _save_shutdown_state and _restore_shutdown_state."""
+    """Test session_manager.save_shutdown_state and restore_shutdown_state."""
 
     @pytest.mark.asyncio
     async def test_save_state_creates_file(self, orchestrator, app_config):
-        orchestrator.topic_summary = "Test topic"
-        orchestrator.recent_exchanges.append({"source": "Hola", "translated": "Hello"})
+        orchestrator.context_manager.topic_summary = "Test topic"
+        orchestrator.context_manager.recent_exchanges.append({"source": "Hola", "translated": "Hello"})
 
-        await orchestrator._save_shutdown_state()
+        await orchestrator.session_manager.save_shutdown_state()
 
         state_path = app_config.data_dir / "last_session.json"
         assert state_path.exists()
@@ -734,10 +1031,10 @@ class TestStatePersistence:
 
     @pytest.mark.asyncio
     async def test_save_state_includes_speakers(self, orchestrator, app_config):
-        orchestrator.speaker_tracker.record_utterance("SPEAKER_00")
-        orchestrator.speaker_tracker.rename("SPEAKER_00", "Maria")
+        orchestrator.context_manager.speaker_tracker.record_utterance("SPEAKER_00")
+        orchestrator.context_manager.speaker_tracker.rename("SPEAKER_00", "Maria")
 
-        await orchestrator._save_shutdown_state()
+        await orchestrator.session_manager.save_shutdown_state()
 
         data = json.loads((app_config.data_dir / "last_session.json").read_text())
         speakers = data["speakers"]
@@ -747,9 +1044,9 @@ class TestStatePersistence:
 
     @pytest.mark.asyncio
     async def test_save_state_includes_translator_metrics(self, orchestrator, app_config):
-        orchestrator.translator.metrics = {"requests": 5, "successes": 4, "failures": 1}
+        orchestrator.context_manager.translator.metrics = {"requests": 5, "successes": 4, "failures": 1}
 
-        await orchestrator._save_shutdown_state()
+        await orchestrator.session_manager.save_shutdown_state()
 
         data = json.loads((app_config.data_dir / "last_session.json").read_text())
         assert data["translator_metrics"]["requests"] == 5
@@ -764,9 +1061,9 @@ class TestStatePersistence:
         }
         (app_config.data_dir / "last_session.json").write_text(json.dumps(state))
 
-        await orchestrator._restore_shutdown_state()
+        await orchestrator.session_manager.restore_shutdown_state()
 
-        assert orchestrator.topic_summary == "Restored topic"
+        assert orchestrator.context_manager.topic_summary == "Restored topic"
 
     @pytest.mark.asyncio
     async def test_restore_state_loads_exchanges(self, orchestrator, app_config):
@@ -781,10 +1078,10 @@ class TestStatePersistence:
         }
         (app_config.data_dir / "last_session.json").write_text(json.dumps(state))
 
-        await orchestrator._restore_shutdown_state()
+        await orchestrator.session_manager.restore_shutdown_state()
 
-        assert len(orchestrator.recent_exchanges) == 2
-        assert orchestrator.recent_exchanges[0]["source"] == "Hola"
+        assert len(orchestrator.context_manager.recent_exchanges) == 2
+        assert orchestrator.context_manager.recent_exchanges[0]["source"] == "Hola"
 
     @pytest.mark.asyncio
     async def test_restore_state_loads_speakers(self, orchestrator, app_config):
@@ -803,10 +1100,10 @@ class TestStatePersistence:
         }
         (app_config.data_dir / "last_session.json").write_text(json.dumps(state))
 
-        await orchestrator._restore_shutdown_state()
+        await orchestrator.session_manager.restore_shutdown_state()
 
-        assert "SPK_0" in orchestrator.speaker_tracker.speakers
-        sp = orchestrator.speaker_tracker.speakers["SPK_0"]
+        assert "SPK_0" in orchestrator.context_manager.speaker_tracker.speakers
+        sp = orchestrator.context_manager.speaker_tracker.speakers["SPK_0"]
         assert sp.custom_name == "Carlos"
         assert sp.role_hint == "teacher"
         assert sp.utterance_count == 7
@@ -815,34 +1112,34 @@ class TestStatePersistence:
     @pytest.mark.asyncio
     async def test_restore_state_no_file_noop(self, orchestrator):
         """Should do nothing if no state file exists."""
-        await orchestrator._restore_shutdown_state()
-        assert orchestrator.topic_summary == ""
+        await orchestrator.session_manager.restore_shutdown_state()
+        assert orchestrator.context_manager.topic_summary == ""
 
     @pytest.mark.asyncio
     async def test_restore_state_corrupt_file_no_crash(self, orchestrator, app_config):
         (app_config.data_dir / "last_session.json").write_text("NOT VALID JSON {{{")
         # Should log warning but not raise
-        await orchestrator._restore_shutdown_state()
-        assert orchestrator.topic_summary == ""
+        await orchestrator.session_manager.restore_shutdown_state()
+        assert orchestrator.context_manager.topic_summary == ""
 
     @pytest.mark.asyncio
     async def test_save_and_restore_roundtrip(self, orchestrator, app_config):
         """Save state then restore it and verify identical content."""
-        orchestrator.topic_summary = "Roundtrip topic"
-        orchestrator.recent_exchanges.append({"source": "test", "translated": "prueba"})
-        orchestrator.speaker_tracker.record_utterance("SPK")
+        orchestrator.context_manager.topic_summary = "Roundtrip topic"
+        orchestrator.context_manager.recent_exchanges.append({"source": "test", "translated": "prueba"})
+        orchestrator.context_manager.speaker_tracker.record_utterance("SPK")
 
-        await orchestrator._save_shutdown_state()
+        await orchestrator.session_manager.save_shutdown_state()
 
         # Create fresh orchestrator and restore
         orch2 = PipelineOrchestrator(app_config)
-        orch2.translator = MagicMock()
-        orch2.translator.metrics = {}
-        await orch2._restore_shutdown_state()
+        orch2.context_manager.translator = MagicMock()
+        orch2.context_manager.translator.metrics = {}
+        await orch2.session_manager.restore_shutdown_state()
 
-        assert orch2.topic_summary == "Roundtrip topic"
-        assert len(orch2.recent_exchanges) == 1
-        assert "SPK" in orch2.speaker_tracker.speakers
+        assert orch2.context_manager.topic_summary == "Roundtrip topic"
+        assert len(orch2.context_manager.recent_exchanges) == 1
+        assert "SPK" in orch2.context_manager.speaker_tracker.speakers
 
 
 # ---------------------------------------------------------------------------
@@ -874,7 +1171,7 @@ class TestShutdown:
     @pytest.mark.asyncio
     async def test_shutdown_saves_state(self, orchestrator, app_config):
         orchestrator._worker_task = asyncio.create_task(asyncio.sleep(10))
-        orchestrator.topic_summary = "Shutdown topic"
+        orchestrator.context_manager.topic_summary = "Shutdown topic"
 
         await orchestrator.shutdown()
 
@@ -889,7 +1186,7 @@ class TestShutdown:
 
         await orchestrator.shutdown()
 
-        orchestrator.translator.close.assert_awaited_once()
+        orchestrator.context_manager.translator.close.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_shutdown_cancels_queued_futures(self, orchestrator, app_config):
@@ -933,7 +1230,7 @@ class TestPartialAudio:
     @pytest.mark.asyncio
     async def test_partial_audio_noop_without_whisperx(self, orchestrator):
         """Should return immediately if no WhisperX model loaded."""
-        orchestrator._whisperx_model = None
+        orchestrator.audio_processor._whisperx_model = None
         # Should not raise
         await orchestrator.process_partial_audio(b"\x00" * 3200, 0.1)
 
@@ -948,7 +1245,7 @@ class TestPartialAudio:
             "segments": [{"text": "Hola parcial"}],
             "language": "es",
         }
-        orchestrator._whisperx_model = mock_model
+        orchestrator.audio_processor._whisperx_model = mock_model
 
         # Mock quick translate
         orchestrator._quick_translate = AsyncMock(return_value="Hello partial")
@@ -973,8 +1270,8 @@ class TestPartialAudio:
             "segments": [{"text": "Same text"}],
             "language": "es",
         }
-        orchestrator._whisperx_model = mock_model
-        orchestrator._last_partial_text = "Same text"
+        orchestrator.audio_processor._whisperx_model = mock_model
+        orchestrator.audio_processor._last_partial_text = "Same text"
 
         import numpy as np
         pcm = (np.random.randn(1600) * 1000).astype(np.int16).tobytes()
@@ -999,11 +1296,11 @@ class TestProcessQueue:
 
         loop = asyncio.get_event_loop()
         future = loop.create_future()
-        await orchestrator._queue.put(("wav", "/path.wav", future))
+        await orchestrator._queue.put(("wav", "/path.wav", future, {}))
 
         result = await asyncio.wait_for(future, timeout=2.0)
         assert result is None
-        orchestrator._process_audio_segment_from_wav.assert_awaited_once_with("/path.wav")
+        orchestrator._process_audio_segment_from_wav.assert_awaited_once_with("/path.wav", meta={})
 
         worker.cancel()
         try:
@@ -1022,7 +1319,7 @@ class TestProcessQueue:
 
         loop = asyncio.get_event_loop()
         future = loop.create_future()
-        await orchestrator._queue.put(("wav", "/path.wav", future))
+        await orchestrator._queue.put(("wav", "/path.wav", future, {}))
 
         with pytest.raises(RuntimeError, match="ASR crashed"):
             await asyncio.wait_for(future, timeout=2.0)
@@ -1042,11 +1339,11 @@ class TestProcessQueue:
 
         loop = asyncio.get_event_loop()
         future = loop.create_future()
-        await orchestrator._queue.put(("raw", b"\x00\x00", future))
+        await orchestrator._queue.put(("raw", b"\x00\x00", future, {}))
 
         result = await asyncio.wait_for(future, timeout=2.0)
         assert result is None
-        orchestrator._process_audio_segment.assert_awaited_once()
+        orchestrator._process_audio_segment.assert_awaited_once_with(b"\x00\x00", meta={})
 
         worker.cancel()
         try:
@@ -1061,17 +1358,17 @@ class TestProcessQueue:
 # ---------------------------------------------------------------------------
 
 class TestSaveExchange:
-    """Test _save_exchange database persistence."""
+    """Test session_manager.save_exchange database persistence."""
 
     @pytest.mark.asyncio
     async def test_save_exchange_returns_id(self, orchestrator):
-        orchestrator.session_id = 5
+        orchestrator.context_manager.session_id = 5
         mock_cursor = MagicMock()
         mock_cursor.lastrowid = 101
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(return_value=mock_cursor)
 
-        speaker = orchestrator.speaker_tracker.record_utterance("SPK")
+        speaker = orchestrator.context_manager.speaker_tracker.record_utterance("SPK")
         exchange = Exchange(
             session_id=5,
             speaker=speaker,
@@ -1081,16 +1378,16 @@ class TestSaveExchange:
             confidence=0.9,
         )
 
-        with patch("server.pipeline.orchestrator.get_db", AsyncMock(return_value=mock_db)):
-            result_id = await orchestrator._save_exchange(exchange)
+        with patch("server.pipeline.session_manager.get_db", AsyncMock(return_value=mock_db)):
+            result_id = await orchestrator.session_manager.save_exchange(exchange)
 
         assert result_id == 101
         assert exchange.id == 101
 
     @pytest.mark.asyncio
     async def test_save_exchange_no_session_returns_none(self, orchestrator):
-        orchestrator.session_id = None
-        speaker = orchestrator.speaker_tracker.record_utterance("SPK")
+        orchestrator.context_manager.session_id = None
+        speaker = orchestrator.context_manager.speaker_tracker.record_utterance("SPK")
         exchange = Exchange(
             session_id=0,
             speaker=speaker,
@@ -1099,18 +1396,18 @@ class TestSaveExchange:
             translation="Hello",
         )
 
-        result_id = await orchestrator._save_exchange(exchange)
+        result_id = await orchestrator.session_manager.save_exchange(exchange)
         assert result_id is None
 
     @pytest.mark.asyncio
     async def test_save_exchange_with_correction_detail(self, orchestrator):
-        orchestrator.session_id = 1
+        orchestrator.context_manager.session_id = 1
         mock_cursor = MagicMock()
         mock_cursor.lastrowid = 50
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(return_value=mock_cursor)
 
-        speaker = orchestrator.speaker_tracker.record_utterance("SPK")
+        speaker = orchestrator.context_manager.speaker_tracker.record_utterance("SPK")
         exchange = Exchange(
             session_id=1,
             speaker=speaker,
@@ -1125,8 +1422,8 @@ class TestSaveExchange:
             ),
         )
 
-        with patch("server.pipeline.orchestrator.get_db", AsyncMock(return_value=mock_db)):
-            await orchestrator._save_exchange(exchange)
+        with patch("server.pipeline.session_manager.get_db", AsyncMock(return_value=mock_db)):
+            await orchestrator.session_manager.save_exchange(exchange)
 
         # Verify correction_json was passed in the execute call
         call_args = mock_db.execute.call_args[0]
@@ -1138,11 +1435,11 @@ class TestSaveExchange:
 
     @pytest.mark.asyncio
     async def test_save_exchange_db_failure_returns_none(self, orchestrator):
-        orchestrator.session_id = 1
+        orchestrator.context_manager.session_id = 1
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(side_effect=Exception("disk full"))
 
-        speaker = orchestrator.speaker_tracker.record_utterance("SPK")
+        speaker = orchestrator.context_manager.speaker_tracker.record_utterance("SPK")
         exchange = Exchange(
             session_id=1,
             speaker=speaker,
@@ -1151,8 +1448,8 @@ class TestSaveExchange:
             translation="Hello",
         )
 
-        with patch("server.pipeline.orchestrator.get_db", AsyncMock(return_value=mock_db)):
-            result_id = await orchestrator._save_exchange(exchange)
+        with patch("server.pipeline.session_manager.get_db", AsyncMock(return_value=mock_db)):
+            result_id = await orchestrator.session_manager.save_exchange(exchange)
 
         assert result_id is None
 
@@ -1171,32 +1468,32 @@ class TestQuickTranslate:
 
     @pytest.mark.asyncio
     async def test_quick_translate_es_to_en(self, orchestrator):
-        orchestrator.translator._call_llm = AsyncMock(return_value="Hello world")
-        orchestrator.direction = "es_to_en"
+        orchestrator.context_manager.translator._call_llm = AsyncMock(return_value="Hello world")
+        orchestrator.context_manager.direction = "es_to_en"
 
         result = await orchestrator._quick_translate("Hola mundo")
 
         assert result == "Hello world"
-        call_args = orchestrator.translator._call_llm.call_args
+        call_args = orchestrator.context_manager.translator._call_llm.call_args
         prompt = call_args[0][1]
         assert "Spanish" in prompt
         assert "English" in prompt
 
     @pytest.mark.asyncio
     async def test_quick_translate_en_to_es(self, orchestrator):
-        orchestrator.translator._call_llm = AsyncMock(return_value="Hola mundo")
-        orchestrator.direction = "en_to_es"
+        orchestrator.context_manager.translator._call_llm = AsyncMock(return_value="Hola mundo")
+        orchestrator.context_manager.direction = "en_to_es"
 
         result = await orchestrator._quick_translate("Hello world")
 
-        call_args = orchestrator.translator._call_llm.call_args
+        call_args = orchestrator.context_manager.translator._call_llm.call_args
         prompt = call_args[0][1]
         assert "English" in prompt
         assert "Spanish" in prompt
 
     @pytest.mark.asyncio
     async def test_quick_translate_error_returns_empty(self, orchestrator):
-        orchestrator.translator._call_llm = AsyncMock(side_effect=RuntimeError("timeout"))
+        orchestrator.context_manager.translator._call_llm = AsyncMock(side_effect=RuntimeError("timeout"))
 
         result = await orchestrator._quick_translate("Hola")
 
@@ -1206,12 +1503,12 @@ class TestQuickTranslate:
     async def test_quick_translate_lmstudio_override(self, orchestrator):
         orchestrator.config.translator.provider = "lmstudio"
         orchestrator.config.translator.quick_model = "fast-model"
-        orchestrator.translator._call_provider = AsyncMock(return_value="Quick result")
+        orchestrator.context_manager.translator._call_provider = AsyncMock(return_value="Quick result")
 
         result = await orchestrator._quick_translate("Hola")
 
         assert result == "Quick result"
-        call_kwargs = orchestrator.translator._call_provider.call_args[1]
+        call_kwargs = orchestrator.context_manager.translator._call_provider.call_args[1]
         assert call_kwargs["lmstudio_model"] == "fast-model"
 
 
@@ -1225,15 +1522,98 @@ class TestReloadIdiomPatterns:
     @pytest.mark.asyncio
     async def test_reload_clears_and_reloads(self, orchestrator, app_config):
         # Add a pattern to the scanner
-        orchestrator.idiom_scanner.patterns.append(MagicMock())
-        assert orchestrator.idiom_scanner.count >= 1
+        orchestrator.context_manager.idiom_scanner.patterns.append(MagicMock())
+        assert orchestrator.context_manager.idiom_scanner.count >= 1
 
         # Mock DB loading
         mock_db = AsyncMock()
         mock_db.execute_fetchall = AsyncMock(return_value=[])
 
-        with patch("server.pipeline.orchestrator.get_db", AsyncMock(return_value=mock_db)):
+        with patch("server.pipeline.session_manager.get_db", AsyncMock(return_value=mock_db)):
             await orchestrator.reload_idiom_patterns()
 
         # Patterns should be cleared (no JSON files in empty idioms dir, no DB patterns)
-        assert orchestrator.idiom_scanner.count == 0
+        assert orchestrator.context_manager.idiom_scanner.count == 0
+
+
+# ---------------------------------------------------------------------------
+# TestResolveEffectiveDirection
+# ---------------------------------------------------------------------------
+
+class TestResolveEffectiveDirection:
+    """Unit tests for _resolve_effective_direction() — all 4 code paths."""
+
+    def test_non_auto_es_to_en(self, orchestrator):
+        orchestrator.context_manager.direction = "es_to_en"
+        assert orchestrator._resolve_effective_direction("es") == ("es_to_en", None)
+
+    def test_non_auto_en_to_es(self, orchestrator):
+        orchestrator.context_manager.direction = "en_to_es"
+        assert orchestrator._resolve_effective_direction("en") == ("en_to_es", None)
+
+    def test_non_auto_ignores_detected_arg(self, orchestrator):
+        orchestrator.context_manager.direction = "es_to_en"
+        assert orchestrator._resolve_effective_direction("en") == ("es_to_en", None)
+
+    def test_auto_spanish_detected(self, orchestrator):
+        orchestrator.context_manager.direction = "auto"
+        assert orchestrator._resolve_effective_direction("es") == ("es_to_en", "es")
+
+    def test_auto_english_detected(self, orchestrator):
+        orchestrator.context_manager.direction = "auto"
+        assert orchestrator._resolve_effective_direction("en") == ("en_to_es", "en")
+
+    def test_auto_unknown_language(self, orchestrator):
+        orchestrator.context_manager.direction = "auto"
+        # "zh" is not in LANGUAGES — falls through to fallback
+        assert orchestrator._resolve_effective_direction("zh") == ("es_to_en", "zh")
+
+    def test_auto_none_detected(self, orchestrator):
+        orchestrator.context_manager.direction = "auto"
+        assert orchestrator._resolve_effective_direction(None) == ("es_to_en", None)
+
+    def test_auto_no_arg_defaults_to_none(self, orchestrator):
+        orchestrator.context_manager.direction = "auto"
+        assert orchestrator._resolve_effective_direction() == ("es_to_en", None)
+
+
+# ---------------------------------------------------------------------------
+# TestAutoDetectionIntegration
+# ---------------------------------------------------------------------------
+
+class TestAutoDetectionIntegration:
+    """Integration tests for auto-detection through process_text."""
+
+    @pytest.mark.asyncio
+    async def test_auto_mode_resolves_direction_in_process_text(self, orchestrator):
+        on_translation = AsyncMock()
+        orchestrator.set_callbacks(on_translation=on_translation)
+        orchestrator.set_direction("auto")
+
+        exchange = await orchestrator.process_text(
+            "Hola", effective_direction="es_to_en", detected_language="es",
+        )
+
+        # Exchange should carry the resolved direction, not "auto"
+        assert exchange.direction == "es_to_en"
+        assert exchange.detected_language == "es"
+
+        # Translator should have received a concrete direction
+        call_kwargs = orchestrator.context_manager.translator.translate.call_args[1]
+        assert call_kwargs["direction"] == "es_to_en"
+
+        # Callback should carry detection info
+        ws_msg = on_translation.call_args[0][0]
+        assert ws_msg.effective_direction == "es_to_en"
+        assert ws_msg.detected_language == "es"
+
+    @pytest.mark.asyncio
+    async def test_auto_mode_fallback_when_no_detection(self, orchestrator):
+        orchestrator.set_direction("auto")
+
+        exchange = await orchestrator.process_text("Hola")
+
+        # Should fall back to "es_to_en" when no detection provided
+        assert exchange.direction == "es_to_en"
+        call_kwargs = orchestrator.context_manager.translator.translate.call_args[1]
+        assert call_kwargs["direction"] == "es_to_en"

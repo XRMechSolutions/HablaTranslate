@@ -9,6 +9,42 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 
+# Language registry — single source of truth for all supported languages.
+# To add a new language: add one entry here and it works everywhere.
+# Keys are ISO 639-1 codes (same as WhisperX detection output).
+LANGUAGES: dict[str, dict] = {
+    "es": {"name": "Spanish", "flag": "\U0001F1EA\U0001F1F8"},  # 🇪🇸
+    "en": {"name": "English", "flag": "\U0001F1EC\U0001F1E7"},  # 🇬🇧
+    # Ready to enable:
+    # "fr": {"name": "French", "flag": "\U0001F1EB\U0001F1F7"},
+    # "pt": {"name": "Portuguese", "flag": "\U0001F1E7\U0001F1F7"},
+    # "de": {"name": "German", "flag": "\U0001F1E9\U0001F1EA"},
+    # "it": {"name": "Italian", "flag": "\U0001F1EE\U0001F1F9"},
+    # "ja": {"name": "Japanese", "flag": "\U0001F1EF\U0001F1F5"},
+    # "zh": {"name": "Chinese", "flag": "\U0001F1E8\U0001F1F3"},
+}
+
+# Default target language when auto-detecting. If someone speaks a language
+# and we need to pick what to translate TO, use this.
+DEFAULT_TARGET_LANG = "en"
+
+
+def parse_direction(direction: str) -> tuple[str, str]:
+    """Parse 'xx_to_yy' direction string into (source_code, target_code).
+
+    Returns language codes. Falls back to ("es", "en") for unknown formats.
+    """
+    parts = direction.split("_to_")
+    if len(parts) == 2 and parts[0] in LANGUAGES and parts[1] in LANGUAGES:
+        return parts[0], parts[1]
+    return "es", "en"
+
+
+def lang_name(code: str) -> str:
+    """Look up display name for a language code. Returns code itself if unknown."""
+    return LANGUAGES.get(code, {}).get("name", code)
+
+
 class ASRConfig(BaseModel):
     """WhisperX ASR settings."""
     model_size: str = "small"
@@ -24,7 +60,7 @@ class ASRConfig(BaseModel):
 
 class TranslatorConfig(BaseModel):
     """Multi-provider LLM translator settings."""
-    # Active provider: "ollama", "lmstudio", or "openai"
+    # Active provider: "ollama", "lmstudio", "openai", or "claude"
     provider: str = "lmstudio"
 
     # Ollama
@@ -34,12 +70,16 @@ class TranslatorConfig(BaseModel):
     # LM Studio (OpenAI-compatible API)
     lmstudio_url: str = "http://localhost:1234"
     lmstudio_model: str = ""  # auto-detected from /v1/models
-    lmstudio_executable: str = "C:/Program Files/LM Studio/LM Studio.exe"
+    lmstudio_executable: str = "lms"  # override via LMSTUDIO_EXECUTABLE; Windows-only feature
     lmstudio_model_paths: list[str] = []  # full GGUF paths to load on startup
 
     # OpenAI
     openai_api_key: str = ""
     openai_model: str = "gpt-5-nano"
+
+    # Claude (Anthropic)
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-sonnet-4-6"
 
     # Shared
     temperature: float = 0.3
@@ -61,6 +101,8 @@ class TranslatorConfig(BaseModel):
             return self.lmstudio_model
         elif self.provider == "openai":
             return self.openai_model
+        elif self.provider == "claude":
+            return self.anthropic_model
         return self.ollama_model
 
 
@@ -80,6 +122,7 @@ class AudioConfig(BaseModel):
     min_speech_ms: int = 200  # minimum speech length to process
     max_segment_seconds: float = 30.0  # max segment before forced split
     buffer_max_seconds: float = 60.0  # ring buffer size
+    calibration_duration_ms: int = 2000  # noise floor calibration period on session start
 
 
 class SessionConfig(BaseModel):
@@ -89,6 +132,14 @@ class SessionConfig(BaseModel):
     tts_enabled: bool = False
     save_audio_clips: bool = False
     vocab_sensitivity: str = "normal"  # or "high" for classroom
+
+
+class TTSConfig(BaseModel):
+    """Piper TTS settings (CPU-based, no VRAM cost)."""
+    enabled: bool = False
+    voice_es: str = "es_ES-carlfm-x_low"
+    voice_en: str = "en_US-lessac-medium"
+    models_dir: Path = Path("data/tts_models")
 
 
 class RecordingConfig(BaseModel):
@@ -119,6 +170,7 @@ class AppConfig(BaseModel):
     diarization: DiarizationConfig = DiarizationConfig()
     audio: AudioConfig = AudioConfig()
     session: SessionConfig = SessionConfig()
+    tts: TTSConfig = TTSConfig()
     recording: RecordingConfig = RecordingConfig()
     websocket: WebSocketConfig = WebSocketConfig()
 
@@ -146,10 +198,14 @@ def load_config() -> AppConfig:
         config.translator.openai_api_key = key
     if model := os.getenv("OPENAI_MODEL"):
         config.translator.openai_model = model
+    if key := os.getenv("ANTHROPIC_API_KEY"):
+        config.translator.anthropic_api_key = key
+    if model := os.getenv("ANTHROPIC_MODEL"):
+        config.translator.anthropic_model = model
     if model := os.getenv("QUICK_MODEL"):
         config.translator.quick_model = model
     if provider := os.getenv("LLM_PROVIDER"):
-        if provider in ("ollama", "lmstudio", "openai"):
+        if provider in ("ollama", "lmstudio", "openai", "claude"):
             config.translator.provider = provider
     if size := os.getenv("WHISPER_MODEL"):
         config.asr.model_size = size
@@ -169,6 +225,26 @@ def load_config() -> AppConfig:
         config.websocket.ping_interval_seconds = float(ping)
     if missed := os.getenv("WS_MISSED_PINGS"):
         config.websocket.missed_pings_threshold = int(missed)
+    if os.getenv("TTS_ENABLED", "").lower() in ("1", "true", "yes", "on"):
+        config.tts.enabled = True
+    if voice := os.getenv("TTS_VOICE_ES"):
+        config.tts.voice_es = voice
+    if voice := os.getenv("TTS_VOICE_EN"):
+        config.tts.voice_en = voice
+    if tts_dir := os.getenv("TTS_MODELS_DIR"):
+        config.tts.models_dir = Path(tts_dir)
+
+    # VAD / Audio segmentation overrides
+    if val := os.getenv("VAD_SILENCE_MS"):
+        config.audio.vad_silence_ms = int(val)
+    if val := os.getenv("MIN_SPEECH_MS"):
+        config.audio.min_speech_ms = int(val)
+    if val := os.getenv("MAX_SEGMENT_SECONDS"):
+        config.audio.max_segment_seconds = float(val)
+    if val := os.getenv("VAD_THRESHOLD"):
+        config.asr.vad_threshold = float(val)
+    if val := os.getenv("CALIBRATION_DURATION_MS"):
+        config.audio.calibration_duration_ms = int(val)
 
     # Validate critical config
     if not config.diarization.hf_token:
@@ -184,7 +260,13 @@ def load_config() -> AppConfig:
     # Ensure data directories exist
     config.data_dir.mkdir(parents=True, exist_ok=True)
     (config.data_dir / "audio").mkdir(exist_ok=True)
+    config.db_path.parent.mkdir(parents=True, exist_ok=True)
     if config.recording.enabled:
         config.recording.output_dir.mkdir(parents=True, exist_ok=True)
+
+    import logging
+    logging.getLogger("habla.config").info(
+        "Database path: %s", config.db_path.resolve()
+    )
 
     return config

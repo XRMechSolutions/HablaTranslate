@@ -26,15 +26,16 @@ async def system_status():
 
     return {
         "status": "ready" if _state._pipeline.ready else "loading",
-        "direction": _state._pipeline.direction,
-        "mode": _state._pipeline.mode,
+        "direction": _state._pipeline.context_manager.direction,
+        "mode": _state._pipeline.context_manager.mode,
         "asr_auto_language": _state._pipeline.config.asr.auto_language,
-        "speakers": [s.model_dump() for s in _state._pipeline.speaker_tracker.get_all()],
-        "topic_summary": _state._pipeline.topic_summary,
-        "idiom_patterns_loaded": _state._pipeline.idiom_scanner.count,
+        "detected_language": _state._pipeline.audio_processor._last_detected_language,
+        "speakers": [s.model_dump() for s in _state._pipeline.context_manager.speaker_tracker.get_all()],
+        "topic_summary": _state._pipeline.context_manager.topic_summary,
+        "idiom_patterns_loaded": _state._pipeline.context_manager.idiom_scanner.count,
         "queue_depth": _state._pipeline._queue.qsize(),
-        "llm_provider": _state._pipeline.translator.config.provider,
-        "llm_model": _state._pipeline.translator.config.model,
+        "llm_provider": _state._pipeline.context_manager.translator.config.provider,
+        "llm_model": _state._pipeline.context_manager.translator.config.model,
         "recording_enabled": app_config.recording.enabled if app_config else False,
         "lmstudio_running": (await _state._lmstudio_manager.is_running()) if _state._lmstudio_manager else False,
         "lmstudio_models": _state._lmstudio_manager.get_loaded_models() if _state._lmstudio_manager else [],
@@ -53,10 +54,17 @@ async def set_direction(req: DirectionRequest):
     """
     if not _state._pipeline:
         raise HTTPException(503, "Pipeline not initialized")
-    if req.direction not in ("es_to_en", "en_to_es"):
-        raise HTTPException(400, "Direction must be 'es_to_en' or 'en_to_es'")
+    if req.direction not in ("es_to_en", "en_to_es", "auto"):
+        raise HTTPException(400, "Direction must be 'es_to_en', 'en_to_es', or 'auto'")
     _state._pipeline.set_direction(req.direction)
     return {"direction": req.direction}
+
+
+@system_router.get("/languages")
+async def list_languages():
+    """Return supported languages for the client."""
+    from server.config import LANGUAGES, DEFAULT_TARGET_LANG
+    return {"languages": LANGUAGES, "default_target": DEFAULT_TARGET_LANG}
 
 
 class ModeRequest(BaseModel):
@@ -107,9 +115,9 @@ async def rename_speaker(speaker_id: str, req: RenameRequest):
     """
     if not _state._pipeline:
         raise HTTPException(503, "Pipeline not initialized")
-    result = _state._pipeline.speaker_tracker.rename(speaker_id, req.name)
+    result = _state._pipeline.context_manager.speaker_tracker.rename(speaker_id, req.name)
     if req.role:
-        _state._pipeline.speaker_tracker.set_role_hint(speaker_id, req.role)
+        _state._pipeline.context_manager.speaker_tracker.set_role_hint(speaker_id, req.role)
     if not result:
         raise HTTPException(404, "Speaker not found")
     return result.model_dump()
@@ -208,7 +216,7 @@ async def system_metrics():
 
     # Pipeline in-memory metrics
     pipeline_metrics = pipeline.metrics
-    translator_metrics = pipeline.translator.metrics
+    translator_metrics = pipeline.context_manager.translator.metrics
 
     # Compute translator avg latency
     avg_latency = 0.0
@@ -230,7 +238,7 @@ async def system_metrics():
         "idioms": {
             "pattern_db_hits": pipeline_metrics.get("idiom_pattern_db_hits", 0),
             "llm_hits": pipeline_metrics.get("idiom_llm_hits", 0),
-            "patterns_loaded": pipeline.idiom_scanner.count,
+            "patterns_loaded": pipeline.context_manager.idiom_scanner.count,
         },
         "pipeline": {
             "segments_processed": pipeline_metrics.get("segments_processed", 0),

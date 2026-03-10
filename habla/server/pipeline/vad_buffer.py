@@ -37,6 +37,8 @@ class VADConfig:
     frame_ms: int = 30
     # Padding: include this much audio before speech onset
     pre_speech_padding_ms: int = 300
+    # Noise floor calibration period at session start (ms)
+    calibration_duration_ms: int = 2000
 
 
 class StreamingVADBuffer:
@@ -98,6 +100,17 @@ class StreamingVADBuffer:
         self._frames_since_partial = 0
         self.on_partial_audio: Callable[[bytes, float], Awaitable[None]] | None = None
 
+        # Noise floor calibration state
+        self._calibrating = self.config.calibration_duration_ms > 0
+        self._calibration_frames_needed = max(
+            1, self.config.calibration_duration_ms // self.config.frame_ms
+        ) if self._calibrating else 0
+        self._calibration_frame_count = 0
+        self._calibration_energy_sum = 0.0
+        self._noise_floor_rms = 500.0  # fallback until calibrated
+        self._energy_threshold = 500.0  # dynamic, updated after calibration
+        self.on_calibration_complete: Callable[[float], Awaitable[None]] | None = None
+
         # Stats
         self.segments_emitted = 0
         self.total_speech_seconds = 0.0
@@ -131,8 +144,8 @@ class StreamingVADBuffer:
         else:
             # Fallback: simple energy-based detection
             energy = np.sqrt(np.mean(pcm_frame.astype(np.float32) ** 2))
-            prob = min(1.0, energy / 1000.0)  # rough normalized probability
-            return energy > 500, prob
+            prob = min(1.0, energy / (self._energy_threshold * 2.0))
+            return energy > self._energy_threshold, prob
 
     async def feed_pcm(self, pcm_bytes: bytes):
         """
@@ -159,6 +172,26 @@ class StreamingVADBuffer:
                 else:
                     frame = np.pad(frame, (0, self._frame_size - frame.shape[0]), mode="constant")
                 frame_bytes = frame.astype(np.int16).tobytes()
+
+            # Calibration gate — accumulate ambient energy before running VAD
+            if self._calibrating:
+                energy = np.sqrt(np.mean(frame.astype(np.float32) ** 2))
+                self._calibration_energy_sum += energy
+                self._calibration_frame_count += 1
+                # Buffer frames for pre-speech ring during calibration
+                self._pre_speech_ring.append(frame_bytes)
+                if self._calibration_frame_count >= self._calibration_frames_needed:
+                    self._calibrating = False
+                    self._noise_floor_rms = self._calibration_energy_sum / self._calibration_frame_count
+                    self._energy_threshold = max(300.0, self._noise_floor_rms * 3.0)
+                    logger.info(
+                        f"Noise floor calibrated: RMS={self._noise_floor_rms:.0f}, "
+                        f"threshold={self._energy_threshold:.0f} "
+                        f"({self._calibration_frame_count} frames)"
+                    )
+                    if self.on_calibration_complete:
+                        await self.on_calibration_complete(self._noise_floor_rms)
+                continue
 
             # Run VAD
             is_speech, frame_prob = self._is_speech_frame(frame)
@@ -271,6 +304,10 @@ class StreamingVADBuffer:
         self._is_speaking = False
         self._silence_frames = 0
         self._speech_frames = 0
+        # Re-enable calibration for new session
+        self._calibrating = self.config.calibration_duration_ms > 0
+        self._calibration_frame_count = 0
+        self._calibration_energy_sum = 0.0
 
 
 class AudioDecoder:

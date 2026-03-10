@@ -89,33 +89,36 @@ def mock_pipeline():
     """Mock PipelineOrchestrator with common attributes."""
     p = MagicMock()
     p.ready = True
-    p.direction = "es_to_en"
-    p.mode = "conversation"
-    p.topic_summary = "General conversation"
+    p.context_manager.direction = "es_to_en"
+    p.context_manager.mode = "conversation"
+    p.context_manager.topic_summary = "General conversation"
     p.config.asr.auto_language = True
+    p.audio_processor._last_detected_language = None
     p._queue.qsize.return_value = 0
 
     # Speaker tracker
-    p.speaker_tracker.get_all.return_value = []
-    p.speaker_tracker.rename.return_value = MagicMock(
+    p.context_manager.speaker_tracker.get_all.return_value = []
+    p.context_manager.speaker_tracker.rename.return_value = MagicMock(
         model_dump=MagicMock(return_value={"id": "SPEAKER_00", "label": "Speaker A", "custom_name": "Carlos"})
     )
 
     # Idiom scanner
-    p.idiom_scanner.count = 42
-    p.idiom_scanner.patterns = []
+    p.context_manager.idiom_scanner.count = 42
+    p.context_manager.idiom_scanner.patterns = []
 
     # Translator
-    p.translator.config.provider = "ollama"
-    p.translator.config.model = "qwen3:4b"
-    p.translator.config.quick_model = ""
-    p.translator.config.ollama_url = "http://localhost:11434"
-    p.translator.config.lmstudio_url = "http://localhost:1234"
-    p.translator.config.openai_api_key = ""
-    p.translator.config.openai_model = "gpt-5-nano"
-    p.translator.metrics = {"translations": 0}
-    p.translator.costs = {"total": 0.0}
-    p.translator.switch_provider = MagicMock()
+    p.context_manager.translator.config.provider = "ollama"
+    p.context_manager.translator.config.model = "qwen3:4b"
+    p.context_manager.translator.config.quick_model = ""
+    p.context_manager.translator.config.ollama_url = "http://localhost:11434"
+    p.context_manager.translator.config.lmstudio_url = "http://localhost:1234"
+    p.context_manager.translator.config.openai_api_key = ""
+    p.context_manager.translator.config.openai_model = "gpt-5-nano"
+    p.context_manager.translator.config.anthropic_api_key = ""
+    p.context_manager.translator.config.anthropic_model = "claude-sonnet-4-6"
+    p.context_manager.translator.metrics = {"translations": 0}
+    p.context_manager.translator.costs = {"total": 0.0}
+    p.context_manager.translator.switch_provider = MagicMock()
 
     p.set_direction = MagicMock()
     p.set_mode = MagicMock()
@@ -485,12 +488,12 @@ class TestSystemRoutes:
         assert resp.status_code == 200
         body = resp.json()
         assert body["custom_name"] == "Carlos"
-        _set_pipeline.speaker_tracker.rename.assert_called_once_with("SPEAKER_00", "Carlos")
-        _set_pipeline.speaker_tracker.set_role_hint.assert_called_once_with("SPEAKER_00", "student")
+        _set_pipeline.context_manager.speaker_tracker.rename.assert_called_once_with("SPEAKER_00", "Carlos")
+        _set_pipeline.context_manager.speaker_tracker.set_role_hint.assert_called_once_with("SPEAKER_00", "student")
 
     async def test_rename_speaker_not_found_returns_404(self, client, _set_pipeline):
         """PUT /api/system/speakers/{id} returns 404 when speaker unknown."""
-        _set_pipeline.speaker_tracker.rename.return_value = None
+        _set_pipeline.context_manager.speaker_tracker.rename.return_value = None
 
         resp = await client.put(
             "/api/system/speakers/SPEAKER_99",
@@ -624,7 +627,19 @@ class TestSessionRoutes:
 
     async def test_delete_session_success_returns_deleted(self, client, mock_db):
         """DELETE /api/sessions/1 deletes session and related data."""
-        mock_db.execute_fetchall.return_value = [{"id": 1}]
+        call_count = 0
+
+        async def multi_fetchall(sql, params=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Session exists check
+                return [{"id": 1}]
+            else:
+                # Recording dir lookup (no recording)
+                return [{"recording_dir": None}]
+
+        mock_db.execute_fetchall = multi_fetchall
 
         resp = await client.delete("/api/sessions/1")
 
@@ -632,8 +647,8 @@ class TestSessionRoutes:
         body = resp.json()
         assert body["deleted"] is True
         assert body["session_id"] == 1
-        # Should delete from quality_metrics, exchanges, speakers, sessions
-        assert mock_db.execute.await_count == 4
+        # Should delete from quality_metrics, vocab, exchanges, speakers, sessions
+        assert mock_db.execute.await_count == 5
         mock_db.commit.assert_awaited_once()
 
     async def test_delete_session_not_found_returns_404(self, client, mock_db):
@@ -728,6 +743,118 @@ class TestSessionRoutes:
 
 
 # ---------------------------------------------------------------------------
+# TestSessionRecordingInfo
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestSessionRecordingInfo:
+    """Tests for recording_dir/has_recording in session API responses."""
+
+    async def test_list_sessions_has_recording_true(self, client, mock_db):
+        """Sessions with recording_dir show has_recording=True."""
+        mock_db.execute_fetchall.return_value = [
+            {"id": 1, "started_at": "2026-03-02", "exchange_count": 3,
+             "recording_dir": "12345_20260302_120000"},
+        ]
+
+        resp = await client.get("/api/sessions")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data[0]["has_recording"] is True
+        assert data[0]["recording_dir"] == "12345_20260302_120000"
+
+    async def test_list_sessions_has_recording_false(self, client, mock_db):
+        """Sessions without recording_dir show has_recording=False."""
+        mock_db.execute_fetchall.return_value = [
+            {"id": 2, "started_at": "2026-03-02", "exchange_count": 1,
+             "recording_dir": None},
+        ]
+
+        resp = await client.get("/api/sessions")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data[0]["has_recording"] is False
+
+    async def test_get_session_has_recording(self, client, mock_db):
+        """GET /api/sessions/1 includes has_recording when recording_dir set."""
+        call_count = 0
+
+        async def multi_fetchall(sql, params=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return [{"id": 1, "started_at": "2026-03-02", "notes": "",
+                         "recording_dir": "99999_20260302"}]
+            elif call_count == 2:
+                return []  # speakers
+            else:
+                return [{"c": 0}]  # exchange count
+
+        mock_db.execute_fetchall = multi_fetchall
+
+        resp = await client.get("/api/sessions/1")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["has_recording"] is True
+        assert body["recording_dir"] == "99999_20260302"
+
+    async def test_search_sessions_has_recording(self, client, mock_db):
+        """Search results include has_recording boolean."""
+        call_count = 0
+
+        async def multi_fetchall(sql, params=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return [{"id": 1, "started_at": "2026-03-02", "notes": "",
+                         "topic_summary": "", "direction": "es_to_en",
+                         "mode": "conversation", "speaker_count": 1,
+                         "exchange_count": 2, "recording_dir": "abc_123"}]
+            else:
+                return [{"raw_transcript": "hola", "corrected_source": "hola",
+                         "translation": "hello", "speaker_id": "SPK_00",
+                         "timestamp": "2026-03-02 10:00:00"}]
+
+        mock_db.execute_fetchall = multi_fetchall
+
+        resp = await client.get("/api/sessions/search?q=hola")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data[0]["has_recording"] is True
+
+    async def test_delete_session_cleans_recording_dir(self, client, mock_db, tmp_path):
+        """DELETE /api/sessions/1 removes linked recording directory."""
+        recordings_base = tmp_path / "recordings"
+        recordings_base.mkdir()
+        rec_dir = recordings_base / "test_rec"
+        rec_dir.mkdir()
+        (rec_dir / "raw.webm").write_bytes(b"fake")
+
+        call_count = 0
+
+        async def multi_fetchall(sql, params=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return [{"id": 1}]
+            else:
+                return [{"recording_dir": "test_rec"}]
+
+        mock_db.execute_fetchall = multi_fetchall
+
+        with patch("server.routes.api_sessions.get_recordings_dir", return_value=recordings_base):
+            resp = await client.delete("/api/sessions/1")
+
+        assert resp.status_code == 200
+        assert resp.json()["deleted"] is True
+        assert not rec_dir.exists(), "Recording directory should have been cleaned up"
+
+
+# ---------------------------------------------------------------------------
 # TestIdiomRoutes
 # ---------------------------------------------------------------------------
 
@@ -786,7 +913,7 @@ class TestIdiomRoutes:
 
         pattern_mock = MagicMock()
         pattern_mock.canonical = "tomar el pelo"
-        _set_pipeline.idiom_scanner.patterns = [pattern_mock]
+        _set_pipeline.context_manager.idiom_scanner.patterns = [pattern_mock]
 
         resp = await client.post("/api/idioms", json={
             "phrase": "tomar el pelo",
@@ -894,7 +1021,7 @@ class TestLLMRoutes:
         })
 
         assert resp.status_code == 400
-        assert "ollama" in resp.json()["detail"]
+        assert "claude" in resp.json()["detail"]
 
     async def test_llm_select_no_pipeline_returns_503(self, client):
         """POST /api/llm/select without pipeline returns 503."""
@@ -909,7 +1036,7 @@ class TestLLMRoutes:
 
     async def test_llm_select_openai_no_key_returns_400(self, client, _set_pipeline):
         """POST /api/llm/select for openai without API key returns 400."""
-        _set_pipeline.translator.config.openai_api_key = ""
+        _set_pipeline.context_manager.translator.config.openai_api_key = ""
 
         resp = await client.post("/api/llm/select", json={
             "provider": "openai", "model": "gpt-5-nano",
@@ -925,7 +1052,7 @@ class TestLLMRoutes:
         })
 
         assert resp.status_code == 200
-        _set_pipeline.translator.switch_provider.assert_called_once()
+        _set_pipeline.context_manager.translator.switch_provider.assert_called_once()
 
     async def test_llm_models_no_pipeline_returns_503(self, client):
         """GET /api/llm/models?provider=ollama without pipeline returns 503."""
@@ -943,20 +1070,20 @@ class TestLLMRoutes:
 
     async def test_llm_models_openai_no_key_returns_400(self, client, _set_pipeline):
         """GET /api/llm/models?provider=openai without key returns 400."""
-        _set_pipeline.translator.config.openai_api_key = ""
+        _set_pipeline.context_manager.translator.config.openai_api_key = ""
 
         resp = await client.get("/api/llm/models?provider=openai")
         assert resp.status_code == 400
 
     async def test_llm_models_openai_with_key_returns_list(self, client, _set_pipeline):
         """GET /api/llm/models?provider=openai with key returns model list."""
-        _set_pipeline.translator.config.openai_api_key = "sk-test"
+        _set_pipeline.context_manager.translator.config.openai_api_key = "sk-test"
 
         resp = await client.get("/api/llm/models?provider=openai")
 
         assert resp.status_code == 200
         models = resp.json()["models"]
-        assert "gpt-5-nano" in models
+        assert "gpt-5.2" in models
 
     async def test_llm_costs_not_initialized_returns_null(self, client):
         """GET /api/llm/costs without pipeline returns costs: null."""
@@ -975,6 +1102,149 @@ class TestLLMRoutes:
         assert resp.status_code == 200
         body = resp.json()
         assert body["cost_tracking"] == "Free (local)"
+
+    async def test_llm_select_claude_no_key_returns_400(self, client, _set_pipeline):
+        """POST /api/llm/select for claude without API key returns 400."""
+        _set_pipeline.context_manager.translator.config.anthropic_api_key = ""
+
+        resp = await client.post("/api/llm/select", json={
+            "provider": "claude", "model": "claude-sonnet-4-6",
+        })
+
+        assert resp.status_code == 400
+        assert "ANTHROPIC_API_KEY" in resp.json()["detail"]
+
+    async def test_llm_models_claude_no_key_returns_400(self, client, _set_pipeline):
+        """GET /api/llm/models?provider=claude without key returns 400."""
+        _set_pipeline.context_manager.translator.config.anthropic_api_key = ""
+
+        resp = await client.get("/api/llm/models?provider=claude")
+        assert resp.status_code == 400
+
+    async def test_llm_models_claude_with_key_returns_list(self, client, _set_pipeline):
+        """GET /api/llm/models?provider=claude with key returns model list."""
+        _set_pipeline.context_manager.translator.config.anthropic_api_key = "sk-ant-test"
+
+        resp = await client.get("/api/llm/models?provider=claude")
+
+        assert resp.status_code == 200
+        models = resp.json()["models"]
+        assert "claude-sonnet-4-6" in models
+
+
+# ---------------------------------------------------------------------------
+# TestApiKeyRoutes
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestApiKeyRoutes:
+    """Tests for /api/llm/apikey, /api/llm/apikeys, /api/llm/pricing endpoints."""
+
+    async def test_get_apikeys_no_pipeline_returns_empty(self, client):
+        """GET /api/llm/apikeys without pipeline returns unconfigured state."""
+        set_pipeline(None)
+        try:
+            resp = await client.get("/api/llm/apikeys")
+            assert resp.status_code == 200
+            keys = resp.json()["keys"]
+            assert keys["openai"]["configured"] is False
+            assert keys["claude"]["configured"] is False
+        finally:
+            set_pipeline(None)
+
+    async def test_get_apikeys_with_key_returns_masked(self, client, _set_pipeline):
+        """GET /api/llm/apikeys with a configured key shows last 4 chars."""
+        _set_pipeline.context_manager.translator.config.openai_api_key = "sk-test-key-1234abcd"
+
+        resp = await client.get("/api/llm/apikeys")
+
+        assert resp.status_code == 200
+        openai_info = resp.json()["keys"]["openai"]
+        assert openai_info["configured"] is True
+        assert openai_info["masked_key"].endswith("abcd")
+        assert "sk-test" not in openai_info["masked_key"]
+
+    async def test_set_apikey_invalid_provider_returns_400(self, client, _set_pipeline):
+        """POST /api/llm/apikey with 'ollama' returns 400."""
+        resp = await client.post("/api/llm/apikey", json={
+            "provider": "ollama", "api_key": "sk-test",
+        })
+        assert resp.status_code == 400
+
+    async def test_set_apikey_no_pipeline_returns_503(self, client):
+        """POST /api/llm/apikey without pipeline returns 503."""
+        set_pipeline(None)
+        try:
+            resp = await client.post("/api/llm/apikey", json={
+                "provider": "openai", "api_key": "sk-test",
+            })
+            assert resp.status_code == 503
+        finally:
+            set_pipeline(None)
+
+    async def test_remove_apikey_clears_config(self, client, _set_pipeline):
+        """POST /api/llm/apikey with empty key removes stored key."""
+        _set_pipeline.context_manager.translator.config.openai_api_key = "sk-existing"
+
+        resp = await client.post("/api/llm/apikey", json={
+            "provider": "openai", "api_key": "",
+        })
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "removed"
+        assert _set_pipeline.context_manager.translator.config.openai_api_key == ""
+
+    @patch("server.routes.api_llm._validate_api_key", new_callable=AsyncMock)
+    async def test_set_apikey_valid_key_stores_and_masks(self, mock_validate, client, _set_pipeline):
+        """POST /api/llm/apikey with valid key stores it and returns masked."""
+        mock_validate.return_value = (True, "")
+
+        resp = await client.post("/api/llm/apikey", json={
+            "provider": "openai", "api_key": "sk-proj-new-key-5678",
+        })
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "ok"
+        assert body["masked_key"].endswith("5678")
+        assert _set_pipeline.context_manager.translator.config.openai_api_key == "sk-proj-new-key-5678"
+
+    @patch("server.routes.api_llm._validate_api_key", new_callable=AsyncMock)
+    async def test_set_apikey_invalid_key_returns_400(self, mock_validate, client, _set_pipeline):
+        """POST /api/llm/apikey with invalid key returns 400."""
+        mock_validate.return_value = (False, "Invalid API key")
+
+        resp = await client.post("/api/llm/apikey", json={
+            "provider": "openai", "api_key": "bad-key",
+        })
+
+        assert resp.status_code == 400
+        assert "Invalid API key" in resp.json()["detail"]
+
+    @patch("server.routes.api_llm._validate_api_key", new_callable=AsyncMock)
+    async def test_set_claude_apikey_stores_correctly(self, mock_validate, client, _set_pipeline):
+        """POST /api/llm/apikey for claude stores in anthropic_api_key."""
+        mock_validate.return_value = (True, "")
+
+        resp = await client.post("/api/llm/apikey", json={
+            "provider": "claude", "api_key": "sk-ant-api03-testkey",
+        })
+
+        assert resp.status_code == 200
+        assert _set_pipeline.context_manager.translator.config.anthropic_api_key == "sk-ant-api03-testkey"
+
+    async def test_pricing_endpoint_returns_tiers(self, client):
+        """GET /api/llm/pricing returns tier labels matching pricing tables."""
+        resp = await client.get("/api/llm/pricing")
+
+        assert resp.status_code == 200
+        pricing = resp.json()["pricing"]
+        # gpt-5-nano: output $0.40 => "$"
+        assert pricing["gpt-5-nano"]["tier"] == "$"
+        # gpt-5: output $10.00 => "$$"
+        assert pricing["gpt-5"]["tier"] == "$$"
+        # claude-opus-4-6: output $25.00 => "$$$"
+        assert pricing["claude-opus-4-6"]["tier"] == "$$$"
 
 
 # ---------------------------------------------------------------------------

@@ -11,6 +11,7 @@ Respects RecordingConfig settings for what to save and where.
 import asyncio
 import json
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -143,26 +144,42 @@ class AudioRecorder:
 
         logger.info(f"Recording stopped: {self.segment_counter} segments saved")
 
+    # Matches session dirs created by AudioRecorder: {session_id}_{YYYYMMDD_HHMMSS}
+    _SESSION_DIR_RE = re.compile(r"^.+_\d{8}_\d{6}$")
+
     def _cleanup_old_recordings(self):
-        """Remove old recordings if exceeding max_recordings limit."""
+        """Remove old recordings if exceeding max_recordings limit.
+
+        Only deletes directories whose names match the recorder's session
+        format ({session_id}_{YYYYMMDD_HHMMSS}). Skips files and
+        directories with unrecognized names.
+        """
         if not self.config.max_recordings:
             return
 
         try:
-            # Get all session directories sorted by creation time
-            sessions = sorted(
-                self.config.output_dir.glob("*_*"),
-                key=lambda p: p.stat().st_ctime
-            )
+            # Only consider directories matching the recorder's naming convention
+            candidates = [
+                p for p in self.config.output_dir.iterdir()
+                if p.is_dir() and self._SESSION_DIR_RE.match(p.name)
+            ]
+            sessions = sorted(candidates, key=lambda p: p.stat().st_ctime)
 
             # Remove oldest sessions if over limit
+            removed = 0
             while len(sessions) > self.config.max_recordings:
                 oldest = sessions.pop(0)
                 logger.info(f"Removing old recording: {oldest.name}")
-                # Remove all files in directory
                 for file in oldest.glob("*"):
                     file.unlink()
                 oldest.rmdir()
+                removed += 1
+
+            if removed:
+                logger.info(
+                    f"Retention cleanup: removed {removed}, "
+                    f"{len(sessions)} remaining"
+                )
 
         except Exception as e:
             logger.error(f"Failed to cleanup old recordings: {e}")

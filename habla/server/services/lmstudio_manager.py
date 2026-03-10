@@ -376,16 +376,17 @@ class LMStudioManager:
     # --- Strategy 1: lms CLI ------------------------------------------------
 
     def _get_lms_exe(self) -> str:
-        """Locate lms.exe: ~/.cache/lm-studio/bin -> ~/.lmstudio/bin -> PATH."""
+        """Locate the lms CLI: ~/.cache/lm-studio/bin -> ~/.lmstudio/bin -> PATH."""
+        exe_name = "lms.exe" if platform.system() == "Windows" else "lms"
         home = Path.home()
         candidates = [
-            home / ".cache" / "lm-studio" / "bin" / "lms.exe",
-            home / ".lmstudio" / "bin" / "lms.exe",
+            home / ".cache" / "lm-studio" / "bin" / exe_name,
+            home / ".lmstudio" / "bin" / exe_name,
         ]
         for candidate in candidates:
             if candidate.exists():
                 return str(candidate)
-        return "lms"  # hope it's on PATH
+        return exe_name  # fall through to PATH
 
     def _find_model_key(self, path: str) -> str:
         """

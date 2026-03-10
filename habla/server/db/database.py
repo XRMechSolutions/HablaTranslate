@@ -226,6 +226,24 @@ async def _create_tables(db: aiosqlite.Connection):
         except Exception:
             pass  # Column already exists
 
+    # Add detected_language to exchanges (migration for existing DBs)
+    try:
+        await db.execute("ALTER TABLE exchanges ADD COLUMN detected_language TEXT")
+    except Exception:
+        pass  # Column already exists
+
+    # Link recording directory to session (migration for existing DBs)
+    try:
+        await db.execute("ALTER TABLE sessions ADD COLUMN recording_dir TEXT")
+    except Exception:
+        pass  # Column already exists
+
+    # Post-session LLM study summary (migration for existing DBs)
+    try:
+        await db.execute("ALTER TABLE sessions ADD COLUMN study_summary TEXT")
+    except Exception:
+        pass  # Column already exists
+
     # Indexes
     await db.execute("""
         CREATE INDEX IF NOT EXISTS idx_exchanges_session

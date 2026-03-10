@@ -45,15 +45,16 @@ def mock_websocket():
 def mock_pipeline():
     p = MagicMock()
     p.ready = True
-    p.session_id = 1
-    p.direction = "es_to_en"
-    p.mode = "conversation"
-    p.speaker_tracker = MagicMock()
-    p.speaker_tracker.speakers = {}
-    p.speaker_tracker.get_all.return_value = []
-    p.speaker_tracker.rename = MagicMock()
+    p.context_manager.session_id = 1
+    p.context_manager.direction = "es_to_en"
+    p.context_manager.mode = "conversation"
+    p.context_manager.speaker_tracker = MagicMock()
+    p.context_manager.speaker_tracker.speakers = {}
+    p.context_manager.speaker_tracker.get_all.return_value = []
+    p.context_manager.speaker_tracker.rename = MagicMock()
     p.create_session = AsyncMock(return_value=1)
     p.close_session = AsyncMock()
+    p.generate_study_summary = AsyncMock(return_value=None)
     p.reset_session = AsyncMock(return_value=2)
     p.process_wav = AsyncMock(return_value=None)
     p.process_text = AsyncMock()
@@ -62,6 +63,18 @@ def mock_pipeline():
     p.set_mode = MagicMock()
     p.set_callbacks = MagicMock()
     p.reset_partial_state = MagicMock()
+    # Provide integer values so ClientSession.__init__ can construct StreamingVADBuffer
+    audio_cfg = MagicMock()
+    audio_cfg.sample_rate = 16000
+    audio_cfg.vad_silence_ms = 600
+    audio_cfg.min_speech_ms = 400
+    audio_cfg.max_segment_seconds = 30.0
+    audio_cfg.calibration_duration_ms = 2000
+    asr_cfg = MagicMock()
+    asr_cfg.vad_threshold = 0.35
+    asr_cfg.auto_language = False
+    p.config.audio = audio_cfg
+    p.config.asr = asr_cfg
     return p
 
 
@@ -432,7 +445,7 @@ class TestSegmentMerging:
         session._pending_duration = 1.5
         with patch.object(session, "_process_segment", new_callable=AsyncMock) as mock_proc:
             await session._flush_pending_now()
-            mock_proc.assert_awaited_once_with(b"\xAA\xBB", 1.5)
+            mock_proc.assert_awaited_once_with(b"\xAA\xBB", 1.5, 0.0, 0.0)
             assert len(session._pending_pcm) == 0
             assert session._pending_duration == 0.0
 
@@ -477,7 +490,7 @@ class TestOnSpeechSegment:
     async def test_on_speech_segment_queues_segment(self, session):
         with patch.object(session, "_queue_segment", new_callable=AsyncMock) as mock_q:
             await session._on_speech_segment(b"\x01\x02", 1.0)
-            mock_q.assert_awaited_once_with(b"\x01\x02", 1.0)
+            mock_q.assert_awaited_once_with(b"\x01\x02", 1.0, 0.0, 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -755,6 +768,105 @@ class TestRecordingToggle:
         session.recorder = None
         await session.disable_recording()
         mock_websocket.send_text.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# _link_recording_to_session
+# ---------------------------------------------------------------------------
+
+class TestLinkRecordingToSession:
+    """Tests for _link_recording_to_session DB linkage."""
+
+    @pytest.mark.asyncio
+    async def test_link_recording_writes_to_db(self, session, mock_pipeline):
+        """_link_recording_to_session UPDATEs sessions table with recording dir name."""
+        mock_pipeline.context_manager.session_id = 42
+        recorder = MagicMock()
+        recorder.session_dir = MagicMock()
+        recorder.session_dir.name = "12345_20260302_120000"
+        session.recorder = recorder
+
+        mock_db = AsyncMock()
+        with patch("server.routes.websocket.get_db", new=AsyncMock(return_value=mock_db)):
+            await session._link_recording_to_session()
+
+        mock_db.execute.assert_awaited_once()
+        call_args = mock_db.execute.call_args
+        assert "UPDATE sessions SET recording_dir" in call_args[0][0]
+        assert call_args[0][1] == ("12345_20260302_120000", 42)
+        mock_db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_link_recording_skips_without_recorder(self, session, mock_pipeline):
+        """_link_recording_to_session is a no-op when recorder is None."""
+        mock_pipeline.context_manager.session_id = 42
+        session.recorder = None
+
+        mock_db = AsyncMock()
+        with patch("server.routes.websocket.get_db", new=AsyncMock(return_value=mock_db)):
+            await session._link_recording_to_session()
+
+        mock_db.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_link_recording_skips_without_session_id(self, session, mock_pipeline):
+        """_link_recording_to_session is a no-op when session_id is None."""
+        mock_pipeline.context_manager.session_id = None
+        session.recorder = MagicMock()
+
+        mock_db = AsyncMock()
+        with patch("server.routes.websocket.get_db", new=AsyncMock(return_value=mock_db)):
+            await session._link_recording_to_session()
+
+        mock_db.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_start_listening_links_recording(self, session, mock_pipeline, mock_recording_config):
+        """start_listening calls _link_recording_to_session when recording starts."""
+        old = ws_mod._recording_config
+        try:
+            ws_mod._recording_config = mock_recording_config
+            mock_pipeline.context_manager.session_id = 7
+
+            with patch("server.routes.websocket.AudioRecorder") as MockRecorder:
+                recorder_inst = MagicMock()
+                recorder_inst.session_dir = MagicMock()
+                recorder_inst.session_dir.name = "test_session_dir"
+                MockRecorder.return_value = recorder_inst
+
+                mock_db = AsyncMock()
+                with patch("server.routes.websocket.get_db", new=AsyncMock(return_value=mock_db)):
+                    await session.start_listening()
+
+                mock_db.execute.assert_awaited_once()
+                call_args = mock_db.execute.call_args
+                assert call_args[0][1] == ("test_session_dir", 7)
+        finally:
+            ws_mod._recording_config = old
+
+    @pytest.mark.asyncio
+    async def test_enable_recording_links_to_session(self, session, mock_pipeline, mock_recording_config):
+        """enable_recording calls _link_recording_to_session."""
+        old = ws_mod._recording_config
+        try:
+            ws_mod._recording_config = mock_recording_config
+            mock_pipeline.context_manager.session_id = 10
+
+            with patch("server.routes.websocket.AudioRecorder") as MockRecorder:
+                recorder_inst = MagicMock()
+                recorder_inst.session_dir = MagicMock()
+                recorder_inst.session_dir.name = "dyn_session_dir"
+                MockRecorder.return_value = recorder_inst
+
+                mock_db = AsyncMock()
+                with patch("server.routes.websocket.get_db", new=AsyncMock(return_value=mock_db)):
+                    await session.enable_recording()
+
+                mock_db.execute.assert_awaited_once()
+                call_args = mock_db.execute.call_args
+                assert call_args[0][1] == ("dyn_session_dir", 10)
+        finally:
+            ws_mod._recording_config = old
 
 
 # ---------------------------------------------------------------------------
@@ -1099,16 +1211,16 @@ class TestMessageDispatch:
     @pytest.mark.asyncio
     async def test_rename_speaker_calls_tracker(self, ws_session_pair):
         session, pipeline = ws_session_pair
-        pipeline.speaker_tracker.rename("SPEAKER_00", "Maria")
-        pipeline.speaker_tracker.rename.assert_called_with("SPEAKER_00", "Maria")
+        pipeline.context_manager.speaker_tracker.rename("SPEAKER_00", "Maria")
+        pipeline.context_manager.speaker_tracker.rename.assert_called_with("SPEAKER_00", "Maria")
 
     @pytest.mark.asyncio
     async def test_rename_speaker_sends_update(self, ws_session_pair):
         session, pipeline = ws_session_pair
-        pipeline.speaker_tracker.get_all.return_value = [
+        pipeline.context_manager.speaker_tracker.get_all.return_value = [
             SpeakerProfile(id="SPEAKER_00", label="Speaker A", custom_name="Maria", color="#3B82F6")
         ]
-        update = WSSpeakersUpdate(speakers=pipeline.speaker_tracker.get_all())
+        update = WSSpeakersUpdate(speakers=pipeline.context_manager.speaker_tracker.get_all())
         await session._send(update.model_dump())
         sent = json.loads(session.ws.send_text.call_args[0][0])
         assert sent["type"] == "speakers_updated"
@@ -1380,8 +1492,8 @@ class TestEndpointMessageRouting:
                 # Patch asyncio.create_task to call directly
                 with patch("server.routes.websocket.asyncio.create_task") as mock_ct:
                     await websocket_endpoint(ws)
-                    # The endpoint calls asyncio.create_task(_process_text(...))
-                    mock_ct.assert_called_once()
+                    # One task for _process_text, one for generate_study_summary on disconnect
+                    assert mock_ct.call_count == 2
         finally:
             ws_mod._current_pipeline = old
 
@@ -1412,8 +1524,8 @@ class TestEndpointMessageRouting:
                 MockCS.return_value = cs
 
                 await websocket_endpoint(ws)
-                # Empty text should not create a task
-                mock_ct.assert_not_called()
+                # Empty text creates no _process_text task; study_summary fires on disconnect
+                assert mock_ct.call_count == 1
         finally:
             ws_mod._current_pipeline = old
 
@@ -1551,7 +1663,7 @@ class TestEndpointMessageRouting:
 
                 await websocket_endpoint(ws)
 
-            mock_pipeline.speaker_tracker.rename.assert_called_once_with("SPEAKER_00", "Carlos")
+            mock_pipeline.context_manager.speaker_tracker.rename.assert_called_once_with("SPEAKER_00", "Carlos")
         finally:
             ws_mod._current_pipeline = old
 
@@ -1582,7 +1694,7 @@ class TestEndpointMessageRouting:
 
                 await websocket_endpoint(ws)
 
-            mock_pipeline.speaker_tracker.rename.assert_not_called()
+            mock_pipeline.context_manager.speaker_tracker.rename.assert_not_called()
         finally:
             ws_mod._current_pipeline = old
 
@@ -1614,6 +1726,8 @@ class TestEndpointMessageRouting:
                 # Should not crash
                 await websocket_endpoint(ws)
 
+            # Error frame sent back to client for malformed JSON
+            cs._send.assert_any_await({"type": "error", "message": "Invalid JSON"})
             # Cleanup should still happen
             cs.cleanup.assert_awaited_once()
         finally:
@@ -1627,10 +1741,11 @@ class TestEndpointMessageRouting:
 class TestConstants:
     """Validate module-level constants have expected values."""
 
-    def test_valid_directions_contains_both(self):
+    def test_valid_directions_contains_all(self):
         assert "es_to_en" in VALID_DIRECTIONS
         assert "en_to_es" in VALID_DIRECTIONS
-        assert len(VALID_DIRECTIONS) == 2
+        assert "auto" in VALID_DIRECTIONS
+        assert len(VALID_DIRECTIONS) == 3
 
     def test_valid_modes_contains_both(self):
         assert "conversation" in VALID_MODES

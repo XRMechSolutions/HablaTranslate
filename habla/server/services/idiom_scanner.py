@@ -1,9 +1,12 @@
 """Fast idiom detection via regex pattern matching (CPU, <10ms)."""
 
+import logging
 import re
 import json
 from pathlib import Path
 from dataclasses import dataclass, field
+
+logger = logging.getLogger("habla.idioms")
 
 
 @dataclass
@@ -41,12 +44,17 @@ class IdiomScanner:
     def __init__(self):
         self.patterns: list[IdiomPattern] = []
 
-    def load_from_json(self, path: Path):
-        """Load idiom patterns from a JSON file."""
+    def load_from_json(self, path: Path) -> int:
+        """Load idiom patterns from a JSON file. Returns count loaded, 0 on error."""
         if not path.exists():
-            return
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            return 0
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except json.JSONDecodeError as e:
+            logger.warning(f"Skipping malformed idiom file {path.name}: {e}")
+            return 0
+        loaded = 0
         for entry in data:
             try:
                 compiled = re.compile(entry["pattern"], re.IGNORECASE)
@@ -58,8 +66,10 @@ class IdiomScanner:
                     region=entry.get("region", "universal"),
                     frequency=entry.get("frequency", "common"),
                 ))
+                loaded += 1
             except re.error:
                 continue  # skip bad patterns
+        return loaded
 
     def load_from_db(self, rows: list[dict]):
         """Load patterns from database rows."""

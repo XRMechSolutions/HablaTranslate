@@ -15,8 +15,9 @@ from fastapi.responses import FileResponse
 from server.config import load_config
 from server.db.database import init_db, close_db
 from server.pipeline.orchestrator import PipelineOrchestrator
-from server.routes.websocket import websocket_endpoint, set_ws_pipeline, set_recording_config, set_ws_playback_service, set_ws_config
-from server.routes._state import set_pipeline, set_lmstudio_manager, set_playback_service
+from server.routes.websocket import websocket_endpoint, set_ws_pipeline, set_recording_config, set_ws_playback_service, set_ws_config, set_ws_tts_service
+from server.services.tts import TTSService
+from server.routes._state import set_pipeline, set_lmstudio_manager, set_playback_service, set_recording_config as set_state_recording_config
 from server.routes.api_vocab import vocab_router
 from server.routes.api_system import system_router
 from server.routes.api_sessions import session_router
@@ -116,7 +117,7 @@ async def lifespan(app: FastAPI):
     # Restore persisted LLM settings (provider, model, quick_model)
     saved_llm = LMStudioManager.load_settings(config.data_dir)
     if saved_llm:
-        if saved_llm.get("provider") in ("ollama", "lmstudio", "openai"):
+        if saved_llm.get("provider") in ("ollama", "lmstudio", "openai", "claude"):
             config.translator.provider = saved_llm["provider"]
         if saved_llm.get("lmstudio_model"):
             config.translator.lmstudio_model = saved_llm["lmstudio_model"]
@@ -124,6 +125,14 @@ async def lifespan(app: FastAPI):
             config.translator.quick_model = saved_llm["quick_model"]
         if saved_llm.get("ollama_model"):
             config.translator.ollama_model = saved_llm["ollama_model"]
+        if saved_llm.get("openai_model"):
+            config.translator.openai_model = saved_llm["openai_model"]
+        if saved_llm.get("anthropic_model"):
+            config.translator.anthropic_model = saved_llm["anthropic_model"]
+        if saved_llm.get("openai_api_key") and not config.translator.openai_api_key:
+            config.translator.openai_api_key = saved_llm["openai_api_key"]
+        if saved_llm.get("anthropic_api_key") and not config.translator.anthropic_api_key:
+            config.translator.anthropic_api_key = saved_llm["anthropic_api_key"]
         if saved_llm.get("direction") in ("es_to_en", "en_to_es"):
             config.session.direction = saved_llm["direction"]
         if saved_llm.get("mode") in ("conversation", "classroom"):
@@ -132,6 +141,14 @@ async def lifespan(app: FastAPI):
                      config.translator.provider, config.translator.model,
                      config.translator.quick_model, config.session.direction,
                      config.session.mode)
+
+    # LM Studio is Windows-only — fall back to Ollama on other platforms
+    if config.translator.provider == "lmstudio" and sys.platform != "win32":
+        logger.warning(
+            "LM Studio is only supported on Windows. "
+            "Falling back to Ollama. Set LLM_PROVIDER=ollama to suppress this warning."
+        )
+        config.translator.provider = "ollama"
 
     # Start LM Studio (only when lmstudio is the active provider)
     if config.translator.provider == "lmstudio":
@@ -153,10 +170,27 @@ async def lifespan(app: FastAPI):
     set_pipeline(pipeline)
     set_ws_pipeline(pipeline)
     set_recording_config(config.recording)
+    set_state_recording_config(config.recording)
     set_ws_config(config.websocket)
 
     if config.recording.enabled:
         logger.info(f"Audio recording enabled: {config.recording.output_dir}")
+
+    # Initialize TTS service (CPU-based, no VRAM cost)
+    if config.tts.enabled:
+        tts_service = TTSService(
+            models_dir=config.tts.models_dir,
+            voice_es=config.tts.voice_es,
+            voice_en=config.tts.voice_en,
+        )
+        set_ws_tts_service(tts_service)
+        logger.info(
+            "TTS enabled: es=%s en=%s models=%s",
+            config.tts.voice_es, config.tts.voice_en, config.tts.models_dir,
+        )
+    else:
+        set_ws_tts_service(None)
+        logger.info("TTS disabled (TTS_ENABLED not set)")
 
     # Initialize playback service (works even if recording is disabled — reads existing recordings)
     playback_service = PlaybackService(config.recording.output_dir)
@@ -167,12 +201,12 @@ async def lifespan(app: FastAPI):
     await pipeline.startup()
 
     # Load cumulative OpenAI costs from DB
-    await pipeline.translator.load_all_time_costs()
+    await pipeline.context_manager.translator.load_all_time_costs()
 
     # Post-pipeline health checks (verify models loaded)
     from server.services.health import check_whisperx, check_diarization
-    asr_check = check_whisperx(pipeline._whisperx_model)
-    diar_check = check_diarization(pipeline._diarize_pipeline)
+    asr_check = check_whisperx(pipeline.audio_processor._whisperx_model)
+    diar_check = check_diarization(pipeline.audio_processor._diarize_pipeline)
     if asr_check.status != ComponentStatus.OK:
         logger.warning(f"ASR: {asr_check.message}")
     if diar_check.status != ComponentStatus.OK:
@@ -242,6 +276,7 @@ async def lifespan(app: FastAPI):
             get_config=lambda: pipeline.config.translator,
             get_session_fn=get_active_session,
             interval=60.0,
+            get_lmstudio_manager=lambda: lmstudio_manager,
         )
     )
 
@@ -337,7 +372,7 @@ async def health_check():
         return {"status": "starting", "components": {}}
     health = await run_runtime_checks(pipeline)
     result = health.to_dict()
-    metrics = pipeline.translator.metrics
+    metrics = pipeline.context_manager.translator.metrics
     if metrics["successes"] > 0:
         avg_latency = metrics["total_latency_ms"] / metrics["successes"]
         result["translator_metrics"] = {

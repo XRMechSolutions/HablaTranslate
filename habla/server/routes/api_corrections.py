@@ -13,9 +13,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from server.db.database import get_db
 import server.routes._state as _state
 
 logger = logging.getLogger("habla.corrections")
@@ -153,6 +154,81 @@ async def save_corrected_ground_truth(recording_id: str, payload: CorrectionPayl
         "corrected": corrected_count,
         "total": len(segments_data),
     }
+
+
+@corrections_router.get("/corrections/failed-segments")
+async def get_failed_segments(
+    limit: int = Query(default=50, ge=1, le=500),
+    session_id: Optional[int] = Query(default=None),
+):
+    """Return segments that failed to produce ASR output, from the quality_metrics table.
+
+    Includes both failure types:
+      asr_empty    — WhisperX returned no speech segments (audio too quiet or non-speech)
+      asr_rejected — ASR ran but produced garbage output (noise, digits-only, etc.)
+
+    Each item includes audio conditions (RMS, VAD probability, duration) and
+    a playback URL for the WAV clip if it was saved to disk. Ordered newest-first.
+
+    Query params:
+      limit — max rows returned (default 50, max 500)
+      session_id — filter to a single session
+    """
+    db = await get_db()
+
+    if session_id is not None:
+        rows = await db.execute_fetchall(
+            """SELECT qm.id, qm.session_id, qm.segment_id, qm.timestamp,
+                      qm.audio_rms, qm.duration_seconds, qm.processing_time_ms,
+                      qm.vad_threshold, qm.model_name, qm.clipped_onset, qm.status,
+                      s.recording_dir
+               FROM quality_metrics qm
+               LEFT JOIN sessions s ON qm.session_id = s.id
+               WHERE qm.status IN ('asr_rejected', 'asr_empty')
+                 AND qm.session_id = ?
+               ORDER BY qm.timestamp DESC
+               LIMIT ?""",
+            (session_id, limit),
+        )
+    else:
+        rows = await db.execute_fetchall(
+            """SELECT qm.id, qm.session_id, qm.segment_id, qm.timestamp,
+                      qm.audio_rms, qm.duration_seconds, qm.processing_time_ms,
+                      qm.vad_threshold, qm.model_name, qm.clipped_onset, qm.status,
+                      s.recording_dir
+               FROM quality_metrics qm
+               LEFT JOIN sessions s ON qm.session_id = s.id
+               WHERE qm.status IN ('asr_rejected', 'asr_empty')
+               ORDER BY qm.timestamp DESC
+               LIMIT ?""",
+            (limit,),
+        )
+
+    recordings_dir = (
+        _state._playback_service.recordings_dir
+        if _state._playback_service
+        else None
+    )
+
+    results = []
+    for row in rows:
+        r = dict(row)
+        recording_dir = r.pop("recording_dir", None)
+        seg_num = r.get("segment_id")
+
+        # Try to find the WAV clip — recorded segments are named segment_NNN.wav
+        audio_url = None
+        if recordings_dir and recording_dir and seg_num is not None:
+            clip_path = recordings_dir / recording_dir / f"segment_{seg_num:04d}.wav"
+            if clip_path.exists():
+                # Expose via the existing playback API
+                audio_url = f"/api/recordings/{recording_dir}/segments/{seg_num:04d}"
+
+        r["audio_url"] = audio_url
+        r["recording_dir"] = recording_dir
+        results.append(r)
+
+    return {"failed_segments": results, "total": len(results)}
 
 
 @corrections_router.get("/corrections/stats")

@@ -134,6 +134,13 @@ class TestProviderSwitching:
         assert translator._costs["session_cost_usd"] == 0.0
         assert translator._costs["session_input_tokens"] == 0
 
+    def test_switch_provider_claude(self, translator_config):
+        """Switch to Claude provider."""
+        translator = Translator(translator_config)
+        translator.switch_provider("claude", model="claude-opus-4-6")
+        assert translator.config.provider == "claude"
+        assert translator.config.anthropic_model == "claude-opus-4-6"
+
     def test_switch_provider_invalid(self, translator_config):
         """Invalid provider should raise ValueError."""
         translator = Translator(translator_config)
@@ -331,6 +338,101 @@ class TestOpenAIProvider:
         assert "/v1/responses" in called_url
 
 
+class TestClaudeProvider:
+    """Test Claude-specific API calls."""
+
+    @pytest.mark.asyncio
+    async def test_call_claude_success(self, translator_config, mock_httpx_client):
+        """Successful Claude API call."""
+        translator_config.provider = "claude"
+        translator = Translator(translator_config)
+        translator.client = mock_httpx_client
+
+        result = await translator._call_claude(
+            "System prompt", "User prompt", temperature=0.3, max_tokens=512
+        )
+
+        assert "corrected" in result
+        assert "translated" in result
+
+    @pytest.mark.asyncio
+    async def test_call_claude_tracks_costs(self, translator_config, mock_httpx_client):
+        """Claude calls should track token usage and costs."""
+        translator_config.provider = "claude"
+        translator = Translator(translator_config)
+        translator.client = mock_httpx_client
+
+        await translator._call_claude(
+            "System", "User", temperature=0.3, max_tokens=512
+        )
+
+        costs = translator.costs
+        assert costs["session_input_tokens"] == 120
+        assert costs["session_output_tokens"] == 60
+        assert costs["session_cost_usd"] > 0
+
+    @pytest.mark.asyncio
+    async def test_call_claude_uses_messages_api(self, translator_config):
+        """Claude should use /v1/messages endpoint with x-api-key header."""
+        translator_config.provider = "claude"
+        translator = Translator(translator_config)
+
+        called_url = None
+        called_headers = None
+
+        async def mock_post(url, **kwargs):
+            nonlocal called_url, called_headers
+            called_url = url
+            called_headers = kwargs.get("headers", {})
+            response = MagicMock()
+            response.status_code = 200
+            response.json.return_value = {
+                "content": [{"type": "text", "text": '{"corrected": "test", "translated": "test"}'}],
+                "usage": {"input_tokens": 100, "output_tokens": 50}
+            }
+            response.raise_for_status = MagicMock()
+            return response
+
+        translator.client.post = mock_post
+
+        await translator._call_claude(
+            "System", "User", temperature=0.3, max_tokens=512
+        )
+
+        assert "api.anthropic.com/v1/messages" in called_url
+        assert called_headers.get("x-api-key") == "test-anthropic-key"
+        assert called_headers.get("anthropic-version") == "2024-10-22"
+
+    @pytest.mark.asyncio
+    async def test_call_claude_uses_model_override(self, translator_config):
+        """Claude should use model override when provided."""
+        translator_config.provider = "claude"
+        translator = Translator(translator_config)
+
+        post_body = {}
+
+        async def mock_post(url, **kwargs):
+            nonlocal post_body
+            post_body.update(kwargs.get("json", {}))
+            response = MagicMock()
+            response.status_code = 200
+            response.json.return_value = {
+                "content": [{"type": "text", "text": '{"corrected": "test", "translated": "test"}'}],
+                "usage": {"input_tokens": 100, "output_tokens": 50}
+            }
+            response.raise_for_status = MagicMock()
+            return response
+
+        translator.client.post = mock_post
+
+        await translator._call_claude(
+            "System", "User", temperature=0.3, max_tokens=512,
+            model_override="claude-haiku-4-5"
+        )
+
+        assert post_body.get("model") == "claude-haiku-4-5"
+
+
 class TestTranslationParsing:
     """Test parsing of LLM responses into TranslationResult."""
 
@@ -520,6 +622,50 @@ class TestFallbackLogic:
 
         with pytest.raises(httpx.TimeoutException):
             await translator._call_llm("System", "User", retries=0)
+
+    @pytest.mark.asyncio
+    async def test_claude_fallback_to_cheaper_models_then_local(self, translator_config):
+        """Claude should fall back through cheaper models then to local providers."""
+        translator_config.provider = "claude"
+        translator_config.anthropic_model = "claude-opus-4-6"
+        translator_config.fallback_to_local = True
+        translator = Translator(translator_config)
+
+        call_log = []
+
+        async def mock_post(url, **kwargs):
+            body = kwargs.get("json", {})
+            model = body.get("model", "")
+            call_log.append((url, model))
+
+            # All Claude calls fail
+            if "api.anthropic.com" in url:
+                raise httpx.TimeoutException(f"Claude {model} timeout")
+
+            # Ollama succeeds
+            if "/api/generate" in url:
+                response = MagicMock()
+                response.status_code = 200
+                response.json.return_value = {"response": '{"corrected": "ok", "translated": "ok"}'}
+                response.raise_for_status = MagicMock()
+                return response
+
+            raise httpx.TimeoutException("Unknown endpoint")
+
+        translator.client.post = mock_post
+
+        result = await translator._call_llm("System", "User", retries=0)
+        assert "ok" in result
+
+        # Should have tried: opus (primary) → sonnet → haiku → ollama (success)
+        urls = [url for url, _ in call_log]
+        models = [model for _, model in call_log]
+
+        claude_calls = [m for u, m in call_log if "anthropic" in u]
+        assert claude_calls == ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]
+
+        local_calls = [u for u in urls if "/api/generate" in u]
+        assert len(local_calls) == 1  # Ollama succeeded
 
 
 class TestTranslateMethod:

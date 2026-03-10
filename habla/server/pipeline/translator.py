@@ -1,4 +1,4 @@
-"""Multi-provider LLM translator service (Ollama, LM Studio, OpenAI)."""
+"""Multi-provider LLM translator service (Ollama, LM Studio, OpenAI, Claude)."""
 
 import asyncio
 import json
@@ -19,20 +19,32 @@ logger = logging.getLogger("habla.translator")
 _PERMANENT_ERRORS = ("model not found", "invalid model", "404", "invalid_api_key")
 
 # Cloud vs local provider classification for fallback logic
-_CLOUD_PROVIDERS = {"openai"}
+_CLOUD_PROVIDERS = {"openai", "claude"}
 _LOCAL_PROVIDERS = ("ollama", "lmstudio")  # ordered by preference for fallback
 
-# OpenAI pricing per 1M tokens (input, output) — Feb 2026
+# OpenAI pricing per 1M tokens (input, output) — Mar 2026
 _OPENAI_PRICING = {
-    "gpt-5-nano": (0.05, 0.40),
+    "gpt-5.2": (1.75, 14.00),
+    "gpt-5": (1.25, 10.00),
+    "gpt-4o": (2.50, 10.00),
     "gpt-5-mini": (0.25, 2.00),
     "gpt-4o-mini": (0.15, 0.60),
-    "gpt-5": (1.25, 10.00),
+    "gpt-5-nano": (0.05, 0.40),
 }
 
-# OpenAI model fallback order: descend from selected model toward cheapest
+# Claude pricing per 1M tokens (input, output) — Mar 2026
+_CLAUDE_PRICING = {
+    "claude-opus-4-6": (5.00, 25.00),
+    "claude-sonnet-4-6": (3.00, 15.00),
+    "claude-haiku-4-5": (1.00, 5.00),
+}
+
+# OpenAI model fallback order: descend from most capable toward cheapest
 # before falling back to local providers
-_OPENAI_MODEL_ORDER = ["gpt-5", "gpt-5-mini", "gpt-4o-mini", "gpt-5-nano"]
+_OPENAI_MODEL_ORDER = ["gpt-5.2", "gpt-5", "gpt-4o", "gpt-5-mini", "gpt-4o-mini", "gpt-5-nano"]
+
+# Claude model fallback order: most capable to cheapest
+_CLAUDE_MODEL_ORDER = ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]
 
 
 def _extract_field(text: str, field: str) -> str:
@@ -102,20 +114,20 @@ def _is_retryable(error: Exception) -> bool:
 class Translator:
     """Translates text using a configurable LLM provider with retry logic.
 
-    Supports three providers: Ollama (local), LM Studio (local), OpenAI (cloud).
+    Supports four providers: Ollama (local), LM Studio (local), OpenAI (cloud), Claude (cloud).
     Provider can be switched at runtime via switch_provider().
 
     Retry and fallback strategy:
     - Local providers: 1 retry (retrying rarely helps). Falls back to other local provider.
-    - Cloud (OpenAI): 3 retries with exponential backoff. Falls back through model tiers
-      (gpt-5 -> gpt-5-mini -> gpt-4o-mini -> gpt-5-nano) then to local providers.
+    - Cloud (OpenAI, Claude): 3 retries with exponential backoff. Falls back through model
+      tiers then to local providers.
     - After DEGRADED_THRESHOLD consecutive timeouts, enters degraded mode (shorter timeout).
 
     Error contract:
     - _call_llm raises on permanent errors (model not found, invalid key).
     - translate() returns TranslationResult with empty translation on total failure (non-fatal).
     - switch_provider raises ValueError for unknown provider names.
-    - Tracks metrics (call counts, errors, latency) and OpenAI costs.
+    - Tracks metrics (call counts, errors, latency) and cloud costs.
     """
 
     MAX_RETRIES_LOCAL = 1   # Local LLMs: if they don't respond, retrying won't help
@@ -169,7 +181,7 @@ class Translator:
         self._last_request_time: float = 0.0
         self._rate_limit_lock = asyncio.Lock()
 
-        # OpenAI cost tracking
+        # Cloud cost tracking (OpenAI + Claude)
         self._costs = {
             "session_input_tokens": 0,
             "session_output_tokens": 0,
@@ -225,7 +237,7 @@ class Translator:
                           COALESCE(SUM(llm_output_tokens), 0) as total_output,
                           COALESCE(SUM(llm_cost_usd), 0.0) as total_cost
                    FROM sessions
-                   WHERE llm_provider = 'openai'"""
+                   WHERE llm_provider IN ('openai', 'claude')"""
             )
             row = rows[0] if rows else None
             if row:
@@ -234,7 +246,7 @@ class Translator:
                 self._costs["all_time_cost_usd"] = row["total_cost"]
                 if row["total_cost"] > 0:
                     logger.info(
-                        f"Loaded all-time OpenAI costs: ${row['total_cost']:.4f} "
+                        f"Loaded all-time cloud costs: ${row['total_cost']:.4f} "
                         f"({row['total_input'] + row['total_output']} tokens)"
                     )
         except Exception as e:
@@ -242,7 +254,7 @@ class Translator:
 
     def switch_provider(self, provider: str, model: str = "", url: str = ""):
         """Switch LLM provider and model at runtime."""
-        if provider not in ("ollama", "lmstudio", "openai"):
+        if provider not in ("ollama", "lmstudio", "openai", "claude"):
             raise ValueError(f"Unknown provider: {provider}")
         self.config.provider = provider
         if provider == "ollama" and model:
@@ -251,6 +263,8 @@ class Translator:
             self.config.lmstudio_model = model
         elif provider == "openai" and model:
             self.config.openai_model = model
+        elif provider == "claude" and model:
+            self.config.anthropic_model = model
         if url:
             if provider == "ollama":
                 self.config.ollama_url = url
@@ -289,35 +303,43 @@ class Translator:
             if provider not in _CLOUD_PROVIDERS or not self.config.fallback_to_local:
                 raise
 
-            # Cloud fallback: try cheaper OpenAI models first, then local
-            selected_model = self.config.openai_model
+            # Cloud fallback: try cheaper models for this provider, then local
+            if provider == "claude":
+                model_order = _CLAUDE_MODEL_ORDER
+                selected_model = self.config.anthropic_model
+                model_kwarg = "claude_model"
+            else:
+                model_order = _OPENAI_MODEL_ORDER
+                selected_model = self.config.openai_model
+                model_kwarg = "openai_model"
+
             try:
-                idx = _OPENAI_MODEL_ORDER.index(selected_model)
+                idx = model_order.index(selected_model)
             except ValueError:
                 idx = -1
 
-            # Try each cheaper OpenAI model (those after the selected one in the order)
-            for model in _OPENAI_MODEL_ORDER[idx + 1:]:
+            # Try each cheaper model (those after the selected one in the order)
+            for model in model_order[idx + 1:]:
                 logger.warning(
-                    f"OpenAI {selected_model} failed, trying {model}: {primary_error}"
+                    f"{provider} {selected_model} failed, trying {model}: {primary_error}"
                 )
                 try:
                     text = await self._call_provider(
-                        "openai", system_prompt, user_prompt,
+                        provider, system_prompt, user_prompt,
                         retries=0, max_tokens=max_tokens,
                         temperature=temp, json_mode=json_mode,
-                        openai_model=model,
+                        **{model_kwarg: model},
                     )
-                    logger.info(f"OpenAI fallback to {model} succeeded")
+                    logger.info(f"{provider} fallback to {model} succeeded")
                     return text
                 except Exception as model_err:
-                    logger.warning(f"OpenAI {model} also failed: {model_err}")
+                    logger.warning(f"{provider} {model} also failed: {model_err}")
                     continue
 
-            # All OpenAI models failed — try local providers (single attempt each)
+            # All cloud models failed — try local providers (single attempt each)
             for fallback in _LOCAL_PROVIDERS:
                 logger.warning(
-                    f"All OpenAI models failed, falling back to {fallback}: {primary_error}"
+                    f"All {provider} models failed, falling back to {fallback}: {primary_error}"
                 )
                 try:
                     text = await self._call_provider(
@@ -340,6 +362,7 @@ class Translator:
         temperature: float = 0.3, json_mode: bool = True,
         openai_model: str = "",
         lmstudio_model: str = "",
+        claude_model: str = "",
     ) -> str:
         """Call a specific provider with retry logic. Returns raw text response."""
         # Enforce minimum interval between requests
@@ -376,6 +399,8 @@ class Translator:
                     coro = self._call_lmstudio(system_prompt, user_prompt, temperature, max_tokens, json_mode, model_override=lmstudio_model)
                 elif provider == "openai":
                     coro = self._call_openai(system_prompt, user_prompt, temperature, max_tokens, json_mode, model_override=openai_model)
+                elif provider == "claude":
+                    coro = self._call_claude(system_prompt, user_prompt, temperature, max_tokens, model_override=claude_model)
                 else:
                     raise ValueError(f"Unknown provider: {provider}")
 
@@ -529,7 +554,11 @@ class Translator:
             "https://api.openai.com/v1/responses",
             json=body, headers=headers,
         )
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError:
+            logger.error(f"OpenAI error {response.status_code}: {response.text}")
+            raise
         data = response.json()
 
         # Track costs from usage
@@ -537,7 +566,7 @@ class Translator:
         if usage:
             input_tokens = usage.get("input_tokens", 0)
             output_tokens = usage.get("output_tokens", 0)
-            self._track_openai_cost(input_tokens, output_tokens, model)
+            self._track_cloud_cost(input_tokens, output_tokens, model, "openai")
 
         # Extract text: find output item with type "message", then content with type "output_text"
         for item in data.get("output", []):
@@ -549,9 +578,61 @@ class Translator:
         logger.warning(f"OpenAI: no output_text found in response")
         return "{}"
 
-    def _track_openai_cost(self, input_tokens: int, output_tokens: int, model: str = ""):
-        """Update running cost totals for OpenAI usage."""
-        pricing = _OPENAI_PRICING.get(model or self.config.openai_model, (0.05, 0.20))
+    async def _call_claude(
+        self, system_prompt: str, user_prompt: str,
+        temperature: float, max_tokens: int,
+        model_override: str = "",
+    ) -> str:
+        """Claude: POST https://api.anthropic.com/v1/messages (Messages API)."""
+        model = model_override or self.config.anthropic_model
+        body = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "system": system_prompt,
+            "messages": [
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+
+        headers = {
+            "x-api-key": self.config.anthropic_api_key,
+            "anthropic-version": "2024-10-22",
+            "Content-Type": "application/json",
+        }
+
+        response = await self.client.post(
+            "https://api.anthropic.com/v1/messages",
+            json=body, headers=headers,
+        )
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError:
+            logger.error(f"Claude error {response.status_code}: {response.text}")
+            raise
+        data = response.json()
+
+        # Track costs from usage
+        usage = data.get("usage", {})
+        if usage:
+            input_tokens = usage.get("input_tokens", 0)
+            output_tokens = usage.get("output_tokens", 0)
+            self._track_cloud_cost(input_tokens, output_tokens, model, "claude")
+
+        # Extract text from content blocks
+        for block in data.get("content", []):
+            if block.get("type") == "text":
+                return block.get("text", "{}")
+
+        logger.warning("Claude: no text block found in response")
+        return "{}"
+
+    def _track_cloud_cost(self, input_tokens: int, output_tokens: int, model: str = "", provider: str = "openai"):
+        """Update running cost totals for cloud provider usage."""
+        if provider == "claude":
+            pricing = _CLAUDE_PRICING.get(model or self.config.anthropic_model, (3.00, 15.00))
+        else:
+            pricing = _OPENAI_PRICING.get(model or self.config.openai_model, (0.05, 0.40))
         cost = (input_tokens / 1_000_000 * pricing[0]) + (output_tokens / 1_000_000 * pricing[1])
 
         self._costs["session_input_tokens"] += input_tokens

@@ -62,6 +62,15 @@ class TestDefaults:
         c = TranslatorConfig(provider="openai", openai_model="gpt-4o")
         assert c.model == "gpt-4o"
 
+    def test_translator_config_claude_defaults(self):
+        c = TranslatorConfig()
+        assert c.anthropic_api_key == ""
+        assert c.anthropic_model == "claude-sonnet-4-6"
+
+    def test_translator_model_property_claude(self):
+        c = TranslatorConfig(provider="claude", anthropic_model="claude-opus-4-6")
+        assert c.model == "claude-opus-4-6"
+
     def test_diarization_config_defaults(self):
         c = DiarizationConfig()
         assert c.device == "cpu"
@@ -73,10 +82,11 @@ class TestDefaults:
         c = AudioConfig()
         assert c.sample_rate == 16000
         assert c.channels == 1
-        assert c.vad_silence_ms == 400
-        assert c.min_speech_ms == 500
+        assert c.vad_silence_ms == 600
+        assert c.min_speech_ms == 200
         assert c.max_segment_seconds == 30.0
         assert c.buffer_max_seconds == 60.0
+        assert c.calibration_duration_ms == 2000
 
     def test_session_config_defaults(self):
         c = SessionConfig()
@@ -108,10 +118,13 @@ class TestEnvOverrides:
         clean = {k: "" for k in [
             "HF_TOKEN", "OLLAMA_URL", "OLLAMA_MODEL", "LMSTUDIO_URL",
             "LMSTUDIO_MODEL", "LMSTUDIO_EXECUTABLE", "LMSTUDIO_MODEL_PATHS",
-            "OPENAI_API_KEY", "OPENAI_MODEL", "QUICK_MODEL", "LLM_PROVIDER",
+            "OPENAI_API_KEY", "OPENAI_MODEL", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL",
+            "QUICK_MODEL", "LLM_PROVIDER",
             "WHISPER_MODEL", "WHISPER_DEVICE", "ASR_AUTO_LANGUAGE",
             "DB_PATH", "DATA_DIR", "RECORDING_ENABLED", "RATE_LIMIT_INTERVAL",
             "WS_PING_INTERVAL", "WS_MISSED_PINGS", "SAVE_AUDIO_RECORDINGS",
+            "VAD_SILENCE_MS", "MIN_SPEECH_MS", "MAX_SEGMENT_SECONDS",
+            "VAD_THRESHOLD", "CALIBRATION_DURATION_MS",
         ]}
         clean.update(env_vars)
         with patch.dict(os.environ, clean, clear=False):
@@ -164,13 +177,21 @@ class TestEnvOverrides:
         c = self._load_with_env({"QUICK_MODEL": "qwen-fast", "DATA_DIR": str(tmp_path)})
         assert c.translator.quick_model == "qwen-fast"
 
+    def test_anthropic_api_key(self, tmp_path):
+        c = self._load_with_env({"ANTHROPIC_API_KEY": "sk-ant-test", "DATA_DIR": str(tmp_path)})
+        assert c.translator.anthropic_api_key == "sk-ant-test"
+
+    def test_anthropic_model(self, tmp_path):
+        c = self._load_with_env({"ANTHROPIC_MODEL": "claude-opus-4-6", "DATA_DIR": str(tmp_path)})
+        assert c.translator.anthropic_model == "claude-opus-4-6"
+
     def test_llm_provider_valid(self, tmp_path):
-        for provider in ("ollama", "lmstudio", "openai"):
+        for provider in ("ollama", "lmstudio", "openai", "claude"):
             c = self._load_with_env({"LLM_PROVIDER": provider, "DATA_DIR": str(tmp_path)})
             assert c.translator.provider == provider
 
     def test_llm_provider_invalid_ignored(self, tmp_path):
-        c = self._load_with_env({"LLM_PROVIDER": "anthropic", "DATA_DIR": str(tmp_path)})
+        c = self._load_with_env({"LLM_PROVIDER": "gemini", "DATA_DIR": str(tmp_path)})
         assert c.translator.provider == "lmstudio"  # default unchanged
 
     def test_whisper_model(self, tmp_path):
@@ -225,6 +246,26 @@ class TestEnvOverrides:
         c = self._load_with_env({"WS_MISSED_PINGS": "5", "DATA_DIR": str(tmp_path)})
         assert c.websocket.missed_pings_threshold == 5
 
+    def test_vad_silence_ms(self, tmp_path):
+        c = self._load_with_env({"VAD_SILENCE_MS": "800", "DATA_DIR": str(tmp_path)})
+        assert c.audio.vad_silence_ms == 800
+
+    def test_min_speech_ms(self, tmp_path):
+        c = self._load_with_env({"MIN_SPEECH_MS": "300", "DATA_DIR": str(tmp_path)})
+        assert c.audio.min_speech_ms == 300
+
+    def test_max_segment_seconds(self, tmp_path):
+        c = self._load_with_env({"MAX_SEGMENT_SECONDS": "45.0", "DATA_DIR": str(tmp_path)})
+        assert c.audio.max_segment_seconds == 45.0
+
+    def test_vad_threshold(self, tmp_path):
+        c = self._load_with_env({"VAD_THRESHOLD": "0.5", "DATA_DIR": str(tmp_path)})
+        assert c.asr.vad_threshold == 0.5
+
+    def test_calibration_duration_ms(self, tmp_path):
+        c = self._load_with_env({"CALIBRATION_DURATION_MS": "3000", "DATA_DIR": str(tmp_path)})
+        assert c.audio.calibration_duration_ms == 3000
+
 
 # ---------------------------------------------------------------------------
 # Validation and side effects
@@ -251,6 +292,17 @@ class TestValidation:
             c.recording.output_dir = rec_dir
             # load_config creates it based on default path, but we test the flag
             assert c.recording.enabled is True
+
+    def test_db_path_parent_created_on_load(self, tmp_path):
+        """Custom DB_PATH with non-existent parent dir should be auto-created."""
+        nested_db = tmp_path / "deep" / "nested" / "habla.db"
+        assert not nested_db.parent.exists()
+        with patch.dict(os.environ, {
+            "DATA_DIR": str(tmp_path),
+            "DB_PATH": str(nested_db),
+        }, clear=False):
+            load_config()
+        assert nested_db.parent.exists()
 
     def test_missing_hf_token_logs_warning(self, tmp_path, caplog):
         import logging

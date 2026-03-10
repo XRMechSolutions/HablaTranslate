@@ -1,13 +1,13 @@
 """LLM prompts for Habla translation pipeline."""
 
+from server.config import parse_direction, lang_name
+
 
 def get_translator_system_prompt(direction: str, mode: str) -> str:
     """Get the system prompt for the translator LLM."""
 
-    if direction == "es_to_en":
-        source_lang, target_lang = "Spanish", "English"
-    else:
-        source_lang, target_lang = "English", "Spanish"
+    src_code, tgt_code = parse_direction(direction)
+    source_lang, target_lang = lang_name(src_code), lang_name(tgt_code)
 
     classroom_extra = ""
     if mode == "classroom":
@@ -87,6 +87,47 @@ Speaker: {speaker_label}
 Transcript: "{transcript}"
 
 Translate now. Respond with a single JSON object only. No extra text."""
+
+
+def get_study_summary_prompt(exchanges_text: str, topic_summary: str, mode: str) -> tuple[str, str]:
+    """Prompts for the post-session study summary LLM call.
+
+    Returns (system_prompt, user_prompt). The LLM is asked to produce a
+    structured JSON study report covering vocab, grammar, corrections, idioms,
+    and suggested review topics.
+    """
+    mode_note = (
+        "\nThis was a classroom session — pay extra attention to grammar "
+        "corrections and teacher feedback."
+        if mode == "classroom" else ""
+    )
+
+    system = f"""You analyze a completed conversation and produce a structured language-learning study report.{mode_note}
+
+Respond ONLY with a single valid JSON object. No markdown, no text outside the JSON.
+
+Output format:
+{{
+  "summary": "2-3 sentence overview of what was discussed",
+  "vocab": [{{"term": "phrase", "meaning": "English meaning", "count": 1}}],
+  "grammar": ["One sentence describing a grammar pattern or issue observed"],
+  "corrections": [{{"wrong": "incorrect form", "right": "correct form", "explanation": "why"}}],
+  "idioms": [{{"phrase": "the idiom", "meaning": "what it means"}}],
+  "review_topics": ["concrete grammar or vocabulary topic to study next"]
+}}
+
+Rules: vocab max 10 items — include only idioms, false friends, and phrases worth learning.
+grammar max 5 items. corrections max 5. idioms max 5. review_topics 1–4.
+Use empty arrays [] for sections with nothing to report."""
+
+    user = f"""Session transcript:
+{exchanges_text}
+
+Topic context: {topic_summary or "(none)"}
+
+Produce the study report JSON."""
+
+    return system, user
 
 
 def get_topic_summary_prompt(

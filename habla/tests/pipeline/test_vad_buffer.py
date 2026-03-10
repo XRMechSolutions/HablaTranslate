@@ -103,26 +103,30 @@ class TestVADSpeechDetection:
     """Test speech detection logic."""
 
     def test_is_speech_frame_energy_based(self):
-        """Energy-based VAD should detect loud audio as speech."""
+        """Energy-based VAD should detect loud audio as speech. Returns (is_speech, prob)."""
         vad = StreamingVADBuffer()
         vad._vad_ready = False  # Force energy-based detection
 
         # Create loud frame
         loud_frame = np.random.randint(-5000, 5000, size=512, dtype=np.int16)
-        assert vad._is_speech_frame(loud_frame) == True
+        is_speech, _ = vad._is_speech_frame(loud_frame)
+        assert bool(is_speech) is True
 
         # Create quiet frame
         quiet_frame = np.zeros(512, dtype=np.int16)
-        assert vad._is_speech_frame(quiet_frame) == False
+        is_speech, _ = vad._is_speech_frame(quiet_frame)
+        assert bool(is_speech) is False
 
     def test_is_speech_frame_wrong_size(self):
-        """Wrong frame size should return False."""
+        """Wrong frame size should return (False, 0.0)."""
         vad = StreamingVADBuffer()
         wrong_size_frame = np.zeros(256, dtype=np.int16)
-        assert vad._is_speech_frame(wrong_size_frame) is False
+        is_speech, prob = vad._is_speech_frame(wrong_size_frame)
+        assert is_speech is False
+        assert prob == 0.0
 
     def test_is_speech_frame_with_model(self):
-        """Model-based VAD should use Silero threshold."""
+        """Model-based VAD should use Silero threshold. Returns (is_speech, prob)."""
         import sys
         vad = StreamingVADBuffer()
         vad._vad_ready = True
@@ -140,15 +144,106 @@ class TestVADSpeechDetection:
         frame = np.zeros(512, dtype=np.int16)
 
         with patch.dict(sys.modules, {'torch': mock_torch}):
-            result = vad._is_speech_frame(frame)
+            is_speech, prob = vad._is_speech_frame(frame)
 
-        assert result == True
+        assert is_speech is True
+        assert prob == pytest.approx(0.8)
 
         # Low probability should return False
         mock_model.return_value.item.return_value = 0.2
         with patch.dict(sys.modules, {'torch': mock_torch}):
-            result = vad._is_speech_frame(frame)
-        assert result == False
+            is_speech, prob = vad._is_speech_frame(frame)
+        assert is_speech is False
+        assert prob == pytest.approx(0.2)
+
+
+class TestNoiseFloorCalibration:
+    """Test noise floor calibration on session start."""
+
+    def test_vad_config_has_calibration_duration(self):
+        """VADConfig should have calibration_duration_ms default."""
+        config = VADConfig()
+        assert config.calibration_duration_ms == 2000
+
+    def test_new_vad_starts_calibrating(self):
+        """New VAD buffer should start in calibrating state."""
+        vad = StreamingVADBuffer()
+        assert vad._calibrating is True
+        assert vad._calibration_frame_count == 0
+
+    @pytest.mark.asyncio
+    async def test_calibration_completes_after_duration(self):
+        """Calibration should complete after configured duration worth of frames."""
+        config = VADConfig(calibration_duration_ms=90, frame_ms=30)  # 3 frames
+        vad = StreamingVADBuffer(config=config)
+        vad._vad_ready = False
+
+        # Feed 3 frames of quiet audio (enough to complete calibration)
+        quiet_frame = np.full(512, 100, dtype=np.int16).tobytes()
+        for _ in range(3):
+            await vad.feed_pcm(quiet_frame)
+
+        assert vad._calibrating is False
+        assert vad._noise_floor_rms > 0
+
+    @pytest.mark.asyncio
+    async def test_calibration_sets_threshold_from_noise(self):
+        """Energy threshold should be set based on calibrated noise floor."""
+        config = VADConfig(calibration_duration_ms=30, frame_ms=30)  # 1 frame
+        vad = StreamingVADBuffer(config=config)
+        vad._vad_ready = False
+
+        # Feed a frame with known energy
+        frame = np.full(512, 200, dtype=np.int16).tobytes()
+        await vad.feed_pcm(frame)
+
+        # Threshold = max(300, noise_floor * 3.0)
+        expected_threshold = max(300.0, vad._noise_floor_rms * 3.0)
+        assert vad._energy_threshold == pytest.approx(expected_threshold)
+
+    @pytest.mark.asyncio
+    async def test_calibration_frames_not_detected_as_speech(self):
+        """During calibration, frames should not trigger speech detection."""
+        config = VADConfig(calibration_duration_ms=120, frame_ms=30)  # 4 frames
+        vad = StreamingVADBuffer(config=config)
+        vad._vad_ready = False
+
+        # Feed loud frames during calibration — should NOT trigger speech
+        loud_frame = np.random.randint(-5000, 5000, size=512, dtype=np.int16).tobytes()
+        for _ in range(3):  # still calibrating (need 4 frames)
+            await vad.feed_pcm(loud_frame)
+
+        assert vad._calibrating is True
+        assert vad._is_speaking is False
+        assert len(vad._speech_buffer) == 0
+
+    @pytest.mark.asyncio
+    async def test_loud_room_raises_threshold(self):
+        """A loud calibration environment should raise the energy threshold above default."""
+        config = VADConfig(calibration_duration_ms=30, frame_ms=30)
+        vad = StreamingVADBuffer(config=config)
+        vad._vad_ready = False
+
+        # Feed a very loud frame
+        loud_frame = np.full(512, 2000, dtype=np.int16).tobytes()
+        await vad.feed_pcm(loud_frame)
+
+        # Threshold should be well above the default 500
+        assert vad._energy_threshold > 500.0
+
+    def test_reset_re_enables_calibration(self):
+        """Reset should re-enable calibration for new session."""
+        vad = StreamingVADBuffer()
+        # Simulate completed calibration
+        vad._calibrating = False
+        vad._calibration_frame_count = 100
+        vad._calibration_energy_sum = 50000.0
+
+        vad.reset()
+
+        assert vad._calibrating is True
+        assert vad._calibration_frame_count == 0
+        assert vad._calibration_energy_sum == 0.0
 
 
 class TestVADFeedPCM:
@@ -182,7 +277,8 @@ class TestVADFeedPCM:
     @pytest.mark.asyncio
     async def test_feed_pcm_speech_onset(self):
         """Speech onset should trigger state change."""
-        vad = StreamingVADBuffer()
+        config = VADConfig(calibration_duration_ms=0)
+        vad = StreamingVADBuffer(config=config)
         vad._vad_ready = False
 
         # Create loud frame (512 samples * 2 bytes = 1024 bytes)
@@ -196,7 +292,8 @@ class TestVADFeedPCM:
     @pytest.mark.asyncio
     async def test_feed_pcm_silence_during_speech(self):
         """Silence during speech should increment counter."""
-        vad = StreamingVADBuffer()
+        config = VADConfig(calibration_duration_ms=0)
+        vad = StreamingVADBuffer(config=config)
         vad._vad_ready = False
         vad._is_speaking = True
 
@@ -211,10 +308,10 @@ class TestVADFeedPCM:
         """Sufficient silence should emit segment."""
         segment_received = []
 
-        async def callback(pcm, duration):
-            segment_received.append((pcm, duration))
+        async def callback(pcm, duration, audio_rms, vad_avg_prob):
+            segment_received.append((pcm, duration, audio_rms, vad_avg_prob))
 
-        config = VADConfig(silence_duration_ms=60, frame_ms=30)  # 2 frames of silence
+        config = VADConfig(silence_duration_ms=60, frame_ms=30, calibration_duration_ms=0)  # 2 frames of silence
         vad = StreamingVADBuffer(config=config, on_segment=callback)
         vad._vad_ready = False
 
@@ -242,7 +339,7 @@ class TestVADFeedPCM:
         async def callback(pcm, duration):
             segment_received.append((pcm, duration))
 
-        config = VADConfig(min_speech_ms=1000, silence_duration_ms=60, frame_ms=30)
+        config = VADConfig(min_speech_ms=1000, silence_duration_ms=60, frame_ms=30, calibration_duration_ms=0)
         vad = StreamingVADBuffer(config=config, on_segment=callback)
         vad._vad_ready = False
 
@@ -263,10 +360,10 @@ class TestVADFeedPCM:
         """Long monologues should force split at max_segment_seconds."""
         segment_received = []
 
-        async def callback(pcm, duration):
-            segment_received.append((pcm, duration))
+        async def callback(pcm, duration, audio_rms, vad_avg_prob):
+            segment_received.append((pcm, duration, audio_rms, vad_avg_prob))
 
-        config = VADConfig(max_segment_seconds=1.0, frame_ms=30, min_speech_ms=100)
+        config = VADConfig(max_segment_seconds=1.0, frame_ms=30, min_speech_ms=100, calibration_duration_ms=0)
         vad = StreamingVADBuffer(config=config, on_segment=callback)
         vad._vad_ready = False
 
@@ -290,7 +387,7 @@ class TestVADPartialAudio:
         async def partial_callback(pcm, duration):
             partials_received.append((pcm, duration))
 
-        config = VADConfig(frame_ms=30, min_speech_ms=100)
+        config = VADConfig(frame_ms=30, min_speech_ms=100, calibration_duration_ms=0)
         vad = StreamingVADBuffer(config=config)
         vad.on_partial_audio = partial_callback
         vad._vad_ready = False
@@ -311,7 +408,7 @@ class TestVADPartialAudio:
         async def partial_callback(pcm, duration):
             partials_received.append((pcm, duration))
 
-        config = VADConfig(min_speech_ms=1000)
+        config = VADConfig(min_speech_ms=1000, calibration_duration_ms=0)
         vad = StreamingVADBuffer(config=config)
         vad.on_partial_audio = partial_callback
         vad._vad_ready = False
@@ -333,10 +430,10 @@ class TestVADFlushAndReset:
         """Flush should emit any ongoing speech."""
         segment_received = []
 
-        async def callback(pcm, duration):
-            segment_received.append((pcm, duration))
+        async def callback(pcm, duration, audio_rms, vad_avg_prob):
+            segment_received.append((pcm, duration, audio_rms, vad_avg_prob))
 
-        config = VADConfig(min_speech_ms=100)
+        config = VADConfig(min_speech_ms=100, calibration_duration_ms=0)
         vad = StreamingVADBuffer(config=config, on_segment=callback)
         vad._vad_ready = False
 
@@ -355,10 +452,10 @@ class TestVADFlushAndReset:
         """Flush should not emit speech below min_speech_ms."""
         segment_received = []
 
-        async def callback(pcm, duration):
-            segment_received.append((pcm, duration))
+        async def callback(pcm, duration, audio_rms, vad_avg_prob):
+            segment_received.append((pcm, duration, audio_rms, vad_avg_prob))
 
-        config = VADConfig(min_speech_ms=1000)
+        config = VADConfig(min_speech_ms=1000, calibration_duration_ms=0)
         vad = StreamingVADBuffer(config=config, on_segment=callback)
         vad._vad_ready = False
 
@@ -410,10 +507,19 @@ class TestAudioDecoderStreaming:
         decoder = AudioDecoder()
 
         with patch("asyncio.create_subprocess_exec") as mock_exec:
-            mock_process = AsyncMock()
-            mock_process.stdin = AsyncMock()
-            mock_process.stdout = AsyncMock()
-            mock_process.stdout.read = AsyncMock(side_effect=[b"", None])
+            # Use MagicMock for process; only async methods get AsyncMock.
+            # stdin.write is sync, stdin.drain/wait_closed are async.
+            mock_stdin = MagicMock()
+            mock_stdin.close = MagicMock()
+            mock_stdin.wait_closed = AsyncMock()
+            mock_stdin.drain = AsyncMock()
+            mock_stdout = MagicMock()
+            mock_stdout.read = AsyncMock(side_effect=[b"", None])
+            mock_process = MagicMock()
+            mock_process.stdin = mock_stdin
+            mock_process.stdout = mock_stdout
+            mock_process.wait = AsyncMock()
+            mock_process.returncode = None
             mock_exec.return_value = mock_process
 
             await decoder.start_streaming()
@@ -455,13 +561,16 @@ class TestAudioDecoderStreaming:
     async def test_feed_chunk(self):
         """feed_chunk should write to ffmpeg stdin."""
         decoder = AudioDecoder()
-        decoder._process = AsyncMock()
+        # stdin.write is sync; only stdin.drain is async.
+        mock_stdin = MagicMock()
+        mock_stdin.drain = AsyncMock()
+        decoder._process = MagicMock()
         decoder._process.returncode = None  # process is running
-        decoder._process.stdin = AsyncMock()
+        decoder._process.stdin = mock_stdin
 
         await decoder.feed_chunk(b"test_webm_data")
 
-        decoder._process.stdin.write.assert_called_once_with(b"test_webm_data")
+        mock_stdin.write.assert_called_once_with(b"test_webm_data")
 
     @pytest.mark.asyncio
     async def test_feed_chunk_no_process(self):
@@ -490,7 +599,8 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_vad_pre_speech_padding(self):
         """Speech onset should include pre-speech padding."""
-        vad = StreamingVADBuffer()
+        config = VADConfig(calibration_duration_ms=0)
+        vad = StreamingVADBuffer(config=config)
         vad._vad_ready = False
 
         # Feed quiet frames to fill pre-speech ring
@@ -510,10 +620,10 @@ class TestEdgeCases:
         """VAD should track emitted segments and total duration."""
         segment_received = []
 
-        async def callback(pcm, duration):
-            segment_received.append((pcm, duration))
+        async def callback(pcm, duration, audio_rms, vad_avg_prob):
+            segment_received.append((pcm, duration, audio_rms, vad_avg_prob))
 
-        config = VADConfig(silence_duration_ms=60, frame_ms=30, min_speech_ms=100)
+        config = VADConfig(silence_duration_ms=60, frame_ms=30, min_speech_ms=100, calibration_duration_ms=0)
         vad = StreamingVADBuffer(config=config, on_segment=callback)
         vad._vad_ready = False
 

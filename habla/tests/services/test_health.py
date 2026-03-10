@@ -431,8 +431,18 @@ class TestCheckActiveLlm:
         mock_check.assert_called_once_with("sk-test-key-1234567890ab")
         assert result.component == "openai"
 
+    async def test_claude_provider_calls_check_anthropic_key(self):
+        cfg = self._make_config("claude")
+        cfg.anthropic_api_key = "sk-ant-test-key-1234567890ab"
+        with patch("server.services.health.check_anthropic_key") as mock_check:
+            mock_check.return_value = HealthCheck("claude", ComponentStatus.OK, "fine")
+            result = await _check_active_llm(cfg)
+
+        mock_check.assert_called_once_with("sk-ant-test-key-1234567890ab")
+        assert result.component == "claude"
+
     async def test_unknown_provider_returns_down(self):
-        cfg = self._make_config("anthropic")
+        cfg = self._make_config("gemini")
         result = await _check_active_llm(cfg)
         assert result.status == ComponentStatus.DOWN
         assert "Unknown provider" in result.message
@@ -523,8 +533,8 @@ class TestRunRuntimeChecks:
         pipeline.config.translator.ollama_url = "http://localhost:11434"
         pipeline.config.translator.ollama_model = "qwen3:4b"
         pipeline.config.db_path = "data/habla.db"
-        pipeline._whisperx_model = MagicMock()
-        pipeline._diarize_pipeline = MagicMock()
+        pipeline.audio_processor._whisperx_model = MagicMock()
+        pipeline.audio_processor._diarize_pipeline = MagicMock()
 
         with (
             patch("server.services.health._check_active_llm", new_callable=AsyncMock,
@@ -556,8 +566,8 @@ class TestRunRuntimeChecks:
         pipeline.config.translator.ollama_url = "http://localhost:11434"
         pipeline.config.translator.ollama_model = "qwen3:4b"
         pipeline.config.db_path = "data/habla.db"
-        pipeline._whisperx_model = None
-        pipeline._diarize_pipeline = None
+        pipeline.audio_processor._whisperx_model = None
+        pipeline.audio_processor._diarize_pipeline = None
 
         with (
             patch("server.services.health._check_active_llm", new_callable=AsyncMock,
@@ -700,3 +710,63 @@ class TestLLMHealthMonitor:
             except asyncio.CancelledError:
                 pass
         # No exception means success
+
+    @pytest.mark.asyncio
+    async def test_monitor_triggers_lmstudio_recovery(self):
+        """When LM Studio is active provider and goes down, ensure_running() is called."""
+        config = MagicMock()
+        config.provider = "lmstudio"
+
+        manager = MagicMock()
+        manager.ensure_running = AsyncMock()
+
+        check_down = HealthCheck("lmstudio", ComponentStatus.DOWN, "Cannot connect")
+
+        with patch("server.services.health._check_active_llm",
+                   new_callable=AsyncMock, return_value=check_down):
+            task = asyncio.create_task(
+                run_llm_health_monitor(
+                    get_config=lambda: config,
+                    get_session_fn=lambda: None,
+                    interval=0.05,
+                    get_lmstudio_manager=lambda: manager,
+                )
+            )
+            await asyncio.sleep(0.1)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        manager.ensure_running.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_monitor_no_lmstudio_recovery_for_other_providers(self):
+        """ensure_running() is NOT called when non-lmstudio provider goes down."""
+        config = MagicMock()
+        config.provider = "ollama"
+
+        manager = MagicMock()
+        manager.ensure_running = AsyncMock()
+
+        check_down = HealthCheck("ollama", ComponentStatus.DOWN, "Connection refused")
+
+        with patch("server.services.health._check_active_llm",
+                   new_callable=AsyncMock, return_value=check_down):
+            task = asyncio.create_task(
+                run_llm_health_monitor(
+                    get_config=lambda: config,
+                    get_session_fn=lambda: None,
+                    interval=0.05,
+                    get_lmstudio_manager=lambda: manager,
+                )
+            )
+            await asyncio.sleep(0.1)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        manager.ensure_running.assert_not_called()

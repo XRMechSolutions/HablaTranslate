@@ -53,6 +53,31 @@ class TestIdiomScannerInit:
         scanner.load_from_db(rows)
         assert scanner.count == 2
 
+    def test_load_malformed_json_file_skipped(self, tmp_path):
+        """Malformed JSON file should be skipped without crashing."""
+        # Create one valid file and one malformed file
+        valid_data = [
+            {
+                "pattern": r"importa[rn]?\s+un\s+pepino",
+                "canonical": "importar un pepino",
+                "meaning": "to not care at all",
+            }
+        ]
+        valid_file = tmp_path / "valid.json"
+        with open(valid_file, "w", encoding="utf-8") as f:
+            json.dump(valid_data, f)
+
+        bad_file = tmp_path / "broken.json"
+        with open(bad_file, "w", encoding="utf-8") as f:
+            f.write("{this is not valid json[[[")
+
+        scanner = IdiomScanner()
+        # Bad file returns 0, does not raise
+        assert scanner.load_from_json(bad_file) == 0
+        # Valid file still loads fine after bad file
+        assert scanner.load_from_json(valid_file) == 1
+        assert scanner.count == 1
+
     def test_load_skips_bad_regex(self, tmp_path):
         """Bad regex patterns should be skipped."""
         bad_data = [

@@ -1,12 +1,17 @@
 """Session history routes: list, get, exchanges, save, export, delete."""
 
 import json
+import logging
+import shutil
 from pathlib import Path
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query
 
 from server.db.database import get_db
+from server.routes._state import get_recordings_dir
+
+logger = logging.getLogger("habla.api.sessions")
 
 
 session_router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -27,7 +32,10 @@ async def list_sessions(
            LIMIT ? OFFSET ?""",
         (limit, offset),
     )
-    return [dict(r) for r in rows]
+    sessions = [dict(r) for r in rows]
+    for s in sessions:
+        s["has_recording"] = bool(s.get("recording_dir"))
+    return sessions
 
 
 @session_router.get("/search")
@@ -69,6 +77,7 @@ async def search_sessions(
                LIMIT 5""",
             (session["id"], pattern, pattern, pattern),
         )
+        session["has_recording"] = bool(session.get("recording_dir"))
         session["matched_exchanges"] = [dict(m) for m in matches]
         results.append(session)
     return results
@@ -94,8 +103,69 @@ async def get_session(session_id: int):
         "SELECT COUNT(*) as c FROM exchanges WHERE session_id = ?", (session_id,)
     )
     session["exchange_count"] = exchange_count[0]["c"]
+    session["has_recording"] = bool(session.get("recording_dir"))
+
+    # Parse study_summary JSON if present
+    raw_summary = session.get("study_summary")
+    if raw_summary:
+        try:
+            session["study_summary"] = json.loads(raw_summary)
+        except (json.JSONDecodeError, TypeError):
+            pass  # Leave as raw string if unparseable
 
     return session
+
+
+@session_router.get("/{session_id}/summary")
+async def get_session_summary(session_id: int):
+    """Get the study summary for a session.
+
+    Returns the parsed summary JSON object, or 404 if the session doesn't
+    exist or the summary hasn't been generated yet.
+    """
+    db = await get_db()
+    rows = await db.execute_fetchall(
+        "SELECT study_summary FROM sessions WHERE id = ?", (session_id,)
+    )
+    if not rows:
+        raise HTTPException(404, "Session not found")
+    raw = rows[0]["study_summary"]
+    if not raw:
+        raise HTTPException(404, "Summary not yet generated")
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {"raw": raw}
+
+
+@session_router.post("/{session_id}/summary/regenerate")
+async def regenerate_session_summary(session_id: int):
+    """Regenerate the study summary for a completed session.
+
+    Runs the LLM summary synchronously and persists the result.
+    Returns 404 if session not found, 503 if pipeline not ready,
+    422 if the session has too few exchanges to summarize.
+    """
+    from server.routes._state import get_pipeline
+
+    db = await get_db()
+    rows = await db.execute_fetchall(
+        "SELECT id FROM sessions WHERE id = ?", (session_id,)
+    )
+    if not rows:
+        raise HTTPException(404, "Session not found")
+
+    pipeline = get_pipeline()
+    if pipeline is None:
+        raise HTTPException(503, "Pipeline not ready")
+
+    raw = await pipeline.generate_study_summary(session_id=session_id)
+    if raw is None:
+        raise HTTPException(422, "Summary generation failed or session has too few exchanges (minimum 3)")
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {"raw": raw}
 
 
 @session_router.get("/{session_id}/exchanges")
@@ -248,10 +318,25 @@ async def delete_session(session_id: int):
     # Clean up audio clips directory for this session
     clips_dir = Path("data/audio/clips") / str(session_id)
     if clips_dir.exists():
-        import shutil
         shutil.rmtree(clips_dir, ignore_errors=True)
 
+    # Clean up linked recording directory
+    rec_rows = await db.execute_fetchall(
+        "SELECT recording_dir FROM sessions WHERE id = ?", (session_id,)
+    )
+    if rec_rows and rec_rows[0]["recording_dir"]:
+        recordings_base = get_recordings_dir().resolve()
+        rec_path = (recordings_base / rec_rows[0]["recording_dir"]).resolve()
+        if rec_path.is_relative_to(recordings_base) and rec_path.is_dir():
+            shutil.rmtree(rec_path, ignore_errors=True)
+        elif not rec_path.is_relative_to(recordings_base):
+            logger.warning("Path traversal rejected in session delete: %s", rec_rows[0]["recording_dir"])
+
     await db.execute("DELETE FROM quality_metrics WHERE session_id = ?", (session_id,))
+    await db.execute(
+        "DELETE FROM vocab WHERE exchange_id IN (SELECT id FROM exchanges WHERE session_id = ?)",
+        (session_id,),
+    )
     await db.execute("DELETE FROM exchanges WHERE session_id = ?", (session_id,))
     await db.execute("DELETE FROM speakers WHERE session_id = ?", (session_id,))
     await db.execute("DELETE FROM sessions WHERE id = ?", (session_id,))

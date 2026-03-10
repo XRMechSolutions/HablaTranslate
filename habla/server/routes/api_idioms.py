@@ -100,7 +100,7 @@ async def create_idiom_pattern(req: IdiomPatternRequest):
 
     # Also check against JSON-loaded patterns in the scanner
     if _state._pipeline:
-        for p in _state._pipeline.idiom_scanner.patterns:
+        for p in _state._pipeline.context_manager.idiom_scanner.patterns:
             if p.canonical.lower() == canonical.lower():
                 raise HTTPException(409, f"Pattern for '{canonical}' already exists in pattern files")
 
@@ -119,7 +119,7 @@ async def create_idiom_pattern(req: IdiomPatternRequest):
         "id": cursor.lastrowid,
         "pattern": pattern,
         "canonical": canonical,
-        "total_patterns": _state._pipeline.idiom_scanner.count if _state._pipeline else None,
+        "total_patterns": _state._pipeline.context_manager.idiom_scanner.count if _state._pipeline else None,
     }
 
 

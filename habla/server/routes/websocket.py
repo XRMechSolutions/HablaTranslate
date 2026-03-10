@@ -29,12 +29,14 @@ from typing import Optional
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from server.db.database import get_db
 from server.pipeline.orchestrator import PipelineOrchestrator
 from server.pipeline.vad_buffer import StreamingVADBuffer, AudioDecoder, VADConfig
 from server.models.schemas import WSTranslation, WSPartialTranscript, WSSpeakersUpdate
 from server.services.audio_recorder import AudioRecorder
 from server.services.lmstudio_manager import LMStudioManager
 from server.config import RecordingConfig
+from server.services.tts import TTSService
 
 logger = logging.getLogger("habla.ws")
 
@@ -45,7 +47,7 @@ MERGE_GAP_SECONDS = 1.2
 MAX_PENDING_SECONDS = 60.0
 
 # Valid values for direction and mode control messages
-VALID_DIRECTIONS = ("es_to_en", "en_to_es")
+VALID_DIRECTIONS = ("es_to_en", "en_to_es", "auto")
 VALID_MODES = ("conversation", "classroom")
 
 # Only one client at a time — second connection gets rejected.
@@ -62,11 +64,20 @@ _active_session: Optional['ClientSession'] = None
 # Module-level playback service reference — set from main.py, used for cleanup on disconnect.
 _playback_service = None
 
+# Module-level TTS service reference — set from main.py.
+_tts_service: TTSService | None = None
+
 
 def set_ws_playback_service(service):
     """Called from main.py so cleanup can stop active playback on disconnect."""
     global _playback_service
     _playback_service = service
+
+
+def set_ws_tts_service(service: TTSService | None) -> None:
+    """Called from main.py to supply the TTS service (or None if TTS is disabled)."""
+    global _tts_service
+    _tts_service = service
 
 
 def set_ws_pipeline(pipeline: PipelineOrchestrator):
@@ -125,6 +136,7 @@ class ClientSession:
                 speech_threshold=asr_cfg.vad_threshold,
                 frame_ms=32,
                 pre_speech_padding_ms=300,
+                calibration_duration_ms=audio_cfg.calibration_duration_ms,
             ),
             on_segment=self._on_speech_segment,
         )
@@ -136,6 +148,7 @@ class ClientSession:
         self.listening = False
         self.playback_mode = False
         self._segment_counter = 0
+        self.tts_enabled: bool = pipeline.config.session.tts_enabled
 
         # Cleanup guard
         self._cleaned_up = False
@@ -160,6 +173,20 @@ class ClientSession:
     async def initialize(self):
         """Load VAD model."""
         await self.vad.initialize()
+
+    async def _link_recording_to_session(self):
+        """Write recording directory name to the DB session row."""
+        if not self.recorder or not self.pipeline.context_manager.session_id:
+            return
+        try:
+            db = await get_db()
+            await db.execute(
+                "UPDATE sessions SET recording_dir = ? WHERE id = ?",
+                (self.recorder.session_dir.name, self.pipeline.context_manager.session_id),
+            )
+            await db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to link recording to session: {e}")
 
     async def start_listening(self):
         """Begin continuous listening mode."""
@@ -186,6 +213,7 @@ class ClientSession:
             logger.info(f"Starting recording for session {self.session_id}")
             self.recorder.start_recording()
             logger.info(f"Recording started, raw_file={self.recorder.raw_file}")
+            await self._link_recording_to_session()
 
         # Re-wire callbacks to current pipeline (handles restart mid-session)
         if hasattr(self, '_wire_callbacks'):
@@ -193,6 +221,8 @@ class ClientSession:
 
         # Wire up partial audio callback for streaming transcription
         self.vad.on_partial_audio = self._on_partial_audio
+        # Wire noise floor calibration callback
+        self.vad.on_calibration_complete = self._on_calibration_complete
 
         # Start streaming ffmpeg and background decode loop
         await self.decoder.start_streaming()
@@ -210,6 +240,26 @@ class ClientSession:
         asyncio.create_task(
             self.pipeline.process_partial_audio(pcm_bytes, duration)
         )
+
+    async def _on_calibration_complete(self, noise_floor_rms: float):
+        """Called by VAD after noise floor calibration finishes."""
+        if noise_floor_rms < 200:
+            level = "quiet"
+        elif noise_floor_rms < 800:
+            level = "moderate"
+        else:
+            level = "loud"
+        logger.info(f"Noise floor calibration: RMS={noise_floor_rms:.0f}, level={level}")
+        await self._send({
+            "type": "noise_calibration",
+            "noise_floor_rms": round(noise_floor_rms, 1),
+            "noise_level": level,
+        })
+        if level == "loud":
+            await self._send({
+                "type": "error",
+                "message": f"Loud environment detected (RMS {noise_floor_rms:.0f}) — speech detection threshold raised automatically",
+            })
 
     async def stop_listening(self):
         """Stop continuous listening, flush remaining audio."""
@@ -259,6 +309,7 @@ class ClientSession:
         self.recorder = AudioRecorder(_recording_config, self.session_id)
         self.recorder.start_recording()
         logger.info(f"Recording enabled: session_dir={self.recorder.session_dir}")
+        await self._link_recording_to_session()
 
         await self._send({
             "type": "recording_enabled",
@@ -418,7 +469,8 @@ class ClientSession:
 
             start = time.monotonic()
             exchange = await self.pipeline.process_wav(
-                wav_path, audio_rms=audio_rms, vad_avg_prob=vad_avg_prob
+                wav_path, audio_rms=audio_rms, vad_avg_prob=vad_avg_prob,
+                segment_id=seg,
             )
             elapsed = time.monotonic() - start
 
@@ -452,6 +504,18 @@ class ClientSession:
             await self.ws.send_text(json.dumps(data))
         except Exception as e:
             logger.debug(f"WebSocket send failed (client may have disconnected): {e}")
+
+    async def _send_tts_audio(self, wav_bytes: bytes, exchange_id: int | None = None) -> None:
+        """Send TTS audio to client: JSON announcement then binary WAV frame."""
+        try:
+            await self.ws.send_text(json.dumps({
+                "type": "tts_audio_start",
+                "exchange_id": exchange_id,
+                "size_bytes": len(wav_bytes),
+            }))
+            await self.ws.send_bytes(wav_bytes)
+        except Exception as e:
+            logger.debug("TTS audio send failed: %s", e)
 
     async def _heartbeat_monitor(self, interval: float, max_missed: int):
         """Monitor client liveness. Close connection if no activity for too long."""
@@ -498,6 +562,17 @@ class ClientSession:
             logger.warning(f"Client {self.id}: cleanup finished but decode_task still running")
         if self._pending_task and not self._pending_task.done():
             logger.warning(f"Client {self.id}: cleanup finished but pending_task still running")
+
+
+async def _dispatch_tts(session: 'ClientSession', msg: WSTranslation) -> None:
+    """Synthesize translation to audio and send to client as a binary frame."""
+    direction = msg.effective_direction or session.pipeline.context_manager.direction
+    if direction == "auto":
+        direction = "es_to_en"  # fallback
+    target_lang = "en" if direction.endswith("_to_en") else "es"
+    wav = await _tts_service.synthesize(msg.translated, target_lang)
+    if wav:
+        await session._send_tts_audio(wav, msg.exchange_id)
 
 
 def _write_wav(f, pcm_bytes: bytes, sample_rate: int = 16000):
@@ -552,6 +627,8 @@ async def websocket_endpoint(websocket: WebSocket):
         # Define callbacks (wired to current pipeline on connect and start_listening)
         async def on_translation(msg: WSTranslation):
             await session._send(msg.model_dump())
+            if session.tts_enabled and _tts_service:
+                asyncio.create_task(_dispatch_tts(session, msg))
 
         async def on_partial(msg: WSPartialTranscript):
             await session._send(msg.model_dump())
@@ -584,13 +661,14 @@ async def websocket_endpoint(websocket: WebSocket):
             )
 
         p = session.pipeline
+        ctx = p.context_manager
         await session._send({
             "type": "status",
             "pipeline_ready": p.ready,
-            "session_id": p.session_id,
-            "direction": p.direction,
-            "mode": p.mode,
-            "speaker_count": len(p.speaker_tracker.speakers),
+            "session_id": ctx.session_id,
+            "direction": ctx.direction,
+            "mode": ctx.mode,
+            "speaker_count": len(ctx.speaker_tracker.speakers),
         })
 
         while True:
@@ -607,6 +685,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 try:
                     msg = json.loads(message["text"])
                 except json.JSONDecodeError:
+                    logger.warning(f"Client {session.id}: malformed JSON in text frame")
+                    await session._send({"type": "error", "message": "Invalid JSON"})
                     continue
 
                 t = msg.get("type", "")
@@ -658,10 +738,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     sid = msg.get("speaker_id", "")
                     name = msg.get("name", "")
                     if sid and name:
-                        session.pipeline.speaker_tracker.rename(sid, name)
+                        session.pipeline.context_manager.speaker_tracker.rename(sid, name)
                         await session._send(
                             WSSpeakersUpdate(
-                                speakers=session.pipeline.speaker_tracker.get_all()
+                                speakers=session.pipeline.context_manager.speaker_tracker.get_all()
                             ).model_dump()
                         )
 
@@ -669,15 +749,32 @@ async def websocket_endpoint(websocket: WebSocket):
                     logger.info(f"Client {session.id}: new_session requested")
                     if session.listening:
                         await session.stop_listening()
+                    # Detach recorder so next start_listening creates a fresh one
+                    if session.recorder:
+                        session.recorder.stop_recording()
+                        session.recorder = None
                     new_id = await session.pipeline.reset_session()
                     if hasattr(session, '_wire_callbacks'):
                         session._wire_callbacks()
                     await session._send({
                         "type": "session_reset",
                         "session_id": new_id,
-                        "direction": session.pipeline.direction,
-                        "mode": session.pipeline.mode,
+                        "direction": session.pipeline.context_manager.direction,
+                        "mode": session.pipeline.context_manager.mode,
                     })
+
+                elif t == "set_tts":
+                    enabled = bool(msg.get("enabled", False))
+                    session.tts_enabled = enabled
+                    if enabled and _tts_service:
+                        voice_es = msg.get("voice_es", "")
+                        voice_en = msg.get("voice_en", "")
+                        if voice_es or voice_en:
+                            _tts_service.set_voices(
+                                voice_es or _tts_service._voice_es,
+                                voice_en or _tts_service._voice_en,
+                            )
+                    await session._send({"type": "tts_changed", "enabled": enabled})
 
                 elif t == "ping":
                     await session._send({"type": "pong"})
@@ -691,6 +788,9 @@ async def websocket_endpoint(websocket: WebSocket):
         await session.cleanup()
         if db_session_created:
             await session.pipeline.close_session()
+            # Fire-and-forget: generate study summary in background after session closes.
+            # Skips automatically if the session has fewer than 3 exchanges.
+            asyncio.create_task(session.pipeline.generate_study_summary())
 
 
 def _persist_ui_setting(session, key: str, value: str):

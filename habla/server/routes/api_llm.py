@@ -11,6 +11,66 @@ import server.routes._state as _state
 from server.services.lmstudio_manager import LMStudioManager
 
 
+# --- Helpers ---
+
+def _mask_key(key: str) -> str:
+    """Show only last 4 chars of an API key."""
+    if not key or len(key) <= 4:
+        return "****"
+    return "*" * (len(key) - 4) + key[-4:]
+
+
+def _build_settings_dict(cfg) -> dict:
+    """Build the full settings dict for persistence, including API keys."""
+    return {
+        "provider": cfg.provider,
+        "lmstudio_model": cfg.lmstudio_model,
+        "quick_model": cfg.quick_model,
+        "ollama_model": cfg.ollama_model,
+        "openai_model": cfg.openai_model,
+        "anthropic_model": cfg.anthropic_model,
+        "openai_api_key": cfg.openai_api_key,
+        "anthropic_api_key": cfg.anthropic_api_key,
+    }
+
+
+async def _validate_api_key(provider: str, api_key: str) -> tuple[bool, str]:
+    """Validate key with a lightweight API probe.
+
+    OpenAI: GET /v1/models (free). Claude: POST /v1/messages max_tokens=1.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            if provider == "openai":
+                resp = await client.get(
+                    "https://api.openai.com/v1/models",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+            else:
+                resp = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": api_key,
+                        "anthropic-version": "2024-10-22",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": "claude-haiku-4-5",
+                        "max_tokens": 1,
+                        "messages": [{"role": "user", "content": "hi"}],
+                    },
+                )
+            if resp.status_code == 401:
+                return False, "Invalid API key"
+            if resp.status_code in (200, 429):
+                return True, ""
+            return False, f"Unexpected status {resp.status_code}"
+    except httpx.ConnectError:
+        return False, "Cannot reach API server"
+    except Exception as e:
+        return False, str(e)
+
+
 # --- LLM Provider Routes ---
 
 llm_router = APIRouter(prefix="/api/llm", tags=["llm"])
@@ -25,14 +85,14 @@ async def llm_current():
     """
     if not _state._pipeline:
         return {"status": "not initialized"}
-    t = _state._pipeline.translator
+    t = _state._pipeline.context_manager.translator
     result = {
         "provider": t.config.provider,
         "model": t.config.model,
         "quick_model": t.config.quick_model,
         "metrics": t.metrics,
     }
-    if t.config.provider == "openai":
+    if t.config.provider in ("openai", "claude"):
         result["costs"] = t.costs
     return result
 
@@ -48,7 +108,7 @@ async def llm_providers():
     if not _state._pipeline:
         return {"providers": []}
 
-    cfg = _state._pipeline.translator.config
+    cfg = _state._pipeline.context_manager.translator.config
     providers = []
 
     # Ollama
@@ -93,10 +153,19 @@ async def llm_providers():
     openai_info = {"name": "openai", "status": "unknown", "models": []}
     if cfg.openai_api_key:
         openai_info["status"] = "ok"
-        openai_info["models"] = ["gpt-5.2", "gpt-5.2-pro", "gpt-4o-mini", "gpt-4o"]
+        openai_info["models"] = ["gpt-5.2", "gpt-5", "gpt-4o", "gpt-5-mini", "gpt-4o-mini", "gpt-5-nano"]
     else:
         openai_info["status"] = "no_api_key"
     providers.append(openai_info)
+
+    # Claude (Anthropic)
+    claude_info = {"name": "claude", "status": "unknown", "models": []}
+    if cfg.anthropic_api_key:
+        claude_info["status"] = "ok"
+        claude_info["models"] = ["claude-sonnet-4-6", "claude-haiku-4-5", "claude-opus-4-6"]
+    else:
+        claude_info["status"] = "no_api_key"
+    providers.append(claude_info)
 
     return {"providers": providers, "active": cfg.provider}
 
@@ -112,7 +181,7 @@ async def llm_models(provider: str):
     if not _state._pipeline:
         raise HTTPException(503, "Pipeline not initialized")
 
-    cfg = _state._pipeline.translator.config
+    cfg = _state._pipeline.context_manager.translator.config
 
     if provider == "ollama":
         try:
@@ -154,7 +223,12 @@ async def llm_models(provider: str):
     elif provider == "openai":
         if not cfg.openai_api_key:
             raise HTTPException(400, "OPENAI_API_KEY not configured")
-        return {"models": ["gpt-5.2", "gpt-5.2-pro", "gpt-4o-mini", "gpt-4o"]}
+        return {"models": ["gpt-5.2", "gpt-5", "gpt-4o", "gpt-5-mini", "gpt-4o-mini", "gpt-5-nano"]}
+
+    elif provider == "claude":
+        if not cfg.anthropic_api_key:
+            raise HTTPException(400, "ANTHROPIC_API_KEY not configured")
+        return {"models": ["claude-sonnet-4-6", "claude-haiku-4-5", "claude-opus-4-6"]}
 
     else:
         raise HTTPException(400, f"Unknown provider: {provider}")
@@ -180,12 +254,14 @@ async def llm_select(req: LLMSelectRequest):
     """
     if not _state._pipeline:
         raise HTTPException(503, "Pipeline not initialized")
-    if req.provider not in ("ollama", "lmstudio", "openai"):
-        raise HTTPException(400, "Provider must be 'ollama', 'lmstudio', or 'openai'")
-    if req.provider == "openai" and not _state._pipeline.translator.config.openai_api_key:
+    if req.provider not in ("ollama", "lmstudio", "openai", "claude"):
+        raise HTTPException(400, "Provider must be 'ollama', 'lmstudio', 'openai', or 'claude'")
+    if req.provider == "openai" and not _state._pipeline.context_manager.translator.config.openai_api_key:
         raise HTTPException(400, "OPENAI_API_KEY not configured")
+    if req.provider == "claude" and not _state._pipeline.context_manager.translator.config.anthropic_api_key:
+        raise HTTPException(400, "ANTHROPIC_API_KEY not configured")
 
-    cfg = _state._pipeline.translator.config
+    cfg = _state._pipeline.context_manager.translator.config
 
     # --- Ollama: verify model exists ---
     if req.model and req.provider == "ollama":
@@ -227,16 +303,11 @@ async def llm_select(req: LLMSelectRequest):
     # --- Apply config changes ---
     if req.quick_model is not None:
         cfg.quick_model = req.quick_model
-    _state._pipeline.translator.switch_provider(req.provider, req.model, req.url)
+    _state._pipeline.context_manager.translator.switch_provider(req.provider, req.model, req.url)
 
-    # --- Persist selection ---
+    # --- Persist selection (includes API keys so they aren't erased) ---
     data_dir = _state._pipeline.config.data_dir
-    LMStudioManager.save_settings(data_dir, {
-        "provider": cfg.provider,
-        "lmstudio_model": cfg.lmstudio_model,
-        "quick_model": cfg.quick_model,
-        "ollama_model": cfg.ollama_model,
-    })
+    LMStudioManager.save_settings(data_dir, _build_settings_dict(cfg))
 
     return {
         "provider": cfg.provider,
@@ -247,22 +318,118 @@ async def llm_select(req: LLMSelectRequest):
 
 @llm_router.get("/costs")
 async def llm_costs():
-    """Get OpenAI API cost tracking data.
+    """Get cloud API cost tracking data.
 
     Returns 200 {costs: null} when pipeline not initialized.
-    Returns 200 {cost_tracking: "Free (local)"} for non-OpenAI providers.
-    Returns 200 with provider, model, costs dict for OpenAI.
+    Returns 200 {cost_tracking: "Free (local)"} for local providers.
+    Returns 200 with provider, model, costs dict for cloud providers (OpenAI, Claude).
     """
     if not _state._pipeline:
         return {"costs": None}
-    t = _state._pipeline.translator
-    if t.config.provider != "openai":
+    t = _state._pipeline.context_manager.translator
+    if t.config.provider not in ("openai", "claude"):
         return {"provider": t.config.provider, "cost_tracking": "Free (local)"}
     return {
-        "provider": "openai",
-        "model": t.config.openai_model,
+        "provider": t.config.provider,
+        "model": t.config.model,
         "costs": t.costs,
     }
+
+
+# --- API Key Management ---
+
+class ApiKeyRequest(BaseModel):
+    provider: str
+    api_key: str
+
+
+@llm_router.get("/apikeys")
+async def llm_apikeys():
+    """Return masked API key status for each cloud provider.
+
+    Returns 200 with keys dict. Never returns full keys — only last 4 chars.
+    """
+    if not _state._pipeline:
+        return {"keys": {
+            "openai": {"configured": False, "masked_key": ""},
+            "claude": {"configured": False, "masked_key": ""},
+        }}
+    cfg = _state._pipeline.context_manager.translator.config
+    return {"keys": {
+        "openai": {
+            "configured": bool(cfg.openai_api_key),
+            "masked_key": _mask_key(cfg.openai_api_key) if cfg.openai_api_key else "",
+        },
+        "claude": {
+            "configured": bool(cfg.anthropic_api_key),
+            "masked_key": _mask_key(cfg.anthropic_api_key) if cfg.anthropic_api_key else "",
+        },
+    }}
+
+
+@llm_router.post("/apikey")
+async def llm_set_apikey(req: ApiKeyRequest):
+    """Validate and store an API key, or remove if empty.
+
+    Returns 200 {provider, masked_key, status}.
+    Returns 400 for invalid provider or failed validation.
+    Returns 503 if pipeline not initialized.
+    """
+    if not _state._pipeline:
+        raise HTTPException(503, "Pipeline not initialized")
+    if req.provider not in ("openai", "claude"):
+        raise HTTPException(400, "Provider must be 'openai' or 'claude'")
+
+    cfg = _state._pipeline.context_manager.translator.config
+
+    # Remove key if empty
+    if not req.api_key.strip():
+        if req.provider == "openai":
+            cfg.openai_api_key = ""
+        else:
+            cfg.anthropic_api_key = ""
+        data_dir = _state._pipeline.config.data_dir
+        LMStudioManager.save_settings(data_dir, _build_settings_dict(cfg))
+        return {"provider": req.provider, "masked_key": "", "status": "removed"}
+
+    # Validate key
+    valid, err = await _validate_api_key(req.provider, req.api_key.strip())
+    if not valid:
+        raise HTTPException(400, f"API key validation failed: {err}")
+
+    # Store key
+    if req.provider == "openai":
+        cfg.openai_api_key = req.api_key.strip()
+    else:
+        cfg.anthropic_api_key = req.api_key.strip()
+
+    # Persist
+    data_dir = _state._pipeline.config.data_dir
+    LMStudioManager.save_settings(data_dir, _build_settings_dict(cfg))
+
+    return {
+        "provider": req.provider,
+        "masked_key": _mask_key(req.api_key.strip()),
+        "status": "ok",
+    }
+
+
+@llm_router.get("/pricing")
+async def llm_pricing():
+    """Return per-model pricing with cost tier labels.
+
+    Tier: $ (output <= $1/M), $$ (<= $10/M), $$$ (> $10/M), free (local).
+    """
+    from server.pipeline.translator import _OPENAI_PRICING, _CLAUDE_PRICING
+
+    pricing = {}
+    for model, (inp, out) in _OPENAI_PRICING.items():
+        tier = "$" if out <= 1.0 else "$$" if out <= 10.0 else "$$$"
+        pricing[model] = {"input": inp, "output": out, "tier": tier}
+    for model, (inp, out) in _CLAUDE_PRICING.items():
+        tier = "$" if out <= 1.0 else "$$" if out <= 10.0 else "$$$"
+        pricing[model] = {"input": inp, "output": out, "tier": tier}
+    return {"pricing": pricing}
 
 
 # --- LM Studio management routes ---
@@ -311,7 +478,7 @@ async def lmstudio_models():
     try:
         async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get(
-                f"{_state._pipeline.translator.config.lmstudio_url}/v1/models"
+                f"{_state._pipeline.context_manager.translator.config.lmstudio_url}/v1/models"
                 if _state._pipeline else "http://localhost:1234/v1/models"
             )
         if resp.is_success:

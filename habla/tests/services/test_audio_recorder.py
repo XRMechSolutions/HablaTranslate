@@ -287,6 +287,43 @@ class TestCleanupOldRecordings:
         assert len(remaining) <= recording_config.max_recordings
 
     @pytest.mark.unit
+    def test_cleanup_skips_non_session_directories(self, recording_config):
+        """Directories that don't match the session format should never be deleted."""
+        import time
+
+        output_dir = recording_config.output_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create directories that match session format (will be cleanup candidates)
+        for i in range(4):
+            d = output_dir / f"session_{i}_20260101_00000{i}"
+            d.mkdir()
+            (d / "dummy.txt").write_text("x")
+            time.sleep(0.05)
+
+        # Create directories that should NOT be cleaned up
+        safe_dirs = [
+            output_dir / "my_custom_folder",      # underscore but wrong format
+            output_dir / "backups",                # no underscore
+            output_dir / "test_data_archive",      # underscores but no timestamp
+        ]
+        for d in safe_dirs:
+            d.mkdir()
+            (d / "important.txt").write_text("do not delete")
+
+        # Also create a file with an underscore (should be ignored)
+        (output_dir / "notes_backup.txt").write_text("a file, not a dir")
+
+        # Trigger cleanup (max_recordings=3, 4 session dirs exist)
+        rec = AudioRecorder(recording_config, "session_4")
+        rec.stop_recording()
+
+        # All safe directories must survive
+        for d in safe_dirs:
+            assert d.exists(), f"Non-session dir '{d.name}' was incorrectly deleted"
+        assert (output_dir / "notes_backup.txt").exists()
+
+    @pytest.mark.unit
     def test_cleanup_no_limit_does_nothing(self, tmp_path):
         config = RecordingConfig(
             enabled=True,

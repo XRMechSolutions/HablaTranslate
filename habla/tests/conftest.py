@@ -23,6 +23,8 @@ def translator_config():
         lmstudio_model="test-model",
         openai_api_key="test-key",
         openai_model="gpt-5-nano",
+        anthropic_api_key="test-anthropic-key",
+        anthropic_model="claude-sonnet-4-6",
         timeout_seconds=30.0,
         temperature=0.3,
         fallback_to_local=True,
@@ -87,6 +89,26 @@ def mock_httpx_client():
     }
     openai_response.raise_for_status = MagicMock()
 
+    # Default Claude response
+    claude_response = MagicMock()
+    claude_response.status_code = 200
+    claude_response.json.return_value = {
+        "content": [{
+            "type": "text",
+            "text": json.dumps({
+                "corrected": "Corrected text",
+                "translated": "Translated text",
+                "confidence": 0.9,
+                "flagged_phrases": [],
+            })
+        }],
+        "usage": {
+            "input_tokens": 120,
+            "output_tokens": 60,
+        }
+    }
+    claude_response.raise_for_status = MagicMock()
+
     async def mock_post(url, **kwargs):
         if "/api/generate" in url:
             return ollama_response
@@ -94,6 +116,8 @@ def mock_httpx_client():
             return lmstudio_response
         elif "/v1/responses" in url:
             return openai_response
+        elif "api.anthropic.com" in url:
+            return claude_response
         raise ValueError(f"Unknown URL: {url}")
 
     async def mock_get(url):

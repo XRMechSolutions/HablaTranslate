@@ -174,6 +174,14 @@ def check_openai_key(api_key: str) -> HealthCheck:
                        "OPENAI_API_KEY not set - cloud translation unavailable")
 
 
+def check_anthropic_key(api_key: str) -> HealthCheck:
+    """Check if Anthropic API key is configured."""
+    if api_key:
+        return HealthCheck("claude", ComponentStatus.OK, "Configured")
+    return HealthCheck("claude", ComponentStatus.DEGRADED,
+                       "ANTHROPIC_API_KEY not set - Claude translation unavailable")
+
+
 async def check_hf_token(token: str) -> HealthCheck:
     """Check if HuggingFace token is set."""
     if token:
@@ -191,6 +199,8 @@ async def _check_active_llm(translator_config) -> HealthCheck:
         return await check_lmstudio(translator_config.lmstudio_url)
     elif provider == "openai":
         return check_openai_key(translator_config.openai_api_key)
+    elif provider == "claude":
+        return check_anthropic_key(translator_config.anthropic_api_key)
     return HealthCheck("llm", ComponentStatus.DOWN, f"Unknown provider: {provider}")
 
 
@@ -251,8 +261,8 @@ async def run_runtime_checks(pipeline) -> SystemHealth:
     db = await check_database(pipeline.config.db_path)
     health.add(db)
 
-    health.add(check_whisperx(pipeline._whisperx_model))
-    health.add(check_diarization(pipeline._diarize_pipeline))
+    health.add(check_whisperx(pipeline.audio_processor._whisperx_model))
+    health.add(check_diarization(pipeline.audio_processor._diarize_pipeline))
 
     _runtime_cache["result"] = health
     _runtime_cache["timestamp"] = now
@@ -264,10 +274,13 @@ async def run_llm_health_monitor(
     get_config,
     get_session_fn,
     interval: float = 60.0,
+    get_lmstudio_manager=None,
 ):
     """Background task: periodically check active LLM provider health.
 
     Sends WebSocket error to connected client when provider goes down.
+    When the active provider is LM Studio and it goes down, calls
+    ``ensure_running()`` on the manager to attempt auto-recovery.
     Logs recovery when provider comes back.
     """
     last_status = ComponentStatus.OK
@@ -289,6 +302,16 @@ async def run_llm_health_monitor(
                         "type": "error",
                         "message": f"LLM provider ({config.provider}) is unavailable: {check.message}",
                     })
+
+                # Attempt auto-recovery for LM Studio
+                if config.provider == "lmstudio" and get_lmstudio_manager is not None:
+                    manager = get_lmstudio_manager()
+                    if manager is not None:
+                        logger.info("Attempting LM Studio auto-recovery via ensure_running()")
+                        try:
+                            await manager.ensure_running()
+                        except Exception as recover_exc:
+                            logger.warning(f"LM Studio auto-recovery failed: {recover_exc}")
 
             elif check.status == ComponentStatus.OK and last_status != ComponentStatus.OK:
                 logger.info(

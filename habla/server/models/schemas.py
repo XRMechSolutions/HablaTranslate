@@ -64,6 +64,7 @@ class Exchange(BaseModel):
     correction_detail: Optional[CorrectionDetail] = None
     processing_ms: int = 0
     audio_path: Optional[str] = None
+    detected_language: Optional[str] = None  # WhisperX detected language code
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -106,6 +107,7 @@ class WSPartialTranscript(BaseModel):
     type: str = "partial"
     text: str
     speaker_id: Optional[str] = None
+    detected_language: Optional[str] = None
 
 
 class WSTranslation(BaseModel):
@@ -121,6 +123,8 @@ class WSTranslation(BaseModel):
     correction_detail: Optional[CorrectionDetail] = None
     confidence: float = 0.0
     has_audio: bool = False
+    detected_language: Optional[str] = None  # per-segment detection code
+    effective_direction: Optional[str] = None  # resolved direction (never "auto")
     timestamp: str
 
 
