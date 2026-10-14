@@ -97,6 +97,15 @@ habla/tests/benchmark/results/
 CLAUDE.md
 
 # -----------------------------------------------------------------------------
+# Internal dev workflow (agent instructions, planning, task state)
+# -----------------------------------------------------------------------------
+/.dev/
+.dev-shared/
+AGENTS.md
+GEMINI.md
+audit-loop.ps1
+
+# -----------------------------------------------------------------------------
 # OS artifacts
 # -----------------------------------------------------------------------------
 .DS_Store
@@ -118,4 +127,3 @@ habla/tools/last_test_output.txt
 *.tmp
 temp/
 tmp/
-/.dev
