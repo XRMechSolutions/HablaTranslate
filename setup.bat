@@ -32,6 +32,28 @@ if errorlevel 1 (
 ) else (
     for /f "tokens=2" %%v in ('python --version 2^>^&1') do echo   [OK] Python %%v
 )
+
+:: Project virtual environment: keeps Habla's pinned packages (torch, whisperx)
+:: out of the global Python. Python 3.12 is the tested version.
+set VENV_DIR=%HABLA_DIR%\.venv
+set PY=%VENV_DIR%\Scripts\python.exe
+if exist "%PY%" (
+    echo   [OK] Using project venv: %VENV_DIR%
+) else (
+    echo   [INFO] Creating project venv with Python 3.12...
+    where uv >nul 2>&1
+    if errorlevel 1 (
+        py -3.12 -m venv "%VENV_DIR%" 2>nul || python -m venv "%VENV_DIR%"
+    ) else (
+        uv venv "%VENV_DIR%" --python 3.12
+    )
+)
+if not exist "%PY%" (
+    echo   [FAIL] Could not create venv at %VENV_DIR%. Install Python 3.12 or uv and re-run.
+    pause
+    exit /b 1
+)
+"%PY%" -m pip --version >nul 2>&1 || "%PY%" -m ensurepip --upgrade >nul 2>&1
 echo.
 
 :: ============================================================
@@ -112,10 +134,8 @@ if exist "%CERT_FILE%" (
     )
 )
 
-:: Update start-habla.bat with correct hostname
-echo   [INFO] Updating start-habla.bat with Tailscale hostname...
-powershell -Command "(Get-Content '%~dp0start-habla.bat') -replace 'set CERT_FILE=%%~dp0.*\.crt', 'set CERT_FILE=%%~dp0%TS_FQDN%.crt' -replace 'set KEY_FILE=%%~dp0.*\.key', 'set KEY_FILE=%%~dp0%TS_FQDN%.key' -replace 'set TAILSCALE_HOST=.*', 'set TAILSCALE_HOST=%TS_FQDN%' | Set-Content '%~dp0start-habla.bat'"
-echo   [OK] start-habla.bat updated
+:: The hostname is written to habla\.env in step 8 (start-habla.bat reads it from
+:: there). Never write it into a tracked file: it identifies this machine and tailnet.
 
 :skip_tailscale
 echo.
@@ -140,11 +160,30 @@ if errorlevel 1 (
 echo.
 
 :: ============================================================
-:: 6. Python dependencies
+:: 6. PyTorch CUDA (install BEFORE requirements.txt so pip
+::    doesn't pull CPU-only torch as a whisperx dependency)
 :: ============================================================
-echo [6/10] Installing Python dependencies...
+echo [6/10] Checking PyTorch CUDA support...
+"%PY%" -c "import torch; cuda=torch.cuda.is_available(); print(f'  [OK] PyTorch {torch.__version__}, CUDA: {cuda}'); exit(0 if cuda else 1)" 2>nul
+if errorlevel 1 (
+    echo   [WARN] PyTorch missing or no CUDA support. Installing PyTorch with CUDA...
+    "%PY%" -m pip install torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu126
+    if errorlevel 1 (
+        echo   [FAIL] PyTorch CUDA install failed.
+        echo          Manual install: https://pytorch.org/get-started/locally/
+        set /a ERRORS+=1
+    ) else (
+        "%PY%" -c "import torch; print(f'  [OK] PyTorch {torch.__version__}, CUDA: {torch.cuda.is_available()}')" 2>nul
+    )
+)
+echo.
+
+:: ============================================================
+:: 7. Python dependencies
+:: ============================================================
+echo [7/10] Installing Python dependencies...
 if exist "%HABLA_DIR%\requirements.txt" (
-    pip install -r "%HABLA_DIR%\requirements.txt"
+    "%PY%" -m pip install -r "%HABLA_DIR%\requirements.txt"
     if errorlevel 1 (
         echo   [WARN] Some packages failed. Check output above.
         set /a WARNINGS+=1
@@ -155,24 +194,8 @@ if exist "%HABLA_DIR%\requirements.txt" (
     echo   [FAIL] requirements.txt not found at %HABLA_DIR%\requirements.txt
     set /a ERRORS+=1
 )
-echo.
-
-:: ============================================================
-:: 7. PyTorch CUDA
-:: ============================================================
-echo [7/10] Checking PyTorch CUDA support...
-python -c "import torch; cuda=torch.cuda.is_available(); print(f'  [OK] PyTorch {torch.__version__}, CUDA: {cuda}'); exit(0 if cuda else 1)" 2>nul
-if errorlevel 1 (
-    echo   [WARN] PyTorch missing or no CUDA support. Installing PyTorch with CUDA...
-    pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu126
-    if errorlevel 1 (
-        echo   [FAIL] PyTorch CUDA install failed.
-        echo          Manual install: https://pytorch.org/get-started/locally/
-        set /a ERRORS+=1
-    ) else (
-        python -c "import torch; print(f'  [OK] PyTorch {torch.__version__}, CUDA: {torch.cuda.is_available()}')" 2>nul
-    )
-)
+:: Pin numpy to a version compatible with numba and opencv-python
+"%PY%" -m pip install "numpy<2.3" >nul 2>&1
 echo.
 
 :: ============================================================
@@ -200,6 +223,16 @@ if exist "%HABLA_DIR%\.env" (
         set /a ERRORS+=1
     )
 )
+:: Record the Tailscale hostname from step 4 so start-habla.bat can find the certs
+if defined TS_FQDN if exist "%HABLA_DIR%\.env" (
+    findstr /r "^TAILSCALE_HOST=." "%HABLA_DIR%\.env" >nul 2>&1
+    if errorlevel 1 (
+        >>"%HABLA_DIR%\.env" echo TAILSCALE_HOST=%TS_FQDN%
+        echo   [OK] TAILSCALE_HOST written to .env
+    ) else (
+        echo   [OK] TAILSCALE_HOST already set in .env
+    )
+)
 echo.
 
 :: ============================================================
@@ -210,7 +243,7 @@ echo.
 
 :: --- 9a. Silero VAD (~2MB) ---
 echo   [9a] Silero VAD model...
-python -c "import torch; torch.hub.load('snakers4/silero-vad', 'silero_vad', trust_repo=True); print('  [OK] Silero VAD downloaded')" 2>nul
+"%PY%" -c "import torch; torch.hub.load('snakers4/silero-vad', 'silero_vad', trust_repo=True); print('  [OK] Silero VAD downloaded')" 2>nul
 if errorlevel 1 (
     echo   [WARN] Silero VAD download failed. Will retry on first server start.
     set /a WARNINGS+=1
@@ -219,10 +252,10 @@ echo.
 
 :: --- 9b. WhisperX / faster-whisper "small" model (~500MB) ---
 echo   [9b] WhisperX small model (faster-whisper, ~500MB)...
-python -c "from faster_whisper.utils import download_model; download_model('small'); print('  [OK] WhisperX small model downloaded')" 2>nul
+"%PY%" -c "from faster_whisper.utils import download_model; download_model('small'); print('  [OK] WhisperX small model downloaded')" 2>nul
 if errorlevel 1 (
     :: Try alternative download method
-    python -c "from huggingface_hub import snapshot_download; snapshot_download('guillaumekln/faster-whisper-small'); print('  [OK] WhisperX small model downloaded')" 2>nul
+    "%PY%" -c "from huggingface_hub import snapshot_download; snapshot_download('guillaumekln/faster-whisper-small'); print('  [OK] WhisperX small model downloaded')" 2>nul
     if errorlevel 1 (
         echo   [WARN] WhisperX model download failed. Will download on first server start.
         echo          This is a ~500MB download and may cause the first startup to be slow.
@@ -251,7 +284,7 @@ if defined HF_TOKEN_VALUE (
         echo            https://huggingface.co/pyannote/segmentation-3.0
         set /a WARNINGS+=1
     ) else (
-        python -c "import os; os.environ['HF_TOKEN']='!HF_TOKEN_VALUE!'; from pyannote.audio import Pipeline; p=Pipeline.from_pretrained('pyannote/speaker-diarization-3.1', token='!HF_TOKEN_VALUE!'); print('  [OK] Pyannote diarization model downloaded')" 2>nul
+        "%PY%" -c "import os; os.environ['HF_TOKEN']='!HF_TOKEN_VALUE!'; from pyannote.audio import Pipeline; p=Pipeline.from_pretrained('pyannote/speaker-diarization-3.1', token='!HF_TOKEN_VALUE!'); print('  [OK] Pyannote diarization model downloaded')" 2>nul
         if errorlevel 1 (
             echo   [WARN] Pyannote download failed. Common causes:
             echo          - HF_TOKEN is invalid

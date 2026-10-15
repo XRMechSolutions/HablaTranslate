@@ -19,6 +19,10 @@ if "%TAILSCALE_HOST%"=="" (
 )
 set CERT_FILE=%~dp0%TAILSCALE_HOST%.crt
 set KEY_FILE=%~dp0%TAILSCALE_HOST%.key
+
+:: --- Python: project venv created by setup.bat, else whatever is on PATH ---
+set PYTHON=python
+if exist "%HABLA_DIR%\.venv\Scripts\python.exe" set "PYTHON=%HABLA_DIR%\.venv\Scripts\python.exe"
 echo ============================================
 echo  Habla Translator - Startup
 echo ============================================
@@ -64,11 +68,11 @@ set RECORDING_ENABLED=1
 cd /d "%HABLA_DIR%"
 if exist "%CERT_FILE%" (
     echo [INFO] Starting with HTTPS enabled and recording enabled
-    python -m uvicorn server.main:app --host 0.0.0.0 --port %PORT% --ssl-keyfile "%KEY_FILE%" --ssl-certfile "%CERT_FILE%"
+    "%PYTHON%" -m uvicorn server.main:app --host 0.0.0.0 --port %PORT% --ssl-keyfile "%KEY_FILE%" --ssl-certfile "%CERT_FILE%"
 ) else (
     echo [WARN] HTTPS certificates not found, starting without SSL
     echo [WARN] Microphone access will be blocked on remote devices
-    python -m uvicorn server.main:app --host 0.0.0.0 --port %PORT%
+    "%PYTHON%" -m uvicorn server.main:app --host 0.0.0.0 --port %PORT%
 )
 
 echo.

@@ -1,6 +1,10 @@
 # Normalize line endings to LF on commit (works on Linux/Docker deployment)
 * text=auto eol=lf
 
+# cmd.exe mis-parses labels and goto in LF-only batch files
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
 # Binaries - no line ending conversion
 *.png binary
 *.ico binary
