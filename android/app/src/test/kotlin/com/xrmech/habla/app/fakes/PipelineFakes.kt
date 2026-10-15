@@ -117,7 +117,7 @@ class FakeSpeechRecognizer : SpeechRecognizer {
     class Step(
         val text: String,
         val gate: CompletableDeferred<Unit>? = null,
-        val error: AsrException? = null,
+        val error: Exception? = null,
         val segments: Boolean = true,
     )
 

@@ -71,7 +71,9 @@ jobs:
       - name: Personal build with a synthetic key must be detected
         run: |
           set -euo pipefail
-          DUMMY="sk-proj-$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 40)"
+          # 40 random hex chars. Not `tr < /dev/urandom | head`: tr dies of SIGPIPE (141) and
+          # pipefail + errexit would end the step before the build.
+          DUMMY="sk-proj-$(openssl rand -hex 20)"
           echo "::add-mask::$DUMMY"
           printf 'OPENAI_API_KEY=%s\n' "$DUMMY" > .env
           ./gradlew --no-configuration-cache assemblePersonalDebug

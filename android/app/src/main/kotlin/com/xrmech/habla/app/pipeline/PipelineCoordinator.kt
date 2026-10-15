@@ -352,6 +352,14 @@ class PipelineCoordinator(
                     publishDepth(s)
                     try {
                         processFinal(s, item)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // Anything but AsrException (handled inside) would otherwise end this
+                        // coroutine and silently stop every later final of the session.
+                        s.metrics.asrErrors.incrementAndGet()
+                        HLog.e(HLog.PIPELINE, "segment #${item.seq} failed unexpectedly", e)
+                        _state.update { it.copy(lastAsrError = e.message ?: e.javaClass.simpleName) }
                     } finally {
                         s.queue.done()
                         publishDepth(s)
@@ -782,15 +790,22 @@ class PipelineCoordinator(
             } catch (e: Exception) {
                 HLog.e(HLog.PIPELINE, "endSession failed: ${e.message}")
             }
-            recognizers.release()
+            // abort() during the drain already released the holder, and a newer session may own it now.
+            if (session === s) recognizers.release()
             s.vad?.let { v -> withContext(dispatchers.segmenter) { runCatching { v.close() } } }
         }
         s.partials.close()
         s.scope.cancel()
-        if (s.metrics.framesDropped.get() > 0) addNotice(SessionNotice.AUDIO_DROPPED)
         val line = s.metrics.toJsonLine()
         HLog.i(HLog.METRICS, line)
         _lastMetricsLine.value = line
+        if (session !== s) {
+            // Aborted mid-drain: abort() already published Idle and freed `busy`; a newer session
+            // may be running and its state must not be overwritten.
+            HLog.w(HLog.PIPELINE, "session ${s.id} was aborted while stopping")
+            return
+        }
+        if (s.metrics.framesDropped.get() > 0) addNotice(SessionNotice.AUDIO_DROPPED)
         session = null
         _state.update {
             it.copy(

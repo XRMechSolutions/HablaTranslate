@@ -399,6 +399,21 @@ class PipelineCoordinatorTest {
     }
 
     @Test
+    fun `should keep processing finals after an unexpected recognizer exception`() = runTest {
+        val h = Harness(this)
+        h.rec.finals += Step("x", error = IllegalStateException("native state corrupted"))
+        h.rec.finals += Step("hola amigo como estas hoy")
+        started(h)
+        h.utterance(1)
+        h.utterance(2)
+        advanceUntilIdle()
+        assertEquals(1, h.state.metrics.asrErrors)
+        assertEquals(listOf(2), h.state.exchanges.map { it.seq })
+        h.coordinator.stop(StopReason.UserStop)
+        assertEquals(SessionPhase.Idle, h.state.phase)
+    }
+
+    @Test
     fun `should show a history write failure and keep the card`() = runTest {
         val h = Harness(this)
         h.history.addError = com.xrmech.habla.data.DataException("disk full")
@@ -428,6 +443,27 @@ class PipelineCoordinatorTest {
         assertEquals(SessionPhase.Idle, h.state.phase)
         assertEquals(listOf(42L), h.history.ended.map { it.id })
         assertTrue(h.source.closed)
+    }
+
+    @Test
+    fun `should leave a newer session alone when the stop it interrupted finishes after an abort`() = runTest {
+        val h = Harness(this)
+        h.rec.finals += Step("hola amigo como estas hoy", gate = CompletableDeferred())
+        started(h)
+        h.utterance(1)
+        advanceUntilIdle()
+        launch { h.coordinator.stop(StopReason.UserStop) }
+        runCurrent()
+        h.coordinator.abort() // service destroyed while the stop is still draining
+        val releasesAfterAbort = h.recognizers.releases
+        val next = h.coordinator.start(IdleAudioSource())
+        advanceUntilIdle()
+        assertEquals(43L, next)
+        assertEquals(43L, h.state.sessionId)
+        assertEquals(SessionPhase.Calibrating, h.state.phase, "the old stop must not publish Idle over the new session")
+        assertEquals(releasesAfterAbort, h.recognizers.releases, "the old stop must not free the new session's model")
+        h.coordinator.stop(StopReason.UserStop)
+        assertEquals(SessionPhase.Idle, h.state.phase)
     }
 
     // ---- partials (scenarios 2, 9, 10)
