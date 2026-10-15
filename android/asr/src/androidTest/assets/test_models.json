@@ -1,0 +1,10 @@
+{
+  "_comment": "Test-only Whisper model for the emulator suite (D037 a): same shape as shared/asr_models.json, never offered in the app. Pinned revision + SHA-256 per D016/D028.",
+  "default_id": "ggml-tiny-q8_0",
+  "models": [
+    {"id": "ggml-tiny-q8_0", "file": "ggml-tiny-q8_0.bin", "base": "tiny", "quantization": "q8_0",
+     "revision": "5359861c739e955e79d9a303bcbc70fb988958b1",
+     "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-tiny-q8_0.bin",
+     "size_bytes": 43537433, "sha256": "c2085835d3f50733e2ff6e4b41ae8a2b8d8110461e18821b09a15c40c42d1cca"}
+  ]
+}

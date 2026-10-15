@@ -1,0 +1,567 @@
+{
+ "python": "3.12.8",
+ "note": "Python str semantics on the transcript_filters.json inputs plus extra probes; computed once with the server venv (habla/.venv) for PyText parity.",
+ "cases": [
+  {
+   "text": "",
+   "strip": "",
+   "split": [],
+   "casefold": "",
+   "alpha": 0,
+   "alnum": 0,
+   "space": 0,
+   "len": 0
+  },
+  {
+   "text": "   ",
+   "strip": "",
+   "split": [],
+   "casefold": "   ",
+   "alpha": 0,
+   "alnum": 0,
+   "space": 3,
+   "len": 3
+  },
+  {
+   "text": "hola",
+   "strip": "hola",
+   "split": [
+    "hola"
+   ],
+   "casefold": "hola",
+   "alpha": 4,
+   "alnum": 4,
+   "space": 2,
+   "len": 6
+  },
+  {
+   "text": " ok ",
+   "strip": "ok",
+   "split": [
+    "ok"
+   ],
+   "casefold": " ok ",
+   "alpha": 2,
+   "alnum": 2,
+   "space": 2,
+   "len": 4
+  },
+  {
+   "text": "ok",
+   "strip": "ok",
+   "split": [
+    "ok"
+   ],
+   "casefold": "ok",
+   "alpha": 2,
+   "alnum": 2,
+   "space": 0,
+   "len": 2
+  },
+  {
+   "text": "abc",
+   "strip": "abc",
+   "split": [
+    "abc"
+   ],
+   "casefold": "abc",
+   "alpha": 3,
+   "alnum": 3,
+   "space": 0,
+   "len": 3
+  },
+  {
+   "text": "123",
+   "strip": "123",
+   "split": [
+    "123"
+   ],
+   "casefold": "123",
+   "alpha": 0,
+   "alnum": 3,
+   "space": 0,
+   "len": 3
+  },
+  {
+   "text": "12 ab",
+   "strip": "12 ab",
+   "split": [
+    "12",
+    "ab"
+   ],
+   "casefold": "12 ab",
+   "alpha": 2,
+   "alnum": 4,
+   "space": 1,
+   "len": 5
+  },
+  {
+   "text": "ab12c",
+   "strip": "ab12c",
+   "split": [
+    "ab12c"
+   ],
+   "casefold": "ab12c",
+   "alpha": 3,
+   "alnum": 5,
+   "space": 0,
+   "len": 5
+  },
+  {
+   "text": "½½ abc",
+   "strip": "½½ abc",
+   "split": [
+    "½½",
+    "abc"
+   ],
+   "casefold": "½½ abc",
+   "alpha": 3,
+   "alnum": 5,
+   "space": 1,
+   "len": 6
+  },
+  {
+   "text": "²³ abc",
+   "strip": "²³ abc",
+   "split": [
+    "²³",
+    "abc"
+   ],
+   "casefold": "²³ abc",
+   "alpha": 3,
+   "alnum": 5,
+   "space": 1,
+   "len": 6
+  },
+  {
+   "text": "Ⅻ abc",
+   "strip": "Ⅻ abc",
+   "split": [
+    "Ⅻ",
+    "abc"
+   ],
+   "casefold": "ⅻ abc",
+   "alpha": 3,
+   "alnum": 4,
+   "space": 1,
+   "len": 5
+  },
+  {
+   "text": "١٢٣ abc",
+   "strip": "١٢٣ abc",
+   "split": [
+    "١٢٣",
+    "abc"
+   ],
+   "casefold": "١٢٣ abc",
+   "alpha": 3,
+   "alnum": 6,
+   "space": 1,
+   "len": 7
+  },
+  {
+   "text": "１２ ａｂｃ",
+   "strip": "１２ ａｂｃ",
+   "split": [
+    "１２",
+    "ａｂｃ"
+   ],
+   "casefold": "１２ ａｂｃ",
+   "alpha": 3,
+   "alnum": 5,
+   "space": 1,
+   "len": 6
+  },
+  {
+   "text": "😀😀 abc",
+   "strip": "😀😀 abc",
+   "split": [
+    "😀😀",
+    "abc"
+   ],
+   "casefold": "😀😀 abc",
+   "alpha": 3,
+   "alnum": 3,
+   "space": 1,
+   "len": 6
+  },
+  {
+   "text": "...!!!",
+   "strip": "...!!!",
+   "split": [
+    "...!!!"
+   ],
+   "casefold": "...!!!",
+   "alpha": 0,
+   "alnum": 0,
+   "space": 0,
+   "len": 6
+  },
+  {
+   "text": "¿Qué?",
+   "strip": "¿Qué?",
+   "split": [
+    "¿Qué?"
+   ],
+   "casefold": "¿qué?",
+   "alpha": 3,
+   "alnum": 3,
+   "space": 0,
+   "len": 5
+  },
+  {
+   "text": "ola amigo",
+   "strip": "ola amigo",
+   "split": [
+    "ola",
+    "amigo"
+   ],
+   "casefold": "ola amigo",
+   "alpha": 8,
+   "alnum": 8,
+   "space": 1,
+   "len": 9
+  },
+  {
+   "text": "OLA amigo",
+   "strip": "OLA amigo",
+   "split": [
+    "OLA",
+    "amigo"
+   ],
+   "casefold": "ola amigo",
+   "alpha": 8,
+   "alnum": 8,
+   "space": 1,
+   "len": 9
+  },
+  {
+   "text": "Ola, amigo",
+   "strip": "Ola, amigo",
+   "split": [
+    "Ola,",
+    "amigo"
+   ],
+   "casefold": "ola, amigo",
+   "alpha": 8,
+   "alnum": 8,
+   "space": 1,
+   "len": 10
+  },
+  {
+   "text": "  ueno pues",
+   "strip": "ueno pues",
+   "split": [
+    "ueno",
+    "pues"
+   ],
+   "casefold": "  ueno pues",
+   "alpha": 8,
+   "alnum": 8,
+   "space": 3,
+   "len": 11
+  },
+  {
+   "text": "ué pasa",
+   "strip": "ué pasa",
+   "split": [
+    "ué",
+    "pasa"
+   ],
+   "casefold": "ué pasa",
+   "alpha": 6,
+   "alnum": 6,
+   "space": 1,
+   "len": 7
+  },
+  {
+   "text": "Ué pasa",
+   "strip": "Ué pasa",
+   "split": [
+    "Ué",
+    "pasa"
+   ],
+   "casefold": "ué pasa",
+   "alpha": 6,
+   "alnum": 6,
+   "space": 1,
+   "len": 7
+  },
+  {
+   "text": "qué pasa",
+   "strip": "qué pasa",
+   "split": [
+    "qué",
+    "pasa"
+   ],
+   "casefold": "qué pasa",
+   "alpha": 7,
+   "alnum": 7,
+   "space": 1,
+   "len": 8
+  },
+  {
+   "text": "ﬆoy aquí",
+   "strip": "ﬆoy aquí",
+   "split": [
+    "ﬆoy",
+    "aquí"
+   ],
+   "casefold": "stoy aquí",
+   "alpha": 7,
+   "alnum": 7,
+   "space": 1,
+   "len": 8
+  },
+  {
+   "text": "stoy\taquí",
+   "strip": "stoy\taquí",
+   "split": [
+    "stoy",
+    "aquí"
+   ],
+   "casefold": "stoy\taquí",
+   "alpha": 8,
+   "alnum": 8,
+   "space": 1,
+   "len": 9
+  },
+  {
+   "text": "hola",
+   "strip": "hola",
+   "split": [
+    "hola"
+   ],
+   "casefold": "hola",
+   "alpha": 4,
+   "alnum": 4,
+   "space": 0,
+   "len": 4
+  },
+  {
+   "text": "Hola",
+   "strip": "Hola",
+   "split": [
+    "Hola"
+   ],
+   "casefold": "hola",
+   "alpha": 4,
+   "alnum": 4,
+   "space": 0,
+   "len": 4
+  },
+  {
+   "text": "Gracias.",
+   "strip": "Gracias.",
+   "split": [
+    "Gracias."
+   ],
+   "casefold": "gracias.",
+   "alpha": 7,
+   "alnum": 7,
+   "space": 0,
+   "len": 8
+  },
+  {
+   "text": "[Música]",
+   "strip": "[Música]",
+   "split": [
+    "[Música]"
+   ],
+   "casefold": "[música]",
+   "alpha": 6,
+   "alnum": 6,
+   "space": 0,
+   "len": 8
+  },
+  {
+   "text": "a1",
+   "strip": "a1",
+   "split": [
+    "a1"
+   ],
+   "casefold": "a1",
+   "alpha": 1,
+   "alnum": 2,
+   "space": 0,
+   "len": 2
+  },
+  {
+   "text": "ab1",
+   "strip": "ab1",
+   "split": [
+    "ab1"
+   ],
+   "casefold": "ab1",
+   "alpha": 2,
+   "alnum": 3,
+   "space": 0,
+   "len": 3
+  },
+  {
+   "text": "abc1234",
+   "strip": "abc1234",
+   "split": [
+    "abc1234"
+   ],
+   "casefold": "abc1234",
+   "alpha": 3,
+   "alnum": 7,
+   "space": 0,
+   "len": 7
+  },
+  {
+   "text": " omo está",
+   "strip": "omo está",
+   "split": [
+    "omo",
+    "está"
+   ],
+   "casefold": " omo está",
+   "alpha": 7,
+   "alnum": 7,
+   "space": 2,
+   "len": 9
+  },
+  {
+   "text": "racias",
+   "strip": "racias",
+   "split": [
+    "racias"
+   ],
+   "casefold": "racias",
+   "alpha": 6,
+   "alnum": 6,
+   "space": 0,
+   "len": 6
+  },
+  {
+   "text": "ORQUE no",
+   "strip": "ORQUE no",
+   "split": [
+    "ORQUE",
+    "no"
+   ],
+   "casefold": "orque no",
+   "alpha": 7,
+   "alnum": 7,
+   "space": 1,
+   "len": 8
+  },
+  {
+   "text": "stoy",
+   "strip": "stoy",
+   "split": [
+    "stoy"
+   ],
+   "casefold": "stoy",
+   "alpha": 4,
+   "alnum": 4,
+   "space": 0,
+   "len": 4
+  },
+  {
+   "text": "uándo vienes",
+   "strip": "uándo vienes",
+   "split": [
+    "uándo",
+    "vienes"
+   ],
+   "casefold": "uándo vienes",
+   "alpha": 11,
+   "alnum": 11,
+   "space": 1,
+   "len": 12
+  },
+  {
+   "text": " a　b ",
+   "strip": "a　b",
+   "split": [
+    "a",
+    "b"
+   ],
+   "casefold": " a　b ",
+   "alpha": 2,
+   "alnum": 2,
+   "space": 3,
+   "len": 5
+  },
+  {
+   "text": "STRAẞE",
+   "strip": "STRAẞE",
+   "split": [
+    "STRAẞE"
+   ],
+   "casefold": "strasse",
+   "alpha": 6,
+   "alnum": 6,
+   "space": 0,
+   "len": 6
+  },
+  {
+   "text": "ﬃ ﬄ ﬁ ﬂ ﬀ ﬅ",
+   "strip": "ﬃ ﬄ ﬁ ﬂ ﬀ ﬅ",
+   "split": [
+    "ﬃ",
+    "ﬄ",
+    "ﬁ",
+    "ﬂ",
+    "ﬀ",
+    "ﬅ"
+   ],
+   "casefold": "ffi ffl fi fl ff st",
+   "alpha": 6,
+   "alnum": 6,
+   "space": 5,
+   "len": 11
+  },
+  {
+   "text": "σοφος",
+   "strip": "σοφος",
+   "split": [
+    "σοφος"
+   ],
+   "casefold": "σοφοσ",
+   "alpha": 5,
+   "alnum": 5,
+   "space": 0,
+   "len": 5
+  },
+  {
+   "text": "ŉ",
+   "strip": "ŉ",
+   "split": [
+    "ŉ"
+   ],
+   "casefold": "ʼn",
+   "alpha": 1,
+   "alnum": 1,
+   "space": 0,
+   "len": 1
+  },
+  {
+   "text": "İstanbul",
+   "strip": "İstanbul",
+   "split": [
+    "İstanbul"
+   ],
+   "casefold": "i̇stanbul",
+   "alpha": 8,
+   "alnum": 8,
+   "space": 0,
+   "len": 8
+  },
+  {
+   "text": "\u001c\u001dx\u001e\u001f",
+   "strip": "x",
+   "split": [
+    "x"
+   ],
+   "casefold": "\u001c\u001dx\u001e\u001f",
+   "alpha": 1,
+   "alnum": 1,
+   "space": 4,
+   "len": 5
+  }
+ ]
+}

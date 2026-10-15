@@ -1,0 +1,199 @@
+#include "habla_engine.h"
+
+#include <chrono>
+#include <cmath>
+#include <limits>
+
+#include "whisper.h"
+
+namespace habla {
+
+namespace {
+
+// Per-call callback data: the slot's flag plus whether a callback actually acted on it. In v1.9.5 a
+// false encoder_begin_callback inside the window loop only `break`s, so whisper_full returns 0 with
+// no (or partial) segments; `observed` lets transcribe() report that run as aborted.
+struct AbortProbe {
+    std::atomic<bool>* flag;
+    bool observed;
+};
+
+// ggml_abort_callback: true stops the graph at the next node.
+bool abort_requested(void* user_data) {
+    auto* probe = static_cast<AbortProbe*>(user_data);
+    const bool stop = probe->flag->load(std::memory_order_acquire);
+    if (stop) probe->observed = true;
+    return stop;
+}
+
+// encoder_begin_callback: false stops before encoding the next window.
+bool encoder_may_begin(whisper_context*, whisper_state*, void* user_data) {
+    auto* probe = static_cast<AbortProbe*>(user_data);
+    const bool stop = probe->flag->load(std::memory_order_acquire);
+    if (stop) probe->observed = true;
+    return !stop;
+}
+
+}  // namespace
+
+Engine* Engine::create(const char* model_path, bool flash_attn) {
+    whisper_context_params cparams = whisper_context_default_params();
+    cparams.use_gpu = false;
+    cparams.flash_attn = flash_attn;
+
+    whisper_context* ctx = whisper_init_from_file_with_params_no_state(model_path, cparams);
+    if (ctx == nullptr) {
+        return nullptr;
+    }
+
+    auto* engine = new Engine();
+    engine->ctx_ = ctx;
+    for (int slot = 0; slot < kSlotCount; ++slot) {
+        engine->states_[slot] = whisper_init_state(ctx);
+        if (engine->states_[slot] == nullptr) {
+            delete engine;  // frees the other state and the context
+            return nullptr;
+        }
+    }
+    return engine;
+}
+
+Engine::~Engine() {
+    for (auto& state : states_) {
+        if (state != nullptr) {
+            whisper_free_state(state);
+            state = nullptr;
+        }
+    }
+    if (ctx_ != nullptr) {
+        whisper_free(ctx_);
+        ctx_ = nullptr;
+    }
+}
+
+TranscribeResult Engine::transcribe(int slot, const std::vector<float>& samples, const DecodeParams& p) {
+    TranscribeResult result;
+    if (!valid_slot(slot) || states_[slot] == nullptr) {
+        result.rc = kRcNoState;
+        return result;
+    }
+    whisper_state* state = states_[slot];
+
+    const auto strategy = p.strategy == 1 ? WHISPER_SAMPLING_BEAM_SEARCH : WHISPER_SAMPLING_GREEDY;
+    whisper_full_params wp = whisper_full_default_params(strategy);
+    wp.n_threads = p.n_threads;
+    wp.beam_search.beam_size = p.beam_size;
+    wp.greedy.best_of = p.best_of;
+    wp.audio_ctx = p.audio_ctx;
+    wp.single_segment = p.single_segment;
+    wp.temperature = p.temperature;
+    wp.temperature_inc = p.temperature_inc;
+    wp.entropy_thold = p.entropy_thold;
+    wp.logprob_thold = p.logprob_thold;
+    wp.no_speech_thold = p.no_speech_thold;
+    wp.language = p.language.c_str();
+
+    // Fixed for WhisperX parity (design.md section 5).
+    wp.no_context = true;
+    wp.no_timestamps = true;
+    wp.suppress_blank = true;
+    wp.suppress_nst = true;
+    wp.detect_language = false;
+    wp.translate = false;
+    wp.token_timestamps = false;
+    wp.tdrz_enable = false;
+    wp.vad = false;
+    wp.print_special = false;
+    wp.print_progress = false;
+    wp.print_realtime = false;
+    wp.print_timestamps = false;
+    wp.initial_prompt = nullptr;
+    wp.prompt_tokens = nullptr;
+    wp.prompt_n_tokens = 0;
+    wp.offset_ms = 0;
+    wp.duration_ms = 0;
+    wp.max_len = 0;
+    wp.max_tokens = 0;
+
+    AbortProbe probe{&abort_[slot], false};
+    wp.abort_callback = abort_requested;
+    wp.abort_callback_user_data = &probe;
+    wp.encoder_begin_callback = encoder_may_begin;
+    wp.encoder_begin_callback_user_data = &probe;
+
+    const auto start = std::chrono::steady_clock::now();
+    int rc = whisper_full_with_state(ctx_, state, wp, samples.data(), static_cast<int>(samples.size()));
+    result.wall_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start).count();
+    if (rc == 0 && probe.observed) {
+        rc = kRcAborted;  // stopped at a window boundary; the text is incomplete
+    }
+    result.rc = rc;
+
+    if (rc == kRcKvCacheFailed) {
+        // whisper_full_with_state already freed this state; freeing it again would be a double free.
+        states_[slot] = whisper_init_state(ctx_);
+        return result;
+    }
+    if (rc != 0) {
+        return result;
+    }
+
+    const whisper_token eot = whisper_token_eot(ctx_);
+    const int n_segments = whisper_full_n_segments_from_state(state);
+    result.segments.reserve(static_cast<size_t>(n_segments));
+    for (int i = 0; i < n_segments; ++i) {
+        Segment seg;
+        const char* text = whisper_full_get_segment_text_from_state(state, i);
+        seg.text = text != nullptr ? text : "";
+        seg.t0 = whisper_full_get_segment_t0_from_state(state, i);
+        seg.t1 = whisper_full_get_segment_t1_from_state(state, i);
+        seg.no_speech_prob = whisper_full_get_segment_no_speech_prob_from_state(state, i);
+
+        double plog_sum = 0.0;
+        int n_text = 0;
+        const int n_tokens = whisper_full_n_tokens_from_state(state, i);
+        for (int t = 0; t < n_tokens; ++t) {
+            const whisper_token_data data = whisper_full_get_token_data_from_state(state, i, t);
+            if (data.id < eot) {
+                plog_sum += data.plog;
+                ++n_text;
+            }
+        }
+        seg.text_tokens = n_text;
+        seg.avg_logprob = n_text > 0 ? static_cast<float>(plog_sum / n_text)
+                                     : std::numeric_limits<float>::quiet_NaN();
+        result.segments.push_back(std::move(seg));
+    }
+    return result;
+}
+
+int Engine::detect(const std::vector<float>& samples, int n_threads, float* probs, int n_probs) {
+    whisper_state* state = states_[kSlotFinal];
+    if (state == nullptr) {
+        return kRcNoState;
+    }
+    if (probs == nullptr || n_probs < whisper_lang_max_id() + 1) {
+        return kRcBadArgument;
+    }
+    const int mel_rc = whisper_pcm_to_mel_with_state(
+        ctx_, state, samples.data(), static_cast<int>(samples.size()), n_threads);
+    if (mel_rc != 0) {
+        return mel_rc < 0 ? mel_rc : -1;
+    }
+    return whisper_lang_auto_detect_with_state(ctx_, state, 0, n_threads, probs);
+}
+
+void Engine::request_abort(int slot) {
+    if (valid_slot(slot)) {
+        abort_[slot].store(true, std::memory_order_release);
+    }
+}
+
+void Engine::clear_abort(int slot) {
+    if (valid_slot(slot)) {
+        abort_[slot].store(false, std::memory_order_release);
+    }
+}
+
+}  // namespace habla

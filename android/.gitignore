@@ -12,3 +12,4 @@ keystore.properties
 .idea/
 *.iml
 captures/
+.cache/
