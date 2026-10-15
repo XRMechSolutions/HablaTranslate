@@ -122,20 +122,27 @@ class TestNoPersonalData:
 
     @pytest.mark.unit
     def test_dockerignore_excludes_secrets(self):
-        """Verify .dockerignore excludes sensitive file patterns."""
+        """Verify the Docker ignore file excludes sensitive file patterns.
+
+        The build context is the repo root; Dockerfile.dockerignore starts by
+        excluding everything (so .git and other top-level dirs never ship) and
+        re-includes only habla/ and shared/.
+        """
         dockerignore = os.path.join(
-            os.path.dirname(__file__), "..", ".dockerignore"
+            os.path.dirname(__file__), "..", "Dockerfile.dockerignore"
         )
-        if not os.path.exists(dockerignore):
-            pytest.skip(".dockerignore not found")
+        assert os.path.exists(dockerignore), "habla/Dockerfile.dockerignore missing"
 
-        with open(dockerignore, "r") as f:
-            content = f.read()
+        with open(dockerignore, "r", encoding="utf-8") as f:
+            lines = [l.strip() for l in f if l.strip() and not l.startswith("#")]
 
-        required_exclusions = [".env", "*.db", "*.log", ".git/", "tests/"]
-        missing = [p for p in required_exclusions if p not in content]
+        assert lines[0] == "*", "ignore file must exclude everything first"
+        required_exclusions = [
+            "**/.env", "**/*.db", "**/*.log", "habla/tests/", "habla/data/llm_settings.json",
+        ]
+        missing = [p for p in required_exclusions if p not in lines]
         assert not missing, (
-            f".dockerignore missing required exclusions: {missing}"
+            f"Dockerfile.dockerignore missing required exclusions: {missing}"
         )
 
     @pytest.mark.unit

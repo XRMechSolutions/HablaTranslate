@@ -51,6 +51,18 @@ def mock_whisperx_model():
 class TestRunAsrAndDiarize:
     """Test _run_asr_and_diarize: transcription + diarization in thread."""
 
+    @pytest.fixture(autouse=True)
+    def _fake_audio_and_detection(self, monkeypatch):
+        """No real WAV on disk: load_audio returns silence, and per-segment
+        detection reports the language the mock transcript is in."""
+        import numpy as np
+        import whisperx
+        monkeypatch.setattr(whisperx, "load_audio", lambda path: np.zeros(16000, dtype=np.float32))
+        monkeypatch.setattr(
+            AudioProcessor, "_detect_segment_language",
+            lambda self, audio: self._whisperx_model.transcribe.return_value.get("language", "es"),
+        )
+
     def test_success_returns_transcript_and_segments(self, audio_processor, mock_whisperx_model):
         # Arrange
         audio_processor._whisperx_model = mock_whisperx_model
@@ -125,6 +137,41 @@ class TestRunAsrAndDiarize:
         # Assert
         assert audio_processor._last_detected_language == "en", \
             "ASR-detected language should be recorded via voting"
+
+    def test_language_switch_reaches_voter(self, audio_processor, mock_whisperx_model):
+        """Regression: WhisperX reuses its first detected language, so detection
+        must run per segment or auto-direction never switches."""
+        audio_processor._whisperx_model = mock_whisperx_model
+        audio_processor._diarize_pipeline = None
+        detections = iter(["es", "en", "en", "en", "en"])
+        with patch.object(AudioProcessor, "_detect_segment_language",
+                          lambda self, audio: next(detections)):
+            for _ in range(5):
+                audio_processor._run_asr_and_diarize("/fake/audio.wav")
+        assert audio_processor._last_detected_language == "en"
+
+    def test_final_transcribed_in_its_own_detected_language(self, audio_processor, mock_whisperx_model):
+        """An English turn in a Spanish conversation is transcribed as English
+        even before the vote switches."""
+        audio_processor._whisperx_model = mock_whisperx_model
+        audio_processor._diarize_pipeline = None
+        detections = iter(["es", "es", "en"])
+        with patch.object(AudioProcessor, "_detect_segment_language",
+                          lambda self, audio: next(detections)):
+            for _ in range(3):
+                _, _, det, _ = audio_processor._run_asr_and_diarize("/fake/audio.wav")
+        assert det == "en"
+        assert mock_whisperx_model.transcribe.call_args.kwargs["language"] == "en"
+        assert audio_processor._last_detected_language == "es"  # vote unchanged
+
+    def test_fixed_language_skips_detection(self, audio_processor, mock_whisperx_model):
+        audio_processor.config.asr.auto_language = False
+        audio_processor._whisperx_model = mock_whisperx_model
+        audio_processor._diarize_pipeline = None
+        with patch.object(AudioProcessor, "_detect_segment_language",
+                          side_effect=AssertionError("should not detect")):
+            audio_processor._run_asr_and_diarize("/fake/audio.wav")
+        assert mock_whisperx_model.transcribe.call_args.kwargs["language"] == "es"
 
     def test_diarize_failure_returns_transcript_with_empty_segments(
         self, audio_processor, mock_whisperx_model
@@ -462,3 +509,40 @@ class TestAudioProcessorSourceLanguage:
         assert lang2 == "es"
         assert lang3 == "en"
         assert len(calls) == 3, "Getter should be called on every property access"
+
+
+class TestDetectSegmentLanguage:
+    """_detect_segment_language picks the best supported language."""
+
+    def _model(self, probs):
+        model = MagicMock()
+        model.model.feat_kwargs = {"feature_size": 80}
+        model.model.encode.return_value = "enc"
+        model.model.model.detect_language.return_value = [probs]
+        return model
+
+    def test_ignores_unsupported_languages(self, audio_processor):
+        import numpy as np
+        audio_processor._whisperx_model = self._model(
+            [("<|fr|>", 0.6), ("<|en|>", 0.3), ("<|es|>", 0.1)]
+        )
+        with patch("whisperx.audio.log_mel_spectrogram", return_value="mel"):
+            assert audio_processor._detect_segment_language(np.zeros(16000, dtype=np.float32)) == "en"
+
+    def test_no_supported_language_keeps_current(self, audio_processor):
+        import numpy as np
+        audio_processor._whisperx_model = self._model([("<|fr|>", 0.9)])
+        audio_processor._last_detected_language = "en"
+        with patch("whisperx.audio.log_mel_spectrogram", return_value="mel"):
+            assert audio_processor._detect_segment_language(np.zeros(16000, dtype=np.float32)) == "en"
+
+
+class TestQuickAsrDoesNotVote:
+    def test_partials_do_not_vote(self, audio_processor, mock_whisperx_model):
+        audio_processor._whisperx_model = mock_whisperx_model
+        audio_processor._last_detected_language = "en"
+        mock_whisperx_model.transcribe.return_value = {"segments": [{"text": "Hola mundo"}], "language": "es"}
+        for _ in range(5):
+            audio_processor._run_quick_asr("/fake/partial.wav")
+        assert len(audio_processor._language_votes) == 0
+        assert audio_processor._last_detected_language == "en"

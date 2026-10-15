@@ -18,27 +18,37 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Callable, Awaitable
 
+from server import shared_assets
+
 logger = logging.getLogger("habla.vad")
+
+
+_PROFILE = shared_assets.asr_profile()
+_CAL = _PROFILE["calibration"]
+_SEG = _PROFILE["segmenter"]
+_VAD = _PROFILE["vad"]
 
 
 @dataclass
 class VADConfig:
     """VAD tuning parameters."""
-    sample_rate: int = 16000
+    sample_rate: int = _PROFILE["audio"]["sample_rate"]
     # How many ms of silence before we consider speech ended
-    silence_duration_ms: int = 600
+    silence_duration_ms: int = _SEG["silence_duration_ms"]
     # Minimum speech duration to process (skip coughs, clicks)
-    min_speech_ms: int = 400
+    min_speech_ms: int = _SEG["min_speech_ms"]
     # Maximum segment length before forced split (for long monologues)
-    max_segment_seconds: float = 30.0
+    max_segment_seconds: float = _SEG["max_segment_seconds"]
     # VAD probability threshold — lower = more sensitive
-    speech_threshold: float = 0.35
-    # Chunk size for VAD processing (30ms frames)
-    frame_ms: int = 30
+    speech_threshold: float = _VAD["speech_threshold"]
+    # Duration of one VAD frame (512 samples at 16 kHz = 32 ms)
+    frame_ms: int = _VAD["frame_ms"]
     # Padding: include this much audio before speech onset
-    pre_speech_padding_ms: int = 300
+    pre_speech_padding_ms: int = _SEG["pre_speech_padding_ms"]
     # Noise floor calibration period at session start (ms)
-    calibration_duration_ms: int = 2000
+    calibration_duration_ms: int = _CAL["duration_ms"]
+    # Interval between partial snapshots while speaking (ms)
+    partial_interval_ms: int = _SEG["partial_interval_ms"]
 
 
 class StreamingVADBuffer:
@@ -71,7 +81,7 @@ class StreamingVADBuffer:
 
         # Audio state
         # Silero VAD requires fixed frame sizes: 512 samples @16kHz
-        self._frame_size = 512
+        self._frame_size = _VAD["frame_samples"]
         self._pcm_buffer = bytearray()  # incoming PCM accumulator
         self._speech_buffer = bytearray()  # current speech segment
         self._pre_speech_ring: deque[bytes] = deque(
@@ -95,7 +105,7 @@ class StreamingVADBuffer:
 
         # Streaming partials — snapshot speech audio every N frames for interim ASR
         self._partial_interval_frames = max(
-            1, 1000 // self.config.frame_ms  # ~every 1 second
+            1, self.config.partial_interval_ms // self.config.frame_ms  # ~every 1 second
         )
         self._frames_since_partial = 0
         self.on_partial_audio: Callable[[bytes, float], Awaitable[None]] | None = None
@@ -107,8 +117,8 @@ class StreamingVADBuffer:
         ) if self._calibrating else 0
         self._calibration_frame_count = 0
         self._calibration_energy_sum = 0.0
-        self._noise_floor_rms = 500.0  # fallback until calibrated
-        self._energy_threshold = 500.0  # dynamic, updated after calibration
+        self._noise_floor_rms = _CAL["uncalibrated_threshold"]  # fallback until calibrated
+        self._energy_threshold = _CAL["uncalibrated_threshold"]  # dynamic, updated after calibration
         self.on_calibration_complete: Callable[[float], Awaitable[None]] | None = None
 
         # Stats
@@ -144,7 +154,7 @@ class StreamingVADBuffer:
         else:
             # Fallback: simple energy-based detection
             energy = np.sqrt(np.mean(pcm_frame.astype(np.float32) ** 2))
-            prob = min(1.0, energy / (self._energy_threshold * 2.0))
+            prob = min(1.0, energy / (self._energy_threshold * _VAD["energy_fallback_prob_scale"]))
             return energy > self._energy_threshold, prob
 
     async def feed_pcm(self, pcm_bytes: bytes):
@@ -183,7 +193,9 @@ class StreamingVADBuffer:
                 if self._calibration_frame_count >= self._calibration_frames_needed:
                     self._calibrating = False
                     self._noise_floor_rms = self._calibration_energy_sum / self._calibration_frame_count
-                    self._energy_threshold = max(300.0, self._noise_floor_rms * 3.0)
+                    self._energy_threshold = max(
+                        _CAL["min_energy_threshold"], self._noise_floor_rms * _CAL["noise_floor_multiplier"]
+                    )
                     logger.info(
                         f"Noise floor calibrated: RMS={self._noise_floor_rms:.0f}, "
                         f"threshold={self._energy_threshold:.0f} "

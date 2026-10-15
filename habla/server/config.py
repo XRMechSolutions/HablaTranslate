@@ -5,28 +5,23 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 
+from server import shared_assets
+
 # Load .env from the habla/ directory (one level up from server/)
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 
-# Language registry — single source of truth for all supported languages.
-# To add a new language: add one entry here and it works everywhere.
-# Keys are ISO 639-1 codes (same as WhisperX detection output).
-LANGUAGES: dict[str, dict] = {
-    "es": {"name": "Spanish", "flag": "\U0001F1EA\U0001F1F8"},  # 🇪🇸
-    "en": {"name": "English", "flag": "\U0001F1EC\U0001F1E7"},  # 🇬🇧
-    # Ready to enable:
-    # "fr": {"name": "French", "flag": "\U0001F1EB\U0001F1F7"},
-    # "pt": {"name": "Portuguese", "flag": "\U0001F1E7\U0001F1F7"},
-    # "de": {"name": "German", "flag": "\U0001F1E9\U0001F1EA"},
-    # "it": {"name": "Italian", "flag": "\U0001F1EE\U0001F1F9"},
-    # "ja": {"name": "Japanese", "flag": "\U0001F1EF\U0001F1F5"},
-    # "zh": {"name": "Chinese", "flag": "\U0001F1E8\U0001F1F3"},
-}
+# Language registry — single source of truth for all supported languages,
+# shared with the Android app (shared/languages.json). Keys are ISO 639-1
+# codes (same as WhisperX detection output).
+LANGUAGES: dict[str, dict] = shared_assets.languages()
 
 # Default target language when auto-detecting. If someone speaks a language
 # and we need to pick what to translate TO, use this.
-DEFAULT_TARGET_LANG = "en"
+DEFAULT_TARGET_LANG: str = shared_assets.load_json("languages.json")["default_target"]
+
+# Tuning shared with the Android app (shared/asr_profile.json).
+_PROFILE = shared_assets.asr_profile()
 
 
 def parse_direction(direction: str) -> tuple[str, str]:
@@ -47,21 +42,22 @@ def lang_name(code: str) -> str:
 
 class ASRConfig(BaseModel):
     """WhisperX ASR settings."""
-    model_size: str = "small"
+    model_size: str = _PROFILE["whisper"]["model"]
     device: str = "cuda"
     compute_type: str = "int8"
-    beam_size: int = 3
+    beam_size: int = _PROFILE["whisper"]["beam_size"]
     vad_filter: bool = True
-    vad_threshold: float = 0.35
+    vad_threshold: float = _PROFILE["vad"]["speech_threshold"]
     word_timestamps: bool = True
-    language: str = "es"  # toggled by direction
-    auto_language: bool = True  # if True, let WhisperX detect language
+    language: str = _PROFILE["whisper"]["default_language"]  # toggled by direction
+    auto_language: bool = _PROFILE["whisper"]["auto_language"]  # if True, let WhisperX detect language
 
 
 class TranslatorConfig(BaseModel):
     """Multi-provider LLM translator settings."""
-    # Active provider: "ollama", "lmstudio", "openai", or "claude"
-    provider: str = "lmstudio"
+    # Active provider: "ollama", "lmstudio", "openai", or "claude".
+    # Cloud by default (D021); without OPENAI_API_KEY calls fail fast and fall back to local.
+    provider: str = "openai"
 
     # Ollama
     ollama_url: str = "http://localhost:11434"
@@ -75,7 +71,7 @@ class TranslatorConfig(BaseModel):
 
     # OpenAI
     openai_api_key: str = ""
-    openai_model: str = "gpt-5-nano"
+    openai_model: str = shared_assets.models()["openai"]["final_default"]
 
     # Claude (Anthropic)
     anthropic_api_key: str = ""
@@ -83,9 +79,10 @@ class TranslatorConfig(BaseModel):
 
     # Shared
     temperature: float = 0.3
-    max_context_exchanges: int = 5
+    max_context_exchanges: int = _PROFILE["context"]["max_context_exchanges"]
     timeout_seconds: int = 30
-    # Quick translation (partials) model override
+    # Quick translation (partials) model override. Empty on OpenAI means
+    # shared/models.json quick_default; empty elsewhere means the main model.
     quick_model: str = ""
 
     # Fallback: if cloud (OpenAI) fails, try local providers. Never local→cloud.
@@ -116,13 +113,15 @@ class DiarizationConfig(BaseModel):
 
 class AudioConfig(BaseModel):
     """Audio ingress settings."""
-    sample_rate: int = 16000
-    channels: int = 1
-    vad_silence_ms: int = 600  # ms of silence to finalize segment
-    min_speech_ms: int = 200  # minimum speech length to process
-    max_segment_seconds: float = 30.0  # max segment before forced split
+    sample_rate: int = _PROFILE["audio"]["sample_rate"]
+    channels: int = _PROFILE["audio"]["channels"]
+    vad_silence_ms: int = _PROFILE["segmenter"]["silence_duration_ms"]  # ms of silence to finalize segment
+    min_speech_ms: int = _PROFILE["segmenter"]["min_speech_ms"]  # minimum speech length to process
+    max_segment_seconds: float = _PROFILE["segmenter"]["max_segment_seconds"]  # max segment before forced split
     buffer_max_seconds: float = 60.0  # ring buffer size
-    calibration_duration_ms: int = 2000  # noise floor calibration period on session start
+    calibration_duration_ms: int = _PROFILE["calibration"]["duration_ms"]  # noise floor calibration period on session start
+    vad_frame_ms: int = _PROFILE["vad"]["frame_ms"]  # one 512-sample Silero frame at 16 kHz
+    pre_speech_padding_ms: int = _PROFILE["segmenter"]["pre_speech_padding_ms"]
 
 
 class SessionConfig(BaseModel):

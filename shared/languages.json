@@ -1,0 +1,8 @@
+{
+  "_comment": "Language registry shared by the server and the Android app. Keys are ISO 639-1 codes (Whisper detection output). To add a language, add one entry.",
+  "default_target": "en",
+  "languages": {
+    "es": {"name": "Spanish", "flag": "🇪🇸"},
+    "en": {"name": "English", "flag": "🇬🇧"}
+  }
+}

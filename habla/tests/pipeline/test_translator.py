@@ -894,3 +894,106 @@ class TestRateLimiting:
 
         # Should not have been delayed significantly
         assert elapsed < 0.08
+
+
+# ---------------------------------------------------------------------------
+# OpenAI request shape, quota vs rate limit, cached-token cost (task A0)
+# ---------------------------------------------------------------------------
+
+def _status_error(status: int, body: dict) -> httpx.HTTPStatusError:
+    request = httpx.Request("POST", "https://api.openai.com/v1/responses")
+    response = httpx.Response(status, json=body, request=request)
+    return httpx.HTTPStatusError(f"{status}", request=request, response=response)
+
+
+class TestOpenAIRequestBody:
+    def test_known_model_sends_only_accepted_params(self):
+        from server.pipeline.translator import _openai_request_body
+        body = _openai_request_body("gpt-6-luna", "SYS", "USER", 256, json_mode=True)
+        assert body["model"] == "gpt-6-luna"
+        assert body["instructions"] == "SYS"
+        assert body["input"] == "USER"
+        assert body["store"] is False
+        assert body["reasoning"] == {"effort": "none"}
+        assert body["text"] == {"verbosity": "low", "format": {"type": "json_object"}}
+        assert "temperature" not in body
+
+    def test_never_sends_minimal_effort(self):
+        """'minimal' is rejected by every current small model (HTTP 400)."""
+        from server.pipeline.translator import _openai_request_body, _OPENAI_MODELS
+        for model in _OPENAI_MODELS:
+            body = _openai_request_body(model, "", "x", 64, json_mode=False)
+            assert body.get("reasoning", {}).get("effort") != "minimal"
+
+    def test_model_without_reasoning_gets_no_reasoning_or_verbosity(self):
+        from server.pipeline.translator import _openai_request_body
+        body = _openai_request_body("gpt-4o-mini", "", "x", 64, json_mode=False)
+        assert "reasoning" not in body
+        assert "text" not in body
+        assert "instructions" not in body
+
+    def test_unknown_model_gets_no_optional_params(self):
+        from server.pipeline.translator import _openai_request_body
+        body = _openai_request_body("some-future-model", "S", "x", 64, json_mode=False)
+        assert set(body) == {"model", "input", "max_output_tokens", "store", "instructions"}
+
+    @pytest.mark.asyncio
+    async def test_missing_key_fails_without_network(self, translator_config):
+        translator_config.openai_api_key = ""
+        translator = Translator(translator_config)
+        translator.client = MagicMock()
+        translator.client.post = AsyncMock()
+        with pytest.raises(ValueError, match="invalid_api_key"):
+            await translator._call_openai("S", "U", 0.3, 64, False)
+        translator.client.post.assert_not_called()
+        assert not _is_retryable(ValueError("OpenAI API key not set (invalid_api_key)"))
+
+
+class TestOpenAI429:
+    def test_rate_limit_is_retryable(self):
+        err = _status_error(429, {"error": {"code": "rate_limit_exceeded", "message": "slow down"}})
+        assert _is_retryable(err)
+
+    @pytest.mark.parametrize("code", ["insufficient_quota", "billing_hard_limit_reached"])
+    def test_quota_exhausted_is_permanent(self, code):
+        err = _status_error(429, {"error": {"code": code, "message": "no money"}})
+        assert not _is_retryable(err)
+
+    def test_401_is_permanent(self):
+        err = _status_error(401, {"error": {"code": "invalid_api_key"}})
+        assert not _is_retryable(err)
+
+
+class TestOpenAICachedCost:
+    def test_cached_tokens_billed_at_cached_rate(self, translator_config):
+        from server.pipeline.translator import _OPENAI_MODELS
+        translator = Translator(translator_config)
+        info = _OPENAI_MODELS["gpt-5.4-mini"]
+        translator._track_cloud_cost(2_000_000, 1_000_000, "gpt-5.4-mini", "openai", cached_tokens=1_000_000)
+        expected = info["input"] + info["cached_input"] + info["output"]
+        assert translator.costs["session_cost_usd"] == pytest.approx(expected)
+
+    def test_unknown_model_cost_not_guessed(self, translator_config):
+        translator = Translator(translator_config)
+        translator._track_cloud_cost(1000, 1000, "mystery-model", "openai")
+        assert translator.costs["session_cost_usd"] == 0.0
+        assert translator.costs["session_input_tokens"] == 1000
+
+    @pytest.mark.asyncio
+    async def test_call_openai_reads_cached_tokens(self, translator_config):
+        translator = Translator(translator_config)
+        response = MagicMock()
+        response.raise_for_status = MagicMock()
+        response.json.return_value = {
+            "status": "completed",
+            "output": [{"type": "message", "content": [{"type": "output_text", "text": "{}"}]}],
+            "usage": {"input_tokens": 1000, "input_tokens_details": {"cached_tokens": 1000},
+                      "output_tokens": 0},
+        }
+        translator.client = MagicMock()
+        translator.client.post = AsyncMock(return_value=response)
+        await translator._call_openai("S", "U", 0.3, 64, True, model_override="gpt-6-luna")
+        from server.pipeline.translator import _OPENAI_MODELS
+        assert translator.costs["session_cost_usd"] == pytest.approx(
+            1000 / 1_000_000 * _OPENAI_MODELS["gpt-6-luna"]["cached_input"]
+        )

@@ -31,19 +31,19 @@ class TestDefaults:
         assert c.model_size == "small"
         assert c.device == "cuda"
         assert c.compute_type == "int8"
-        assert c.beam_size == 3
+        assert c.beam_size == 5  # WhisperX default the server always ran with
         assert c.auto_language is True
         assert c.language == "es"
 
     def test_translator_config_defaults(self):
         c = TranslatorConfig()
-        assert c.provider == "lmstudio"
+        assert c.provider == "openai"
         assert c.ollama_url == "http://localhost:11434"
         assert c.ollama_model == "qwen3:4b"
         assert c.lmstudio_url == "http://localhost:1234"
         assert c.lmstudio_model == ""
         assert c.openai_api_key == ""
-        assert c.openai_model == "gpt-5-nano"
+        assert c.openai_model == "gpt-5.4-mini"
         assert c.temperature == 0.3
         assert c.timeout_seconds == 30
         assert c.quick_model == ""
@@ -192,7 +192,7 @@ class TestEnvOverrides:
 
     def test_llm_provider_invalid_ignored(self, tmp_path):
         c = self._load_with_env({"LLM_PROVIDER": "gemini", "DATA_DIR": str(tmp_path)})
-        assert c.translator.provider == "lmstudio"  # default unchanged
+        assert c.translator.provider == "openai"  # default unchanged
 
     def test_whisper_model(self, tmp_path):
         c = self._load_with_env({"WHISPER_MODEL": "large-v2", "DATA_DIR": str(tmp_path)})

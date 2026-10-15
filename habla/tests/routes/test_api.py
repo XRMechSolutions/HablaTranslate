@@ -113,7 +113,7 @@ def mock_pipeline():
     p.context_manager.translator.config.ollama_url = "http://localhost:11434"
     p.context_manager.translator.config.lmstudio_url = "http://localhost:1234"
     p.context_manager.translator.config.openai_api_key = ""
-    p.context_manager.translator.config.openai_model = "gpt-5-nano"
+    p.context_manager.translator.config.openai_model = "gpt-5.4-mini"
     p.context_manager.translator.config.anthropic_api_key = ""
     p.context_manager.translator.config.anthropic_model = "claude-sonnet-4-6"
     p.context_manager.translator.metrics = {"translations": 0}
@@ -1039,7 +1039,7 @@ class TestLLMRoutes:
         _set_pipeline.context_manager.translator.config.openai_api_key = ""
 
         resp = await client.post("/api/llm/select", json={
-            "provider": "openai", "model": "gpt-5-nano",
+            "provider": "openai", "model": "gpt-5.4-mini",
         })
 
         assert resp.status_code == 400
@@ -1083,7 +1083,7 @@ class TestLLMRoutes:
 
         assert resp.status_code == 200
         models = resp.json()["models"]
-        assert "gpt-5.2" in models
+        assert "gpt-5.4-mini" in models and "gpt-6-luna" in models
 
     async def test_llm_costs_not_initialized_returns_null(self, client):
         """GET /api/llm/costs without pipeline returns costs: null."""
@@ -1239,10 +1239,10 @@ class TestApiKeyRoutes:
 
         assert resp.status_code == 200
         pricing = resp.json()["pricing"]
-        # gpt-5-nano: output $0.40 => "$"
-        assert pricing["gpt-5-nano"]["tier"] == "$"
-        # gpt-5: output $10.00 => "$$"
-        assert pricing["gpt-5"]["tier"] == "$$"
+        # gpt-6-luna: output $0.50 => "$"
+        assert pricing["gpt-6-luna"]["tier"] == "$"
+        # gpt-5.4-mini: output $4.50 => "$$"
+        assert pricing["gpt-5.4-mini"]["tier"] == "$$"
         # claude-opus-4-6: output $25.00 => "$$$"
         assert pricing["claude-opus-4-6"]["tier"] == "$$$"
 

@@ -2,7 +2,10 @@ version: '3.8'
 
 services:
   habla:
-    build: .
+    build:
+      # Repo root, so the image can include ../shared
+      context: ..
+      dockerfile: habla/Dockerfile
     restart: unless-stopped
     ports:
       - "8002:8002"

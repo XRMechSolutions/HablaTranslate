@@ -1531,6 +1531,49 @@ class TestQuickTranslate:
         call_kwargs = orchestrator.context_manager.translator._call_provider.call_args[1]
         assert call_kwargs["lmstudio_model"] == "fast-model"
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("provider,kwarg", [
+        ("openai", "openai_model"),
+        ("claude", "claude_model"),
+    ])
+    async def test_quick_translate_cloud_override(self, orchestrator, provider, kwarg):
+        """Partials on a cloud provider go to quick_model, not the main model."""
+        orchestrator.config.translator.provider = provider
+        orchestrator.config.translator.quick_model = "cheap-model"
+        orchestrator.context_manager.translator._call_provider = AsyncMock(return_value="Quick result")
+        orchestrator.context_manager.translator._call_llm = AsyncMock(return_value="main model")
+
+        result = await orchestrator._quick_translate("Hola")
+
+        assert result == "Quick result"
+        call = orchestrator.context_manager.translator._call_provider.call_args
+        assert call[0][0] == provider
+        assert call[1][kwarg] == "cheap-model"
+        orchestrator.context_manager.translator._call_llm.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_quick_translate_openai_defaults_to_shared_quick_model(self, orchestrator):
+        """No quick_model on OpenAI: partials use shared/models.json quick_default."""
+        from server import shared_assets
+        orchestrator.config.translator.provider = "openai"
+        orchestrator.config.translator.quick_model = ""
+        orchestrator.context_manager.translator._call_provider = AsyncMock(return_value="Quick")
+
+        assert await orchestrator._quick_translate("Hola") == "Quick"
+        call = orchestrator.context_manager.translator._call_provider.call_args
+        assert call[1]["openai_model"] == shared_assets.models()["openai"]["quick_default"]
+
+    @pytest.mark.asyncio
+    async def test_quick_translate_local_no_override_uses_main_model(self, orchestrator):
+        orchestrator.config.translator.provider = "ollama"
+        orchestrator.config.translator.quick_model = ""
+        orchestrator.context_manager.translator._call_llm = AsyncMock(return_value="Main result")
+
+        result = await orchestrator._quick_translate("Hola")
+
+        assert result == "Main result"
+        orchestrator.context_manager.translator._call_llm.assert_awaited_once()
+
 
 # ---------------------------------------------------------------------------
 # TestReloadIdiomPatterns
@@ -1552,8 +1595,16 @@ class TestReloadIdiomPatterns:
         with patch("server.pipeline.session_manager.get_db", AsyncMock(return_value=mock_db)):
             await orchestrator.reload_idiom_patterns()
 
-        # Patterns should be cleared (no JSON files in empty idioms dir, no DB patterns)
-        assert orchestrator.context_manager.idiom_scanner.count == 0
+        # Stale pattern cleared; only the bundled shared/idioms patterns remain
+        # (empty local idioms dir, no DB patterns)
+        from server.services.idiom_scanner import IdiomScanner
+        from server import shared_assets
+        bundled = IdiomScanner()
+        for f in shared_assets.idiom_files():
+            bundled.load_from_json(f)
+        scanner = orchestrator.context_manager.idiom_scanner
+        assert scanner.count == bundled.count > 0
+        assert not any(isinstance(p, MagicMock) for p in scanner.patterns)
 
 
 # ---------------------------------------------------------------------------

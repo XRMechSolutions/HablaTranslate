@@ -5,6 +5,7 @@ from collections import deque
 from datetime import datetime
 from pathlib import Path
 
+from server import shared_assets
 from server.config import AppConfig
 from server.models.schemas import FlaggedPhrase, SpeakerProfile, TranslationResult
 from server.pipeline.translator import Translator
@@ -39,7 +40,9 @@ class ContextManager:
         self.direction: str = config.session.direction
         self.mode: str = config.session.mode
         self.topic_summary: str = ""
-        self.recent_exchanges: deque[dict] = deque(maxlen=10)
+        self.recent_exchanges: deque[dict] = deque(
+            maxlen=shared_assets.asr_profile()["context"]["recent_exchanges"]
+        )
         self.session_id: int | None = None
 
     def _merge_idioms(

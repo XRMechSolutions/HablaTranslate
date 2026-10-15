@@ -7,6 +7,7 @@ import logging
 import time
 import httpx
 import re
+from server import shared_assets
 from server.config import TranslatorConfig
 from server.models.prompts import (
     get_translator_system_prompt,
@@ -19,19 +20,59 @@ logger = logging.getLogger("habla.translator")
 # Errors that should NOT be retried (permanent failures)
 _PERMANENT_ERRORS = ("model not found", "invalid model", "404", "invalid_api_key")
 
+# OpenAI 429 error codes that mean "out of money", not "slow down"
+_QUOTA_ERROR_CODES = {"insufficient_quota", "billing_hard_limit_reached", "credit_balance_exhausted"}
+
+
+def _openai_error_code(response: httpx.Response) -> str:
+    """Return error.code (or error.type) from an OpenAI error body, or ''."""
+    try:
+        err = response.json().get("error") or {}
+    except (ValueError, AttributeError):
+        return ""
+    return str(err.get("code") or err.get("type") or "")
+
+
+def _openai_request_body(
+    model: str, system_prompt: str, user_prompt: str, max_tokens: int, json_mode: bool,
+) -> dict:
+    """Build a Responses API body using only parameters this model accepts.
+
+    Accepted reasoning efforts and verbosity support come from shared/models.json;
+    an unknown model gets no optional parameters at all.
+    """
+    info = _OPENAI_MODELS.get(model, {})
+    body: dict = {
+        "model": model,
+        "input": user_prompt,
+        "max_output_tokens": max_tokens,
+        "store": False,
+    }
+    if system_prompt:
+        body["instructions"] = system_prompt
+    effort = info.get("effort")
+    if effort and effort in info.get("efforts", []):
+        body["reasoning"] = {"effort": effort}
+    text: dict = {}
+    if info.get("verbosity"):
+        text["verbosity"] = "low"
+    if json_mode:
+        text["format"] = {"type": "json_object"}
+    if text:
+        body["text"] = text
+    return body
+
+
 # Cloud vs local provider classification for fallback logic
 _CLOUD_PROVIDERS = {"openai", "claude"}
 _LOCAL_PROVIDERS = ("ollama", "lmstudio")  # ordered by preference for fallback
 
-# OpenAI pricing per 1M tokens (input, output) — Mar 2026
-_OPENAI_PRICING = {
-    "gpt-5.2": (1.75, 14.00),
-    "gpt-5": (1.25, 10.00),
-    "gpt-4o": (2.50, 10.00),
-    "gpt-5-mini": (0.25, 2.00),
-    "gpt-4o-mini": (0.15, 0.60),
-    "gpt-5-nano": (0.05, 0.40),
-}
+# OpenAI model table (prices, accepted reasoning efforts) shared with the
+# Android app: shared/models.json.
+_OPENAI_MODELS: dict[str, dict] = shared_assets.models()["openai"]["models"]
+
+# OpenAI pricing per 1M tokens (input, output)
+_OPENAI_PRICING = {m: (v["input"], v["output"]) for m, v in _OPENAI_MODELS.items()}
 
 # Claude pricing per 1M tokens (input, output) — Mar 2026
 _CLAUDE_PRICING = {
@@ -42,7 +83,7 @@ _CLAUDE_PRICING = {
 
 # OpenAI model fallback order: descend from most capable toward cheapest
 # before falling back to local providers
-_OPENAI_MODEL_ORDER = ["gpt-5.2", "gpt-5", "gpt-4o", "gpt-5-mini", "gpt-4o-mini", "gpt-5-nano"]
+_OPENAI_MODEL_ORDER: list[str] = shared_assets.models()["openai"]["fallback_order"]
 
 # Claude model fallback order: most capable to cheapest
 _CLAUDE_MODEL_ORDER = ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]
@@ -119,6 +160,9 @@ def _is_retryable(error: Exception) -> bool:
         return True
     if isinstance(error, httpx.HTTPStatusError) and error.response.status_code >= 500:
         return True
+    if isinstance(error, httpx.HTTPStatusError) and error.response.status_code == 429:
+        # Rate limits clear on their own; an exhausted quota or billing limit does not.
+        return _openai_error_code(error.response) not in _QUOTA_ERROR_CODES
     msg = str(error).lower()
     if any(p in msg for p in _PERMANENT_ERRORS):
         return False
@@ -309,7 +353,7 @@ class Translator:
         Fallback rules:
         - User-selected provider is always tried first (with retries).
         - If selected provider is cloud (OpenAI) and fails:
-          1. Try cheaper OpenAI models (descending: gpt-5 → gpt-5-mini → gpt-4o-mini → gpt-5-nano)
+          1. Try the other OpenAI models in shared/models.json fallback_order
           2. Then try local providers (Ollama, then LM Studio)
         - If selected provider is local and fails, NEVER fall back to cloud
           (to avoid unexpected costs).
@@ -684,16 +728,10 @@ class Translator:
         model_override: str = "",
     ) -> str:
         """OpenAI: POST /v1/responses (Responses API, not Chat Completions)."""
+        if not self.config.openai_api_key:
+            raise ValueError("OpenAI API key not set (invalid_api_key)")
         model = model_override or self.config.openai_model
-        body = {
-            "model": model,
-            "input": f"{system_prompt}\n\n{user_prompt}",
-            "max_output_tokens": max_tokens,
-            "reasoning": {"effort": "minimal"},
-            "text": {"verbosity": "low"},
-        }
-        if json_mode:
-            body["text"]["format"] = {"type": "json_object"}
+        body = _openai_request_body(model, system_prompt, user_prompt, max_tokens, json_mode)
 
         headers = {
             "Authorization": f"Bearer {self.config.openai_api_key}",
@@ -716,7 +754,12 @@ class Translator:
         if usage:
             input_tokens = usage.get("input_tokens", 0)
             output_tokens = usage.get("output_tokens", 0)
-            self._track_cloud_cost(input_tokens, output_tokens, model, "openai")
+            cached_tokens = (usage.get("input_tokens_details") or {}).get("cached_tokens", 0)
+            self._track_cloud_cost(input_tokens, output_tokens, model, "openai", cached_tokens)
+
+        if data.get("status") == "incomplete":
+            reason = (data.get("incomplete_details") or {}).get("reason", "unknown")
+            logger.warning(f"OpenAI {model} response incomplete ({reason})")
 
         # Extract text: find output item with type "message", then content with type "output_text"
         for item in data.get("output", []):
@@ -777,13 +820,31 @@ class Translator:
         logger.warning("Claude: no text block found in response")
         return "{}"
 
-    def _track_cloud_cost(self, input_tokens: int, output_tokens: int, model: str = "", provider: str = "openai"):
-        """Update running cost totals for cloud provider usage."""
+    def _track_cloud_cost(
+        self, input_tokens: int, output_tokens: int, model: str = "", provider: str = "openai",
+        cached_tokens: int = 0,
+    ):
+        """Update running cost totals for cloud provider usage.
+
+        cached_tokens is the part of input_tokens served from the prompt cache
+        (OpenAI usage.input_tokens_details.cached_tokens), billed at the cached rate.
+        """
         if provider == "claude":
             pricing = _CLAUDE_PRICING.get(model or self.config.anthropic_model, (3.00, 15.00))
+            cost = (input_tokens / 1_000_000 * pricing[0]) + (output_tokens / 1_000_000 * pricing[1])
         else:
-            pricing = _OPENAI_PRICING.get(model or self.config.openai_model, (0.05, 0.40))
-        cost = (input_tokens / 1_000_000 * pricing[0]) + (output_tokens / 1_000_000 * pricing[1])
+            model = model or self.config.openai_model
+            info = _OPENAI_MODELS.get(model)
+            if info is None:
+                logger.warning(f"No price for OpenAI model {model}; cost not counted")
+                cost = 0.0
+            else:
+                cached = min(cached_tokens, input_tokens)
+                cost = (
+                    (input_tokens - cached) / 1_000_000 * info["input"]
+                    + cached / 1_000_000 * info["cached_input"]
+                    + output_tokens / 1_000_000 * info["output"]
+                )
 
         self._costs["session_input_tokens"] += input_tokens
         self._costs["session_output_tokens"] += output_tokens

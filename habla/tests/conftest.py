@@ -22,7 +22,7 @@ def translator_config():
         lmstudio_url="http://localhost:1234",
         lmstudio_model="test-model",
         openai_api_key="test-key",
-        openai_model="gpt-5-nano",
+        openai_model="gpt-5.4-mini",
         anthropic_api_key="test-anthropic-key",
         anthropic_model="claude-sonnet-4-6",
         timeout_seconds=30.0,

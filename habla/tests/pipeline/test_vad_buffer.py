@@ -16,7 +16,8 @@ class TestVADConfig:
         config = VADConfig()
         assert config.sample_rate == 16000
         assert config.silence_duration_ms == 600
-        assert config.min_speech_ms == 400
+        assert config.min_speech_ms == 200  # live value (AudioConfig), from shared/asr_profile.json
+        assert config.frame_ms == 32  # one 512-sample frame at 16 kHz
         assert config.speech_threshold == 0.35
 
     def test_custom_config(self):

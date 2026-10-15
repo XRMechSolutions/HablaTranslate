@@ -186,6 +186,8 @@ class TestBug018RecorderNotReset:
         audio_cfg.min_speech_ms = 400
         audio_cfg.max_segment_seconds = 30.0
         audio_cfg.calibration_duration_ms = 2000
+        audio_cfg.vad_frame_ms = 32
+        audio_cfg.pre_speech_padding_ms = 300
         asr_cfg = MagicMock()
         asr_cfg.vad_threshold = 0.35
         mock_pipeline.config.audio = audio_cfg

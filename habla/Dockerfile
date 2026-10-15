@@ -8,10 +8,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd --create-home --shell /bin/bash habla
 WORKDIR /app
 
-COPY requirements.txt .
+COPY habla/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY habla/ .
+# Assets shared with the Android app (prompts, ASR profile, idioms, languages)
+COPY shared/ /app/shared/
+ENV HABLA_SHARED_DIR=/app/shared
 
 # Ensure data directories exist and are writable
 RUN mkdir -p data/audio data/idioms && chown -R habla:habla /app

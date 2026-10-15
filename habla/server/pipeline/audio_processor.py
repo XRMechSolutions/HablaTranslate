@@ -11,17 +11,23 @@ from typing import Callable
 
 import numpy as np
 
-from server.config import AppConfig
+from server import shared_assets
+from server.config import AppConfig, LANGUAGES
 
 logger = logging.getLogger("habla.pipeline")
 
+_PROFILE = shared_assets.asr_profile()
+
 # Target RMS for partial audio normalization (~-16.5 dBFS for 16-bit)
-_PARTIAL_TARGET_RMS = 3000.0
-_PARTIAL_MAX_GAIN = 10.0
+_PARTIAL_TARGET_RMS = _PROFILE["partial_prep"]["target_rms"]
+_PARTIAL_MAX_GAIN = _PROFILE["partial_prep"]["max_gain"]
+_PARTIAL_MIN_RMS = _PROFILE["partial_prep"]["min_rms_for_gain"]
+_PARTIAL_BAND_HZ = tuple(_PROFILE["partial_prep"]["bandpass_hz"])
+_PARTIAL_ORDER = _PROFILE["partial_prep"]["butterworth_order"]
 
 # Thresholds for rejecting garbage ASR output (mirrors orchestrator._is_bad_transcript)
-_MIN_LETTERS = 3
-_MIN_LETTER_RATIO = 0.5
+_MIN_LETTERS = _PROFILE["filters"]["min_letters"]
+_MIN_LETTER_RATIO = _PROFILE["filters"]["min_letter_ratio"]
 
 
 def _is_bad_transcript(text: str) -> bool:
@@ -41,20 +47,19 @@ def _is_bad_transcript(text: str) -> bool:
 # Spanish word fragments that appear when VAD clips the onset of a word.
 # Each pair is (clipped_form, correct_form). Lowercase, no accents on the
 # clipped side so simple casefold comparison works.
-_CLIPPED_ONSET_PAIRS: tuple[tuple[str, str], ...] = (
-    ("ola", "hola"),
-    ("ueno", "bueno"),
-    ("racias", "gracias"),
-    ("omo", "como"),
-    ("uiero", "quiero"),
-    ("engo", "tengo"),
-    ("stoy", "estoy"),
-    ("oy", "voy"),
-    ("ué", "qué"),
-    ("ónde", "dónde"),
-    ("uándo", "cuándo"),
-    ("orque", "porque"),
+_CLIPPED_ONSET_PAIRS: tuple[tuple[str, str], ...] = tuple(
+    (clipped, full) for clipped, full in _PROFILE["filters"]["clipped_onset_pairs"]
 )
+
+
+def _final_prep_filter() -> str:
+    """ffmpeg filter chain for final-segment ASR input, built from the shared profile."""
+    prep = _PROFILE["final_prep"]
+    dn = prep["dynaudnorm"]
+    return (
+        f"highpass=f={prep['highpass_hz']},lowpass=f={prep['lowpass_hz']},"
+        f"dynaudnorm=f={dn['frame_ms']}:g={dn['gauss_size']}:p={dn['peak']}:m={dn['max_gain']:g}"
+    )
 
 
 def _has_clipped_onset(text: str) -> bool:
@@ -108,8 +113,8 @@ class AudioProcessor:
         # Language detection voting: track recent detections to prevent snowball
         # from a single bad detection poisoning all subsequent segments.
         self._last_detected_language: str | None = None
-        self._language_votes: deque[str] = deque(maxlen=5)
-        self._language_confidence_threshold = 0.7  # require 70%+ to switch
+        self._language_votes: deque[str] = deque(maxlen=_PROFILE["language_vote"]["window"])
+        self._language_confidence_threshold = _PROFILE["language_vote"]["switch_ratio"]  # require 70%+ to switch
 
         # Streaming partials state
         self._last_partial_text = ""
@@ -163,6 +168,30 @@ class AudioProcessor:
                     f"majority — keeping current language"
                 )
 
+    def _detect_segment_language(self, audio: np.ndarray) -> str:
+        """Detect the spoken language of one segment, limited to supported languages.
+
+        Same steps as WhisperX's detect_language (log-mel of the first 30 s,
+        encode, language-token probabilities), but picks the most likely
+        language among LANGUAGES instead of all 99 Whisper languages.
+        """
+        from whisperx.audio import N_SAMPLES, log_mel_spectrogram
+
+        model = self._whisperx_model.model
+        n_mels = model.feat_kwargs.get("feature_size") or 80
+        segment = log_mel_spectrogram(
+            audio[:N_SAMPLES], n_mels=n_mels,
+            padding=0 if audio.shape[0] >= N_SAMPLES else N_SAMPLES - audio.shape[0],
+        )
+        encoder_output = model.encode(segment)
+        probs = model.model.detect_language(encoder_output)[0]
+        supported = [(tok[2:-2], p) for tok, p in probs if tok[2:-2] in LANGUAGES]
+        if not supported:
+            return self._last_detected_language or self._source_language
+        lang, prob = max(supported, key=lambda lp: lp[1])
+        logger.debug(f"Segment language: {lang} ({prob:.2f})")
+        return lang
+
     def _run_asr_and_diarize(self, wav_path: str) -> tuple[str, list[dict], str | None, str]:
         """Run WhisperX ASR and Pyannote diarization (blocking, runs in thread).
 
@@ -180,20 +209,32 @@ class AudioProcessor:
         import whisperx
 
         # Transcribe (lock shared with partial ASR for thread safety)
-        lang_arg = self._last_detected_language if self.config.asr.auto_language else self._source_language
         with self._asr_lock:
+            detected = None
+            if self.config.asr.auto_language:
+                # Detect per segment and transcribe in that language. WhisperX only
+                # detects on its first call and reuses that language afterwards, so
+                # its result["language"] just echoes the language we pass in.
+                # The vote still sets the language used for partials and for the
+                # direction fallback; finals follow each speaker turn directly so a
+                # conversation that alternates languages is transcribed correctly.
+                audio = whisperx.load_audio(wav_path)
+                detected = self._detect_segment_language(audio)
+                self._update_detected_language(detected)
+                lang_arg = detected
+                asr_input = audio
+            else:
+                lang_arg = self._source_language
+                asr_input = wav_path
             result = self._whisperx_model.transcribe(
-                wav_path,
-                batch_size=8,
+                asr_input,
+                batch_size=_PROFILE["whisper"]["final_batch_size"],
                 language=lang_arg,
                 task="transcribe",
             )
-            detected = result.get("language")
-            if detected:
-                self._update_detected_language(detected)
 
         # Capture per-segment detected language (raw, not voted)
-        segment_detected_lang = detected
+        segment_detected_lang = detected or result.get("language")
 
         # Extract text — check for empty segments before bad-transcript to get distinct reason
         segments = result.get("segments", [])
@@ -254,13 +295,12 @@ class AudioProcessor:
             with self._asr_lock:
                 result = self._whisperx_model.transcribe(
                     wav_path,
-                    batch_size=4,  # smaller batch for speed
+                    batch_size=_PROFILE["whisper"]["partial_batch_size"],  # smaller batch for speed
                     language=lang_arg,
                     task="transcribe",
                 )
+                # Partials don't vote: the language here is the one we forced.
                 detected = result.get("language")
-                if detected:
-                    self._update_detected_language(detected)
             segments = result.get("segments", [])
             text = " ".join(seg.get("text", "").strip() for seg in segments).strip()
             return ("", detected) if _is_bad_transcript(text) else (text, detected)
@@ -279,7 +319,7 @@ class AudioProcessor:
         normalized_path = wav_path + ".norm.wav"
         proc = await asyncio.create_subprocess_exec(
             "ffmpeg", "-y", "-i", wav_path,
-            "-af", "highpass=f=80,lowpass=f=7500,dynaudnorm=f=150:g=15:p=0.95:m=10",
+            "-af", _final_prep_filter(),
             "-ar", "16000", "-ac", "1", "-f", "wav",
             normalized_path,
             stdout=asyncio.subprocess.DEVNULL,

@@ -1,0 +1,54 @@
+# =============================================================================
+# Habla Translate - Docker build ignore file
+# The build context is the repo root (so the image can include shared/).
+# BuildKit reads this file because it sits next to habla/Dockerfile.
+# Only habla/ and shared/ are sent; everything else is excluded.
+# =============================================================================
+*
+!habla/
+!shared/
+
+# Secrets
+**/.env
+**/.env.*
+**/*.crt
+**/*.key
+**/*.pem
+
+# Runtime data
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.db-journal
+**/*.log
+**/*.log.*
+habla/data/last_session.json
+habla/data/llm_settings.json
+habla/data/backups/
+habla/data/audio/recordings/
+
+# Tests (not needed in production image)
+habla/tests/
+
+# Python artifacts
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+**/.pytest_cache/
+**/.coverage
+**/htmlcov/
+**/venv/
+**/.venv/
+
+# Documentation (not needed at runtime)
+habla/*.md
+habla/docs/
+
+# Windows scripts (not used in container)
+**/*.bat
+**/*.ps1
+
+# Fine-tuning dependencies (separate workflow)
+habla/requirements-finetune.txt
+habla/scripts/
+habla/tools/

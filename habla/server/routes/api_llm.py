@@ -7,6 +7,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from server.pipeline.translator import _OPENAI_MODELS
 import server.routes._state as _state
 from server.services.lmstudio_manager import LMStudioManager
 
@@ -153,7 +154,7 @@ async def llm_providers():
     openai_info = {"name": "openai", "status": "unknown", "models": []}
     if cfg.openai_api_key:
         openai_info["status"] = "ok"
-        openai_info["models"] = ["gpt-5.2", "gpt-5", "gpt-4o", "gpt-5-mini", "gpt-4o-mini", "gpt-5-nano"]
+        openai_info["models"] = list(_OPENAI_MODELS)
     else:
         openai_info["status"] = "no_api_key"
     providers.append(openai_info)
@@ -223,7 +224,7 @@ async def llm_models(provider: str):
     elif provider == "openai":
         if not cfg.openai_api_key:
             raise HTTPException(400, "OPENAI_API_KEY not configured")
-        return {"models": ["gpt-5.2", "gpt-5", "gpt-4o", "gpt-5-mini", "gpt-4o-mini", "gpt-5-nano"]}
+        return {"models": list(_OPENAI_MODELS)}
 
     elif provider == "claude":
         if not cfg.anthropic_api_key:

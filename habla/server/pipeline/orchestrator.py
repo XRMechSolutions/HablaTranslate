@@ -8,6 +8,8 @@ import wave
 from datetime import datetime, UTC
 from pathlib import Path
 
+from server import shared_assets
+from server.models.prompts import get_quick_translate_prompt
 from server.config import AppConfig, LANGUAGES, DEFAULT_TARGET_LANG, parse_direction, lang_name
 from server.models.schemas import (
     Exchange, FlaggedPhrase, TranslationResult,
@@ -17,7 +19,7 @@ from server.services.idiom_scanner import IdiomMatch
 from server.pipeline.audio_processor import (
     AudioProcessor, _is_bad_transcript, _has_clipped_onset,
     _CLIPPED_ONSET_PAIRS, _MIN_LETTERS, _MIN_LETTER_RATIO,
-    _PARTIAL_TARGET_RMS, _PARTIAL_MAX_GAIN,
+    _PARTIAL_TARGET_RMS, _PARTIAL_MAX_GAIN, _PARTIAL_MIN_RMS, _PARTIAL_BAND_HZ, _PARTIAL_ORDER,
 )
 from server.pipeline.context_manager import ContextManager
 from server.pipeline.session_manager import SessionManager
@@ -138,8 +140,7 @@ class PipelineOrchestrator:
         logger.info("Loading pipeline models...")
 
         # Load idiom patterns from JSON files
-        idioms_dir = self.config.data_dir / "idioms"
-        for json_file in idioms_dir.glob("*.json"):
+        for json_file in self._idiom_json_files():
             self.context_manager.idiom_scanner.load_from_json(json_file)
         json_count = self.context_manager.idiom_scanner.count
 
@@ -168,6 +169,8 @@ class PipelineOrchestrator:
                 compute_type=self.config.asr.compute_type,
                 language=lang_arg,
                 vad_options={"vad_onset": 0.01, "vad_offset": 0.01},
+                asr_options={"beam_size": self.config.asr.beam_size,
+                             "best_of": self.config.asr.beam_size},
             )
             torch.backends.cudnn.enabled = True
             logger.info(f"WhisperX {self.config.asr.model_size} loaded on {self.config.asr.device}")
@@ -344,11 +347,15 @@ class PipelineOrchestrator:
         self.audio_processor.reset_partial_state()
         return new_id
 
+    def _idiom_json_files(self) -> list[Path]:
+        """Bundled idiom files from shared/, then local additions in data/idioms/."""
+        local = sorted((self.config.data_dir / "idioms").glob("*.json"))
+        return shared_assets.idiom_files() + local
+
     async def reload_idiom_patterns(self):
         """Reload all idiom patterns (JSON files + DB). Called after new patterns are added."""
         self.context_manager.idiom_scanner.patterns.clear()
-        idioms_dir = self.config.data_dir / "idioms"
-        for json_file in idioms_dir.glob("*.json"):
+        for json_file in self._idiom_json_files():
             self.context_manager.idiom_scanner.load_from_json(json_file)
         await self.session_manager.load_db_idiom_patterns()
         logger.info(f"Reloaded {self.context_manager.idiom_scanner.count} idiom patterns")
@@ -515,12 +522,12 @@ class PipelineOrchestrator:
                 audio = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32)
 
                 # Bandpass 80Hz-7500Hz to remove rumble and hiss
-                sos = butter(4, [80, 7500], btype='band', fs=16000, output='sos')
+                sos = butter(_PARTIAL_ORDER, list(_PARTIAL_BAND_HZ), btype='band', fs=16000, output='sos')
                 audio = sosfilt(sos, audio)
 
                 # RMS normalization
                 rms = np.sqrt(np.mean(audio ** 2))
-                if rms > 10:  # skip near-silence
+                if rms > _PARTIAL_MIN_RMS:  # skip near-silence
                     gain = min(_PARTIAL_TARGET_RMS / rms, _PARTIAL_MAX_GAIN)
                     audio = np.clip(audio * gain, -32768, 32767)
                 normalized_bytes = audio.astype(np.int16).tobytes()
@@ -597,22 +604,29 @@ class PipelineOrchestrator:
         if direction == "auto":
             direction = "es_to_en"  # fallback
         src_code, tgt_code = parse_direction(direction)
-        src, tgt = lang_name(src_code), lang_name(tgt_code)
+        prompt = get_quick_translate_prompt(text, lang_name(src_code), lang_name(tgt_code))
 
         try:
-            model_override = self.config.translator.quick_model
             provider = self.config.translator.provider
-            if provider == "lmstudio" and model_override:
+            model_override = self.config.translator.quick_model
+            if not model_override and provider == "openai":
+                model_override = shared_assets.models()["openai"]["quick_default"]
+            override_kwarg = {
+                "lmstudio": "lmstudio_model",
+                "openai": "openai_model",
+                "claude": "claude_model",
+            }.get(provider)
+            if override_kwarg and model_override:
                 result = await self.context_manager.translator._call_provider(
-                    provider, "", f"Translate this {src} to natural {tgt}. Output ONLY the translation, nothing else.\n\n{text}",
+                    provider, "", prompt,
                     retries=0, max_tokens=256, temperature=0.2, json_mode=False,
-                    lmstudio_model=model_override,
                     bypass_local_sem=True,
+                    **{override_kwarg: model_override},
                 )
             else:
                 result = await self.context_manager.translator._call_llm(
                     "",
-                    f"Translate this {src} to natural {tgt}. Output ONLY the translation, nothing else.\n\n{text}",
+                    prompt,
                     retries=0, max_tokens=256, temperature=0.2, json_mode=False,
                     bypass_local_sem=True,
                 )

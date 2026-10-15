@@ -1,0 +1,39 @@
+{
+  "_comment": "Cloud model table shared by the server and the Android app. Prices are USD per 1M tokens, checked against developers.openai.com model pages on 2026-10-15. 'efforts' lists the reasoning.effort values a model accepts; 'effort' is what we send. Never send a parameter a model does not list.",
+  "openai": {
+    "final_default": "gpt-5.4-mini",
+    "quick_default": "gpt-6-luna",
+    "fallback_order": ["gpt-5.4-mini", "gpt-6-luna"],
+    "models": {
+      "gpt-6-luna": {
+        "input": 0.10, "cached_input": 0.01, "output": 0.50,
+        "efforts": ["none", "low", "medium", "high", "xhigh", "max"],
+        "effort": "none",
+        "verbosity": true,
+        "structured_outputs": true
+      },
+      "gpt-5.4-mini": {
+        "input": 0.75, "cached_input": 0.075, "output": 4.50,
+        "efforts": ["none", "low", "medium", "high", "xhigh"],
+        "effort": "none",
+        "verbosity": true,
+        "structured_outputs": true
+      },
+      "gpt-5.4-nano": {
+        "input": 0.20, "cached_input": 0.02, "output": 1.25,
+        "efforts": ["none", "low", "medium", "high", "xhigh"],
+        "effort": "none",
+        "verbosity": true,
+        "structured_outputs": true,
+        "deprecated": "shutdown 2027-04-01, replacement gpt-6-luna"
+      },
+      "gpt-4o-mini": {
+        "input": 0.15, "cached_input": 0.075, "output": 0.60,
+        "efforts": [],
+        "verbosity": false,
+        "structured_outputs": true,
+        "deprecated": "shutdown 2027-01-14"
+      }
+    }
+  }
+}
