@@ -72,7 +72,10 @@ data class PartialLine(
     val finalizing: Boolean,
 )
 
-/** One final; [direction] is the effective direction (never AUTO). */
+/**
+ * One final; [direction] is the effective direction (never AUTO). [rawSegmentIds] are the
+ * `SpeechSegment.id`s merged into it (empty for cards rebuilt from history).
+ */
 data class ExchangeCard(
     val seq: Int,
     val exchangeId: Long?,
@@ -81,6 +84,7 @@ data class ExchangeCard(
     val detectedLanguage: String?,
     val direction: Direction,
     val translation: CardTranslation,
+    val rawSegmentIds: List<Int> = emptyList(),
 )
 
 sealed interface CardTranslation {

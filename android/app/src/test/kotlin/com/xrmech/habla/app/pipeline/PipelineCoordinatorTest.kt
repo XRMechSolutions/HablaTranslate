@@ -236,6 +236,7 @@ class PipelineCoordinatorTest {
         advanceUntilIdle()
         assertEquals(3, h.rec.requests.count { it.pass == AsrPass.FINAL })
         assertEquals(listOf(1, 2, 3), h.state.exchanges.map { it.seq })
+        assertEquals(listOf(listOf(1, 2), listOf(3), listOf(4, 5)), h.state.exchanges.map { it.rawSegmentIds })
         h.coordinator.stop(StopReason.UserStop)
     }
 
@@ -257,6 +258,8 @@ class PipelineCoordinatorTest {
         h.coordinator.stop(StopReason.UserStop)
         assertEquals(1, h.state.metrics.finalsDropped)
         assertEquals(listOf(1, 3, 4, 5, 6, 7), h.state.exchanges.map { it.seq })
+        // cards carry their source segment ids, so a dropped final does not shift the pairing
+        assertEquals(listOf(1, 3, 4, 5, 6, 7).map { listOf(it) }, h.state.exchanges.map { it.rawSegmentIds })
         assertEquals(6, h.state.metrics.peakQueueDepth)
     }
 

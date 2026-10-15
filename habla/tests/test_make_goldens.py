@@ -120,3 +120,81 @@ def test_no_asr_writes_no_wavs(tmp_path, monkeypatch):
     assert not wav_dir.exists()
     assert "final_prep_wav" not in g["utterances"][0]
     assert (out_dir / "clip.json").exists()
+
+
+class _LoudnessModel:
+    """Stands in for Silero: a frame is speech exactly when it has a nonzero sample."""
+
+    class _Prob:
+        def __init__(self, p):
+            self.p = p
+
+        def item(self):
+            return self.p
+
+    def __call__(self, tensor, sr):
+        return self._Prob(0.9 if float(tensor.abs().max()) > 0 else 0.0)
+
+    def reset_states(self):
+        pass
+
+
+def _frames_audio(n_frames, speech_ranges):
+    import numpy as np
+
+    audio = np.zeros(n_frames * 512, dtype=np.int16)
+    for a, b in speech_ranges:
+        audio[a * 512:b * 512] = 1000
+    return audio
+
+
+def _vad_shape(cfg):
+    a = cfg.audio
+    silence = max(1, a.vad_silence_ms // a.vad_frame_ms)
+    ring = max(1, a.pre_speech_padding_ms // a.vad_frame_ms)
+    calibration = a.calibration_duration_ms // a.vad_frame_ms
+    return silence, ring, calibration
+
+
+def test_segment_positions_are_frame_exact_not_chunk_end():
+    """A segment that completes mid-chunk ends at its own frame, not at the end of the 1600-sample chunk."""
+    import asyncio
+
+    cfg = make_goldens.load_config()
+    assert cfg.audio.vad_frame_ms * 16 == 512, "test assumes 512-sample frames"
+    silence, ring, calibration = _vad_shape(cfg)
+    chunk_quantized = 0
+    for last in range(calibration + ring + 40, calibration + ring + 47):  # 7 offsets cover every frame/chunk phase
+        onset = last - 40
+        audio = _frames_audio(last + silence + 20, [(onset, last + 1)])
+        segments, partials, _ = asyncio.run(make_goldens.run_vad(audio, cfg, model=_LoudnessModel()))
+        assert len(segments) == 1
+        s = segments[0]
+        end = (last + 1 + silence) * 512
+        assert s["end_sample"] == end
+        assert s["pcm_start_sample"] == (onset - ring) * 512
+        assert s["start_sample"] == s["end_sample"] - s["samples"] == s["pcm_start_sample"]
+        assert all(p["at_sample"] % 512 == 0 for p in partials)
+        # the old recording, (chunk end // 512) * 512, is late here
+        chunk_end = -(-end // make_goldens.FEED_CHUNK_SAMPLES) * make_goldens.FEED_CHUNK_SAMPLES
+        chunk_quantized += (chunk_end // 512) * 512 != end
+    assert chunk_quantized >= 3
+
+
+def test_stale_ring_frames_give_pcm_start_before_previous_end():
+    """Onset one frame after a segment ends: the uncleared ring prepends frames from before the first onset."""
+    import asyncio
+
+    cfg = make_goldens.load_config()
+    silence, ring, calibration = _vad_shape(cfg)
+    onset1 = calibration + ring + 10
+    last1 = onset1 + 40
+    end1 = (last1 + 1 + silence) * 512
+    onset2 = end1 // 512 + 1  # one silent frame reaches the ring before the next onset
+    audio = _frames_audio(onset2 + 100, [(onset1, last1 + 1), (onset2, onset2 + 40)])
+    segments, _, _ = asyncio.run(make_goldens.run_vad(audio, cfg, model=_LoudnessModel()))
+    assert [s["end_sample"] for s in segments] == [end1, (onset2 + 40 + silence) * 512]
+    second = segments[1]
+    assert second["pcm_start_sample"] == (onset1 - ring + 1) * 512
+    assert second["start_sample"] == second["end_sample"] - second["samples"]
+    assert second["pcm_start_sample"] < end1 < second["start_sample"] + 512 * ring

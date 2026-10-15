@@ -562,7 +562,7 @@ class PipelineCoordinator(
                     HLog.i(HLog.PIPELINE, "segment #${item.seq} has a clipped onset")
                 }
                 val newestRaw = item.rawIds.maxOrNull() ?: 0
-                val card = ExchangeCard(item.seq, null, wallClock(), text, outcome.detectedLanguage, effective, CardTranslation.Pending)
+                val card = ExchangeCard(item.seq, null, wallClock(), text, outcome.detectedLanguage, effective, CardTranslation.Pending, item.rawIds)
                 _state.update { st ->
                     st.copy(
                         exchanges = (st.exchanges + card).takeLast(LiveState.MAX_CARDS),

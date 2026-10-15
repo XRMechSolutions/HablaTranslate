@@ -32,6 +32,7 @@ import subprocess
 import sys
 import tempfile
 import wave
+from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -82,8 +83,35 @@ def ffmpeg_version() -> str:
         return "unknown"
 
 
-async def run_vad(audio: np.ndarray, cfg: AppConfig) -> tuple[list[dict], list[dict], float | None]:
-    """Feed the clip through StreamingVADBuffer exactly as routes/websocket.py configures it."""
+class _TrackedRing(deque):
+    """Pre-speech ring that also records the stream frame index of every frame it holds."""
+
+    def __init__(self, maxlen, frame_index):
+        super().__init__(maxlen=maxlen)
+        self.frame_index = frame_index
+        self.idx: deque[int] = deque(maxlen=maxlen)
+
+    def append(self, item):
+        super().append(item)
+        self.idx.append(self.frame_index())
+
+    def clear(self):
+        super().clear()
+        self.idx.clear()
+
+
+async def run_vad(audio: np.ndarray, cfg: AppConfig, model=None) -> tuple[list[dict], list[dict], float | None]:
+    """Feed the clip through StreamingVADBuffer exactly as routes/websocket.py configures it.
+
+    Positions are frame exact. feed_pcm runs several 512-sample frames per
+    1600-sample chunk and fires its callbacks from inside that loop, so the
+    position of a callback is what the buffer has consumed so far, not the
+    end of the chunk. `start_sample` is `end_sample - samples`;
+    `pcm_start_sample` is the stream position of the segment's first PCM
+    sample (the Android SpeechSegment.startSample). They differ only when the
+    server's uncleared pre-speech ring prepends frames from before an earlier
+    segment. `model` replaces Silero (tests only).
+    """
     a = cfg.audio
     vad = StreamingVADBuffer(config=VADConfig(
         sample_rate=a.sample_rate,
@@ -95,29 +123,55 @@ async def run_vad(audio: np.ndarray, cfg: AppConfig) -> tuple[list[dict], list[d
         pre_speech_padding_ms=a.pre_speech_padding_ms,
         calibration_duration_ms=a.calibration_duration_ms,
     ))
-    await vad.initialize()
-    if not vad._vad_ready:
-        raise RuntimeError("Silero VAD failed to load; goldens need the real model")
+    if model is None:
+        await vad.initialize()
+        if not vad._vad_ready:
+            raise RuntimeError("Silero VAD failed to load; goldens need the real model")
+    else:
+        vad._vad_model = model
+        vad._vad_ready = True
 
     fed = 0
+    frame = vad._frame_size
     segments: list[dict] = []
     partials: list[dict] = []
     noise_floor: list[float] = []
+    state = {"pcm_start": None}
+
+    def consumed() -> int:
+        """Samples taken into frames so far; inside a callback, the end of the frame being processed."""
+        return fed - len(vad._pcm_buffer) // 2
+
+    vad._pre_speech_ring = _TrackedRing(vad._pre_speech_ring.maxlen, lambda: consumed() // frame - 1)
+    is_speech_frame = vad._is_speech_frame
+
+    def tracked_is_speech_frame(pcm_frame):
+        k = consumed() // frame - 1
+        if vad._is_speaking and state["pcm_start"] is None:
+            # forced split: the next segment starts with the re-seeded tail
+            state["pcm_start"] = k * frame - len(vad._speech_buffer) // 2
+        is_speech, prob = is_speech_frame(pcm_frame)
+        if is_speech and not vad._is_speaking:
+            ring = vad._pre_speech_ring.idx
+            state["pcm_start"] = (ring[0] if ring else k) * frame
+        return is_speech, prob
+
+    vad._is_speech_frame = tracked_is_speech_frame
 
     async def on_segment(pcm: bytes, duration: float, rms: float, prob: float):
         n = len(pcm) // 2
-        # Segments are emitted after the frame that completed them; frames are
-        # whole 512-sample blocks, so the end is the last processed frame boundary.
-        end = (fed // 512) * 512
+        end = consumed()
         segments.append({
             "index": len(segments), "start_sample": end - n, "end_sample": end,
+            "pcm_start_sample": state["pcm_start"],
             "samples": n, "duration_sec": round(float(duration), 6), "rms": round(float(rms), 3),
             "vad_avg_prob": round(float(prob), 6), "pcm": pcm,
         })
+        state["pcm_start"] = None
 
     async def on_partial(pcm: bytes, duration: float):
         partials.append({
-            "segment_index": len(segments), "at_sample": (fed // 512) * 512,
+            "segment_index": len(segments), "at_sample": consumed(),
             "samples": len(pcm) // 2, "duration_sec": round(float(duration), 6), "pcm": pcm,
         })
 

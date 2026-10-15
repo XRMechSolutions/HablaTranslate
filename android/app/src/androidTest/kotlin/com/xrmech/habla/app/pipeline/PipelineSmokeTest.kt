@@ -210,7 +210,9 @@ class PipelineSmokeTest {
 
         assertEquals("raw segment count", gSegs.size, run.segments.size)
         run.segments.zip(gSegs).forEachIndexed { i, (s, g) ->
-            val gs = g["start_sample"]!!.jsonPrimitive.long
+            // pcm_start_sample is SpeechSegment.startSample (stream position of pcm[0]); start_sample is
+            // end_sample - samples and differs when the uncleared pre-speech ring prepends stale frames.
+            val gs = checkNotNull(g["pcm_start_sample"]) { "golden lacks pcm_start_sample: rerun make_goldens.py" }.jsonPrimitive.long
             val ge = g["end_sample"]!!.jsonPrimitive.long
             assertTrue("segment $i start ${s.startSample} vs golden $gs", kotlin.math.abs(s.startSample - gs) <= 512)
             assertTrue("segment $i end ${s.endSample} vs golden $ge", kotlin.math.abs(s.endSample - ge) <= 512)
@@ -219,15 +221,28 @@ class PipelineSmokeTest {
         val m = state.metrics
         val rejected = m.asrRejectedCount + m.asrEmptyCount
         assertEquals("1.2 s merge over the stream gives the golden utterance count", gUtts.size, run.merged)
-        assertEquals("exchanges == merged utterances - rejections", gUtts.size - rejected, state.exchanges.size)
+        // D040: a slow device drops finals by design (bounded queue, drop oldest); every utterance is accounted for.
+        assertEquals(
+            "exchanges + finalsDropped == merged utterances - rejections",
+            gUtts.size - rejected,
+            state.exchanges.size + m.finalsDropped,
+        )
 
-        // Language: compare exchanges to the golden utterance holding the same first raw segment.
-        var matches = 0
-        state.exchanges.forEachIndexed { i, card ->
-            val g = gUtts.getOrNull(i) ?: return@forEachIndexed
-            if (card.detectedLanguage == g["detected_language"]?.jsonPrimitive?.content) matches++
+        // Language (D040): pair each exchange with its golden utterance by source segment id, not list position.
+        val goldenUttOfSegment = gUtts.flatMap { u ->
+            u["segment_indices"]!!.jsonArray.map { it.jsonPrimitive.int to u }
+        }.toMap()
+        var traced = 0
+        var mismatches = 0
+        state.exchanges.forEach { card ->
+            val firstRaw = card.rawSegmentIds.firstOrNull() ?: return@forEach
+            val segIndex = run.segments.indexOfFirst { it.id == firstRaw }
+            val g = goldenUttOfSegment[segIndex] ?: return@forEach
+            traced++
+            if (card.detectedLanguage != g["detected_language"]?.jsonPrimitive?.content) mismatches++
         }
-        assertTrue("detected language matched only $matches of ${gUtts.size}", matches >= gUtts.size - 1)
+        assertEquals("every exchange traces to a golden utterance by segment id", state.exchanges.size, traced)
+        assertTrue("detected language mismatched on $mismatches of $traced traced exchanges", mismatches <= 1)
 
         run.segments.filter { it.durationSec > 2.0 }.forEach { s ->
             assertTrue("no partial shown for segment ${s.id} (${s.durationSec} s); saw ${run.partialIds}", s.id in run.partialIds)
