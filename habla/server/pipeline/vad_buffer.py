@@ -310,6 +310,23 @@ class StreamingVADBuffer:
         self._calibration_energy_sum = 0.0
 
 
+_EBML_MAGIC = b"\x1a\x45\xdf\xa3"
+_WEBM_CLUSTER_ID = b"\x1f\x43\xb6\x75"
+
+
+def _webm_init_segment(first_chunk: bytes) -> bytes | None:
+    """Return the WebM header (everything before the first Cluster) from a stream's first chunk.
+
+    Replaying only the header, not the first cluster, means a restarted decoder
+    doesn't re-emit audio that was already processed. Returns None for non-WebM
+    input (e.g. Ogg), which can't be restarted this way.
+    """
+    if not first_chunk.startswith(_EBML_MAGIC):
+        return None
+    cluster = first_chunk.find(_WEBM_CLUSTER_ID)
+    return first_chunk if cluster == -1 else first_chunk[:cluster]
+
+
 class AudioDecoder:
     """
     Decodes Opus/WebM chunks from the browser into raw PCM.
@@ -321,24 +338,41 @@ class AudioDecoder:
       - Blob: one-shot decode of a complete buffer (used for final flush).
     """
 
+    # ffmpeg restarts allowed per listening stream before giving up and reporting dead
+    MAX_RESTARTS = 3
+
     def __init__(self, sample_rate: int = 16000):
         self.sample_rate = sample_rate
         self._process: asyncio.subprocess.Process | None = None
         self._read_task: asyncio.Task | None = None
         self._pcm_chunks: list[bytes] = []
         self._pcm_lock = asyncio.Lock()
-        self._dead = False  # set True when ffmpeg crashes
+        self._dead = False  # set True when ffmpeg crashes and can't be restarted
+        # WebM header (EBML + Segment info + Tracks) from the stream's first chunk.
+        # Only the first MediaRecorder chunk carries it, so a restarted ffmpeg
+        # needs it replayed before it can decode later clusters.
+        self._init_segment: bytes | None = None
+        self._first_chunk_seen = False
+        self._restarts = 0
 
     @property
     def is_dead(self) -> bool:
         """True if ffmpeg process has crashed and audio decoding is lost."""
         return self._dead
 
-    async def start_streaming(self):
-        """Start a persistent ffmpeg process for streaming decode."""
+    async def start_streaming(self, _restart: bool = False):
+        """Start a persistent ffmpeg process for streaming decode.
+
+        A normal start begins a new recording stream and forgets the previous
+        stream's header and restart count; an internal restart keeps both.
+        """
         await self.stop_streaming()
         self._pcm_chunks = []
         self._dead = False
+        if not _restart:
+            self._init_segment = None
+            self._first_chunk_seen = False
+            self._restarts = 0
         self._process = await asyncio.create_subprocess_exec(
             "ffmpeg", "-y",
             "-i", "pipe:0",
@@ -371,11 +405,13 @@ class AudioDecoder:
         """Feed a WebM chunk to the streaming ffmpeg process. Returns any available PCM."""
         if not self._process or not self._process.stdin:
             return b""
-        # Detect crashed ffmpeg process
-        if self._process.returncode is not None and not self._dead:
-            self._dead = True
-            logger.error(f"ffmpeg process crashed (exit code {self._process.returncode}) — audio decoding lost for this session")
-            return b""
+        if not self._first_chunk_seen:
+            self._first_chunk_seen = True
+            self._init_segment = _webm_init_segment(webm_bytes)
+        # Detect crashed ffmpeg process and restart it with the stream header replayed
+        if self._process.returncode is not None:
+            if self._dead or not await self._restart_after_crash(self._process.returncode):
+                return b""
         try:
             self._process.stdin.write(webm_bytes)
             await self._process.stdin.drain()
@@ -394,6 +430,35 @@ class AudioDecoder:
             pcm = b"".join(self._pcm_chunks)
             self._pcm_chunks.clear()
             return pcm
+
+    async def _restart_after_crash(self, exit_code: int) -> bool:
+        """Restart ffmpeg and replay the WebM header. Returns False (and marks dead) if it can't."""
+        if self._init_segment is None:
+            reason = "no WebM header to replay"
+        elif self._restarts >= self.MAX_RESTARTS:
+            reason = f"{self.MAX_RESTARTS} restarts already used"
+        else:
+            reason = ""
+        if reason:
+            self._dead = True
+            logger.error(f"ffmpeg process crashed (exit code {exit_code}), {reason} — audio decoding lost for this session")
+            return False
+
+        self._restarts += 1
+        logger.warning(
+            f"ffmpeg process crashed (exit code {exit_code}) — restarting "
+            f"({self._restarts}/{self.MAX_RESTARTS})"
+        )
+        header = self._init_segment
+        await self.start_streaming(_restart=True)
+        try:
+            self._process.stdin.write(header)
+            await self._process.stdin.drain()
+        except (BrokenPipeError, ConnectionResetError, OSError) as e:
+            self._dead = True
+            logger.error(f"ffmpeg restart failed (write error: {e}) — audio decoding lost for this session")
+            return False
+        return True
 
     async def stop_streaming(self) -> bytes:
         """Close the streaming ffmpeg process and return any remaining PCM."""

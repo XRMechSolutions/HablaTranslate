@@ -5,7 +5,7 @@ import numpy as np
 from unittest.mock import AsyncMock, MagicMock, patch
 import asyncio
 
-from server.pipeline.vad_buffer import VADConfig, StreamingVADBuffer, AudioDecoder
+from server.pipeline.vad_buffer import VADConfig, StreamingVADBuffer, AudioDecoder, _webm_init_segment
 
 
 class TestVADConfig:
@@ -578,6 +578,102 @@ class TestAudioDecoderStreaming:
         decoder = AudioDecoder()
         pcm = await decoder.feed_chunk(b"data")
         assert pcm == b""
+
+
+WEBM_HEADER = b"\x1a\x45\xdf\xa3" + b"segment-info-and-tracks"
+WEBM_FIRST_CHUNK = WEBM_HEADER + b"\x1f\x43\xb6\x75" + b"first-cluster-audio"
+
+
+def _mock_ffmpeg(returncode=None):
+    """A mock ffmpeg process; stdin.write is sync, drain/wait_closed are async."""
+    stdin = MagicMock()
+    stdin.drain = AsyncMock()
+    stdin.wait_closed = AsyncMock()
+    stdout = MagicMock()
+    stdout.read = AsyncMock(return_value=b"")
+    process = MagicMock()
+    process.stdin = stdin
+    process.stdout = stdout
+    process.wait = AsyncMock()
+    process.returncode = returncode
+    return process
+
+
+class TestWebmInitSegment:
+    """The header replayed into a restarted decoder."""
+
+    def test_header_is_bytes_before_first_cluster(self):
+        assert _webm_init_segment(WEBM_FIRST_CHUNK) == WEBM_HEADER
+
+    def test_chunk_without_cluster_is_all_header(self):
+        assert _webm_init_segment(WEBM_HEADER) == WEBM_HEADER
+
+    def test_non_webm_has_no_header(self):
+        assert _webm_init_segment(b"OggS" + b"opus-pages") is None
+
+
+class TestAudioDecoderRestart:
+    """ffmpeg crash recovery: restart with the WebM header replayed, capped per stream."""
+
+    @pytest.mark.asyncio
+    async def test_crash_restarts_and_replays_header_before_next_chunk(self):
+        decoder = AudioDecoder()
+        first = _mock_ffmpeg()
+        decoder._process = first
+        await decoder.feed_chunk(WEBM_FIRST_CHUNK)
+
+        first.returncode = 1  # ffmpeg died
+        second = _mock_ffmpeg()
+        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=second)):
+            await decoder.feed_chunk(b"later-cluster")
+
+        writes = [c.args[0] for c in second.stdin.write.call_args_list]
+        assert writes == [WEBM_HEADER, b"later-cluster"]
+        assert decoder.is_dead is False
+        assert decoder._restarts == 1
+        await decoder.stop_streaming()
+
+    @pytest.mark.asyncio
+    async def test_marks_dead_after_max_restarts(self):
+        decoder = AudioDecoder()
+        decoder._process = _mock_ffmpeg()
+        await decoder.feed_chunk(WEBM_FIRST_CHUNK)
+        decoder._restarts = AudioDecoder.MAX_RESTARTS
+        decoder._process.returncode = 1
+
+        with patch("asyncio.create_subprocess_exec", new=AsyncMock()) as spawn:
+            pcm = await decoder.feed_chunk(b"later-cluster")
+
+        assert pcm == b""
+        assert decoder.is_dead is True
+        spawn.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_non_webm_stream_is_not_restarted(self):
+        decoder = AudioDecoder()
+        decoder._process = _mock_ffmpeg()
+        await decoder.feed_chunk(b"OggS" + b"opus-pages")
+        decoder._process.returncode = 1
+
+        with patch("asyncio.create_subprocess_exec", new=AsyncMock()) as spawn:
+            await decoder.feed_chunk(b"more-pages")
+
+        assert decoder.is_dead is True
+        spawn.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_new_stream_forgets_header_and_restart_count(self):
+        decoder = AudioDecoder()
+        decoder._process = _mock_ffmpeg()
+        await decoder.feed_chunk(WEBM_FIRST_CHUNK)
+        decoder._restarts = 2
+
+        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=_mock_ffmpeg())):
+            await decoder.start_streaming()
+
+        assert decoder._init_segment is None
+        assert decoder._restarts == 0
+        await decoder.stop_streaming()
 
 
 class TestAudioDecoderReset:
