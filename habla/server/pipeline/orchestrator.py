@@ -19,7 +19,7 @@ from server.services.idiom_scanner import IdiomMatch
 from server.pipeline.audio_processor import (
     AudioProcessor, _is_bad_transcript, _has_clipped_onset,
     _CLIPPED_ONSET_PAIRS, _MIN_LETTERS, _MIN_LETTER_RATIO,
-    _PARTIAL_TARGET_RMS, _PARTIAL_MAX_GAIN, _PARTIAL_MIN_RMS, _PARTIAL_BAND_HZ, _PARTIAL_ORDER,
+    prepare_partial_pcm,
 )
 from server.pipeline.context_manager import ContextManager
 from server.pipeline.session_manager import SessionManager
@@ -518,19 +518,7 @@ class PipelineOrchestrator:
             wav_path = None
             try:
                 import struct as _struct
-                from scipy.signal import butter, sosfilt
-                audio = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32)
-
-                # Bandpass 80Hz-7500Hz to remove rumble and hiss
-                sos = butter(_PARTIAL_ORDER, list(_PARTIAL_BAND_HZ), btype='band', fs=16000, output='sos')
-                audio = sosfilt(sos, audio)
-
-                # RMS normalization
-                rms = np.sqrt(np.mean(audio ** 2))
-                if rms > _PARTIAL_MIN_RMS:  # skip near-silence
-                    gain = min(_PARTIAL_TARGET_RMS / rms, _PARTIAL_MAX_GAIN)
-                    audio = np.clip(audio * gain, -32768, 32767)
-                normalized_bytes = audio.astype(np.int16).tobytes()
+                normalized_bytes = prepare_partial_pcm(pcm_bytes)
 
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False, prefix="habla_partial_") as f:
                     wav_path = f.name

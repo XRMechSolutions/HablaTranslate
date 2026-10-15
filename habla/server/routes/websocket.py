@@ -29,6 +29,7 @@ from typing import Optional
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from server import shared_assets
 from server.db.database import get_db
 from server.pipeline.orchestrator import PipelineOrchestrator
 from server.pipeline.vad_buffer import StreamingVADBuffer, AudioDecoder, VADConfig
@@ -40,11 +41,12 @@ from server.services.tts import TTSService
 
 logger = logging.getLogger("habla.ws")
 
-# Segment merge timing: wait this long after last VAD segment before flushing
-# to the pipeline. Allows consecutive short segments to merge into one.
-MERGE_GAP_SECONDS = 1.2
+# Segment merge timing (shared/asr_profile.json "merge"): wait this long after
+# the last VAD segment before flushing to the pipeline, so consecutive short
+# segments merge into one.
+MERGE_GAP_SECONDS = shared_assets.asr_profile()["merge"]["gap_seconds"]
 # Maximum pending audio before forced flush (prevents unbounded accumulation).
-MAX_PENDING_SECONDS = 60.0
+MAX_PENDING_SECONDS = shared_assets.asr_profile()["merge"]["max_pending_seconds"]
 
 # Valid values for direction and mode control messages
 VALID_DIRECTIONS = ("es_to_en", "en_to_es", "auto")

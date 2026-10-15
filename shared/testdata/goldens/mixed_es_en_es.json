@@ -1,0 +1,361 @@
+{
+  "clip": "mixed_es_en_es.wav",
+  "clip_samples": 665600,
+  "generated_at": "2026-10-15T20:10:16+00:00",
+  "server_commit": "f23598b",
+  "ffmpeg": "ffmpeg version 8.0.1-full_build-www.gyan.dev Copyright (c) 2000-2025 the FFmpeg developers",
+  "asr": {
+    "engine": "whisperx",
+    "model": "small",
+    "compute_type": "int8",
+    "beam_size": 5
+  },
+  "translate_model": null,
+  "profile_version": 1,
+  "feed_chunk_samples": 1600,
+  "noise_floor_rms": 269.897,
+  "segments": [
+    {
+      "index": 0,
+      "start_sample": 29184,
+      "end_sample": 201216,
+      "samples": 172032,
+      "duration_sec": 10.752,
+      "rms": 347.493,
+      "vad_avg_prob": 0.967052
+    },
+    {
+      "index": 1,
+      "start_sample": 206848,
+      "end_sample": 271872,
+      "samples": 65024,
+      "duration_sec": 4.064,
+      "rms": 5991.102,
+      "vad_avg_prob": 0.967026
+    },
+    {
+      "index": 2,
+      "start_sample": 281088,
+      "end_sample": 334336,
+      "samples": 53248,
+      "duration_sec": 3.328,
+      "rms": 6818.621,
+      "vad_avg_prob": 0.950843
+    },
+    {
+      "index": 3,
+      "start_sample": 340480,
+      "end_sample": 404480,
+      "samples": 64000,
+      "duration_sec": 4.0,
+      "rms": 7724.072,
+      "vad_avg_prob": 0.985433
+    },
+    {
+      "index": 4,
+      "start_sample": 452096,
+      "end_sample": 508416,
+      "samples": 56320,
+      "duration_sec": 3.52,
+      "rms": 342.725,
+      "vad_avg_prob": 0.900883
+    },
+    {
+      "index": 5,
+      "start_sample": 503296,
+      "end_sample": 652800,
+      "samples": 149504,
+      "duration_sec": 9.344,
+      "rms": 340.316,
+      "vad_avg_prob": 0.968529
+    }
+  ],
+  "utterances": [
+    {
+      "index": 0,
+      "segment_indices": [
+        0
+      ],
+      "samples": 172032,
+      "duration_sec": 10.752,
+      "rms": 347.493,
+      "vad_avg_prob": 0.967052,
+      "transcript": "vayas usted allá a Presumidilla, dijo Confuría aquella, a lo que respondió las tu tardilla, sí que es muy grande usted, muy grande y bella,",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 1,
+      "segment_indices": [
+        1
+      ],
+      "samples": 65024,
+      "duration_sec": 4.064,
+      "rms": 5991.102,
+      "vad_avg_prob": 0.967026,
+      "transcript": "Here, please visit LibriVox.org.",
+      "detected_language": "en",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 2,
+      "segment_indices": [
+        2
+      ],
+      "samples": 53248,
+      "duration_sec": 3.328,
+      "rms": 6818.621,
+      "vad_avg_prob": 0.950843,
+      "transcript": "Recorded by Beth Dudek.",
+      "detected_language": "en",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 3,
+      "segment_indices": [
+        3
+      ],
+      "samples": 64000,
+      "duration_sec": 4.0,
+      "rms": 7724.072,
+      "vad_avg_prob": 0.985433,
+      "transcript": "Esaps fables, the dog and the sow.",
+      "detected_language": "en",
+      "asr_status": "ok",
+      "voted_language": "en"
+    },
+    {
+      "index": 4,
+      "segment_indices": [
+        4
+      ],
+      "samples": 56320,
+      "duration_sec": 3.52,
+      "rms": 342.725,
+      "vad_avg_prob": 0.900883,
+      "transcript": "Nadie tilde. Preocupar un puesto tan humilde.",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "en"
+    },
+    {
+      "index": 5,
+      "segment_indices": [
+        5
+      ],
+      "samples": 149504,
+      "duration_sec": 9.344,
+      "rms": 340.316,
+      "vad_avg_prob": 0.968529,
+      "transcript": "Si no soy yo tamaña, como usted mi señora la montaña, usted no es tan pequeña como yo, ni a gimnástica me enseña, yo negar no imagino",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "en"
+    }
+  ],
+  "partials": [
+    {
+      "segment_index": 0,
+      "at_sample": 51200,
+      "samples": 20480,
+      "duration_sec": 1.28,
+      "transcript": "to get a sugar.",
+      "language": "en"
+    },
+    {
+      "segment_index": 0,
+      "at_sample": 65536,
+      "samples": 36352,
+      "duration_sec": 2.272,
+      "transcript": "To be on sugar. Yeah, but you're supposed to be a person",
+      "language": "en"
+    },
+    {
+      "segment_index": 0,
+      "at_sample": 82944,
+      "samples": 53760,
+      "duration_sec": 3.36,
+      "transcript": "Tu vieron su carella, vayas usted allá presumidilla, dijo Confrán.",
+      "language": "en"
+    },
+    {
+      "segment_index": 0,
+      "at_sample": 100352,
+      "samples": 71168,
+      "duration_sec": 4.448,
+      "transcript": "Tu vieron su crella, vayas usted allá presumidilla, dijo con furia aquella.",
+      "language": "en"
+    },
+    {
+      "segment_index": 0,
+      "at_sample": 116736,
+      "samples": 87040,
+      "duration_sec": 5.44,
+      "transcript": "Tu vieron su crella vallas usted allá presumidilla dijo con furia aquella a lo que respondió las tutas",
+      "language": "en"
+    },
+    {
+      "segment_index": 0,
+      "at_sample": 132608,
+      "samples": 103424,
+      "duration_sec": 6.464,
+      "transcript": "She said, comfort her, to what your afternoon answered.",
+      "language": "en"
+    },
+    {
+      "segment_index": 0,
+      "at_sample": 148480,
+      "samples": 119296,
+      "duration_sec": 7.456,
+      "transcript": "She said, comfort her, to what your late answer answered.",
+      "language": "en"
+    },
+    {
+      "segment_index": 0,
+      "at_sample": 164352,
+      "samples": 135168,
+      "duration_sec": 8.448,
+      "transcript": "Tuvieron su creya vallas usted haya presumidilla dijo con furia aquella a lo que respondió las tu tardilla si que es muy grande usted muy grande y bella",
+      "language": "en"
+    },
+    {
+      "segment_index": 0,
+      "at_sample": 180736,
+      "samples": 151552,
+      "duration_sec": 9.472,
+      "transcript": "She said, comfort her, to what your late answer answered.",
+      "language": "en"
+    },
+    {
+      "segment_index": 1,
+      "at_sample": 228352,
+      "samples": 20992,
+      "duration_sec": 1.312,
+      "transcript": "here. Please",
+      "language": "en"
+    },
+    {
+      "segment_index": 1,
+      "at_sample": 246272,
+      "samples": 38912,
+      "duration_sec": 2.432,
+      "transcript": "Please visit LibreVice.com",
+      "language": "en"
+    },
+    {
+      "segment_index": 1,
+      "at_sample": 262144,
+      "samples": 54784,
+      "duration_sec": 3.424,
+      "transcript": "Please visit LibriVox.org.",
+      "language": "en"
+    },
+    {
+      "segment_index": 2,
+      "at_sample": 302080,
+      "samples": 20480,
+      "duration_sec": 1.28,
+      "transcript": "Recorded by",
+      "language": "en"
+    },
+    {
+      "segment_index": 2,
+      "at_sample": 323072,
+      "samples": 42496,
+      "duration_sec": 2.656,
+      "transcript": "Recorded by Beth Dudek.",
+      "language": "en"
+    },
+    {
+      "segment_index": 3,
+      "at_sample": 361472,
+      "samples": 20480,
+      "duration_sec": 1.28,
+      "transcript": "ESOP's fable.",
+      "language": "en"
+    },
+    {
+      "segment_index": 3,
+      "at_sample": 384000,
+      "samples": 42496,
+      "duration_sec": 2.656,
+      "transcript": "Esop's fables, the dog and",
+      "language": "en"
+    },
+    {
+      "segment_index": 4,
+      "at_sample": 478208,
+      "samples": 27136,
+      "duration_sec": 1.696,
+      "transcript": "Adietilde.",
+      "language": "en"
+    },
+    {
+      "segment_index": 4,
+      "at_sample": 494080,
+      "samples": 43008,
+      "duration_sec": 2.688,
+      "transcript": "Adietilde, preocupar un puesto tan humilde.",
+      "language": "en"
+    },
+    {
+      "segment_index": 5,
+      "at_sample": 524800,
+      "samples": 20480,
+      "duration_sec": 1.28,
+      "transcript": "Si no soy yo tamar",
+      "language": "en"
+    },
+    {
+      "segment_index": 5,
+      "at_sample": 540672,
+      "samples": 37376,
+      "duration_sec": 2.336,
+      "transcript": "Si no soy yo tamaña, como usted.",
+      "language": "en"
+    },
+    {
+      "segment_index": 5,
+      "at_sample": 556544,
+      "samples": 53248,
+      "duration_sec": 3.328,
+      "transcript": "Si no soy yo tamaña, como usted mi señora la montaña.",
+      "language": "en"
+    },
+    {
+      "segment_index": 5,
+      "at_sample": 577536,
+      "samples": 73216,
+      "duration_sec": 4.576,
+      "transcript": "Si no soy yo tamaña como usted mi señora la montaña usted no es tan pequeño",
+      "language": "en"
+    },
+    {
+      "segment_index": 5,
+      "at_sample": 593408,
+      "samples": 89088,
+      "duration_sec": 5.568,
+      "transcript": "If I am not as big as you, my lady of the mountain, you are not as small as me.",
+      "language": "en"
+    },
+    {
+      "segment_index": 5,
+      "at_sample": 612352,
+      "samples": 109056,
+      "duration_sec": 6.816,
+      "transcript": "Si no soy yo tamaña, como usted, mi señora la montaña. Usted no es tan pequeña como yo, ni aginásticamente...",
+      "language": "en"
+    },
+    {
+      "segment_index": 5,
+      "at_sample": 633344,
+      "samples": 130048,
+      "duration_sec": 8.128,
+      "transcript": "Si no soy yo tamaña como usted mi señora la montaña usted no es tan pequeña como yo ni a gimnástica me enseña yo negarnos",
+      "language": "en"
+    }
+  ]
+}

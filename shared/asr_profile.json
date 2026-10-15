@@ -24,8 +24,15 @@
     "pre_speech_padding_ms": 300,
     "partial_interval_ms": 1000
   },
+  "merge": {
+    "gap_seconds": 1.2,
+    "max_pending_seconds": 60.0
+  },
   "partial_prep": {
-    "bandpass_hz": [80, 7500],
+    "bandpass_hz": [
+      80,
+      7500
+    ],
     "butterworth_order": 4,
     "target_rms": 3000.0,
     "max_gain": 10.0,
@@ -57,18 +64,54 @@
     "min_letters": 3,
     "min_letter_ratio": 0.5,
     "clipped_onset_pairs": [
-      ["ola", "hola"],
-      ["ueno", "bueno"],
-      ["racias", "gracias"],
-      ["omo", "como"],
-      ["uiero", "quiero"],
-      ["engo", "tengo"],
-      ["stoy", "estoy"],
-      ["oy", "voy"],
-      ["ué", "qué"],
-      ["ónde", "dónde"],
-      ["uándo", "cuándo"],
-      ["orque", "porque"]
+      [
+        "ola",
+        "hola"
+      ],
+      [
+        "ueno",
+        "bueno"
+      ],
+      [
+        "racias",
+        "gracias"
+      ],
+      [
+        "omo",
+        "como"
+      ],
+      [
+        "uiero",
+        "quiero"
+      ],
+      [
+        "engo",
+        "tengo"
+      ],
+      [
+        "stoy",
+        "estoy"
+      ],
+      [
+        "oy",
+        "voy"
+      ],
+      [
+        "ué",
+        "qué"
+      ],
+      [
+        "ónde",
+        "dónde"
+      ],
+      [
+        "uándo",
+        "cuándo"
+      ],
+      [
+        "orque",
+        "porque"
+      ]
     ]
   },
   "context": {

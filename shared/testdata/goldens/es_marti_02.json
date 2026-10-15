@@ -1,0 +1,738 @@
+{
+  "clip": "es_marti_02.wav",
+  "clip_samples": 1030496,
+  "generated_at": "2026-10-15T20:10:05+00:00",
+  "server_commit": "f23598b",
+  "ffmpeg": "ffmpeg version 8.0.1-full_build-www.gyan.dev Copyright (c) 2000-2025 the FFmpeg developers",
+  "asr": {
+    "engine": "whisperx",
+    "model": "small",
+    "compute_type": "int8",
+    "beam_size": 5
+  },
+  "translate_model": null,
+  "profile_version": 1,
+  "feed_chunk_samples": 1600,
+  "noise_floor_rms": 706.466,
+  "segments": [
+    {
+      "index": 0,
+      "start_sample": 27136,
+      "end_sample": 52736,
+      "samples": 25600,
+      "duration_sec": 1.6,
+      "rms": 768.579,
+      "vad_avg_prob": 0.965787
+    },
+    {
+      "index": 1,
+      "start_sample": 50688,
+      "end_sample": 98816,
+      "samples": 48128,
+      "duration_sec": 3.008,
+      "rms": 848.195,
+      "vad_avg_prob": 0.986646
+    },
+    {
+      "index": 2,
+      "start_sample": 97792,
+      "end_sample": 172544,
+      "samples": 74752,
+      "duration_sec": 4.672,
+      "rms": 1030.327,
+      "vad_avg_prob": 0.983727
+    },
+    {
+      "index": 3,
+      "start_sample": 172544,
+      "end_sample": 226816,
+      "samples": 54272,
+      "duration_sec": 3.392,
+      "rms": 1115.579,
+      "vad_avg_prob": 0.985719
+    },
+    {
+      "index": 4,
+      "start_sample": 222208,
+      "end_sample": 300544,
+      "samples": 78336,
+      "duration_sec": 4.896,
+      "rms": 962.185,
+      "vad_avg_prob": 0.980574
+    },
+    {
+      "index": 5,
+      "start_sample": 300032,
+      "end_sample": 326144,
+      "samples": 26112,
+      "duration_sec": 1.632,
+      "rms": 850.608,
+      "vad_avg_prob": 0.986137
+    },
+    {
+      "index": 6,
+      "start_sample": 320512,
+      "end_sample": 350208,
+      "samples": 29696,
+      "duration_sec": 1.856,
+      "rms": 545.782,
+      "vad_avg_prob": 0.994795
+    },
+    {
+      "index": 7,
+      "start_sample": 352256,
+      "end_sample": 381952,
+      "samples": 29696,
+      "duration_sec": 1.856,
+      "rms": 1345.952,
+      "vad_avg_prob": 0.970628
+    },
+    {
+      "index": 8,
+      "start_sample": 382464,
+      "end_sample": 435200,
+      "samples": 52736,
+      "duration_sec": 3.296,
+      "rms": 670.484,
+      "vad_avg_prob": 0.982282
+    },
+    {
+      "index": 9,
+      "start_sample": 442880,
+      "end_sample": 499200,
+      "samples": 56320,
+      "duration_sec": 3.52,
+      "rms": 910.144,
+      "vad_avg_prob": 0.987917
+    },
+    {
+      "index": 10,
+      "start_sample": 496128,
+      "end_sample": 553472,
+      "samples": 57344,
+      "duration_sec": 3.584,
+      "rms": 898.233,
+      "vad_avg_prob": 0.988603
+    },
+    {
+      "index": 11,
+      "start_sample": 553984,
+      "end_sample": 606208,
+      "samples": 52224,
+      "duration_sec": 3.264,
+      "rms": 972.612,
+      "vad_avg_prob": 0.995845
+    },
+    {
+      "index": 12,
+      "start_sample": 618496,
+      "end_sample": 665600,
+      "samples": 47104,
+      "duration_sec": 2.944,
+      "rms": 989.83,
+      "vad_avg_prob": 0.985674
+    },
+    {
+      "index": 13,
+      "start_sample": 664064,
+      "end_sample": 698880,
+      "samples": 34816,
+      "duration_sec": 2.176,
+      "rms": 546.02,
+      "vad_avg_prob": 0.983328
+    },
+    {
+      "index": 14,
+      "start_sample": 706560,
+      "end_sample": 756736,
+      "samples": 50176,
+      "duration_sec": 3.136,
+      "rms": 990.266,
+      "vad_avg_prob": 0.99007
+    },
+    {
+      "index": 15,
+      "start_sample": 754688,
+      "end_sample": 780800,
+      "samples": 26112,
+      "duration_sec": 1.632,
+      "rms": 531.098,
+      "vad_avg_prob": 0.94473
+    },
+    {
+      "index": 16,
+      "start_sample": 783872,
+      "end_sample": 829952,
+      "samples": 46080,
+      "duration_sec": 2.88,
+      "rms": 783.321,
+      "vad_avg_prob": 0.970012
+    },
+    {
+      "index": 17,
+      "start_sample": 838656,
+      "end_sample": 886272,
+      "samples": 47616,
+      "duration_sec": 2.976,
+      "rms": 1063.515,
+      "vad_avg_prob": 0.9851
+    },
+    {
+      "index": 18,
+      "start_sample": 891392,
+      "end_sample": 943616,
+      "samples": 52224,
+      "duration_sec": 3.264,
+      "rms": 882.25,
+      "vad_avg_prob": 0.987324
+    },
+    {
+      "index": 19,
+      "start_sample": 945152,
+      "end_sample": 974336,
+      "samples": 29184,
+      "duration_sec": 1.824,
+      "rms": 1148.535,
+      "vad_avg_prob": 0.992302
+    },
+    {
+      "index": 20,
+      "start_sample": 971264,
+      "end_sample": 1001472,
+      "samples": 30208,
+      "duration_sec": 1.888,
+      "rms": 701.554,
+      "vad_avg_prob": 0.990231
+    }
+  ],
+  "utterances": [
+    {
+      "index": 0,
+      "segment_indices": [
+        0
+      ],
+      "samples": 25600,
+      "duration_sec": 1.6,
+      "rms": 768.579,
+      "vad_avg_prob": 0.965787,
+      "transcript": "de la edad de oro.",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 1,
+      "segment_indices": [
+        1
+      ],
+      "samples": 48128,
+      "duration_sec": 3.008,
+      "rms": 848.195,
+      "vad_avg_prob": 0.986646,
+      "transcript": "Esta es una grabación del Librebox.",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 2,
+      "segment_indices": [
+        2
+      ],
+      "samples": 74752,
+      "duration_sec": 4.672,
+      "rms": 1030.327,
+      "vad_avg_prob": 0.983727,
+      "transcript": "Todas las grabaciones de Librebox son del dominio público.",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 3,
+      "segment_indices": [
+        3
+      ],
+      "samples": 54272,
+      "duration_sec": 3.392,
+      "rms": 1115.579,
+      "vad_avg_prob": 0.985719,
+      "transcript": "para más información o para ser voluntario.",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 4,
+      "segment_indices": [
+        4
+      ],
+      "samples": 78336,
+      "duration_sec": 4.896,
+      "rms": 962.185,
+      "vad_avg_prob": 0.980574,
+      "transcript": "Por favor visite LibriVox.org",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 5,
+      "segment_indices": [
+        5
+      ],
+      "samples": 26112,
+      "duration_sec": 1.632,
+      "rms": 850.608,
+      "vad_avg_prob": 0.986137,
+      "transcript": "grabado por",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 6,
+      "segment_indices": [
+        6
+      ],
+      "samples": 29696,
+      "duration_sec": 1.856,
+      "rms": 545.782,
+      "vad_avg_prob": 0.994795,
+      "transcript": "Chantal Torres.",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 7,
+      "segment_indices": [
+        7
+      ],
+      "samples": 29696,
+      "duration_sec": 1.856,
+      "rms": 1345.952,
+      "vad_avg_prob": 0.970628,
+      "transcript": "La Edad de Oro",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 8,
+      "segment_indices": [
+        8
+      ],
+      "samples": 52736,
+      "duration_sec": 3.296,
+      "rms": 670.484,
+      "vad_avg_prob": 0.982282,
+      "transcript": "Por José Martí, dos milagros.",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 9,
+      "segment_indices": [
+        9
+      ],
+      "samples": 56320,
+      "duration_sec": 3.52,
+      "rms": 910.144,
+      "vad_avg_prob": 0.987917,
+      "transcript": "iba a un niño travieso casando mariposas.",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 10,
+      "segment_indices": [
+        10
+      ],
+      "samples": 57344,
+      "duration_sec": 3.584,
+      "rms": 898.233,
+      "vad_avg_prob": 0.988603,
+      "transcript": "Las casabel bribón les abon beso.",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 11,
+      "segment_indices": [
+        11
+      ],
+      "samples": 52224,
+      "duration_sec": 3.264,
+      "rms": 972.612,
+      "vad_avg_prob": 0.995845,
+      "transcript": "y después la soltaba entre las rosas.",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 12,
+      "segment_indices": [
+        12
+      ],
+      "samples": 47104,
+      "duration_sec": 2.944,
+      "rms": 989.83,
+      "vad_avg_prob": 0.985674,
+      "transcript": "por tierra, en un estero.",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 13,
+      "segment_indices": [
+        13
+      ],
+      "samples": 34816,
+      "duration_sec": 2.176,
+      "rms": 546.02,
+      "vad_avg_prob": 0.983328,
+      "transcript": "Estaba un cicomoro.",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 14,
+      "segment_indices": [
+        14
+      ],
+      "samples": 50176,
+      "duration_sec": 3.136,
+      "rms": 990.266,
+      "vad_avg_prob": 0.99007,
+      "transcript": "Le da un rayo de sol y del madero.",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 15,
+      "segment_indices": [
+        15
+      ],
+      "samples": 26112,
+      "duration_sec": 1.632,
+      "rms": 531.098,
+      "vad_avg_prob": 0.94473,
+      "transcript": "Muerto.",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 16,
+      "segment_indices": [
+        16
+      ],
+      "samples": 46080,
+      "duration_sec": 2.88,
+      "rms": 783.321,
+      "vad_avg_prob": 0.970012,
+      "transcript": "sale volando una vez de oro.",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 17,
+      "segment_indices": [
+        17
+      ],
+      "samples": 47616,
+      "duration_sec": 2.976,
+      "rms": 1063.515,
+      "vad_avg_prob": 0.9851,
+      "transcript": "Finde dos milagros.",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 18,
+      "segment_indices": [
+        18
+      ],
+      "samples": 52224,
+      "duration_sec": 3.264,
+      "rms": 882.25,
+      "vad_avg_prob": 0.987324,
+      "transcript": "grabado por Chantal Torres",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 19,
+      "segment_indices": [
+        19
+      ],
+      "samples": 29184,
+      "duration_sec": 1.824,
+      "rms": 1148.535,
+      "vad_avg_prob": 0.992302,
+      "transcript": "la edad de oro.",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    },
+    {
+      "index": 20,
+      "segment_indices": [
+        20
+      ],
+      "samples": 30208,
+      "duration_sec": 1.888,
+      "rms": 701.554,
+      "vad_avg_prob": 0.990231,
+      "transcript": "Por José Martí.",
+      "detected_language": "es",
+      "asr_status": "ok",
+      "voted_language": "es"
+    }
+  ],
+  "partials": [
+    {
+      "segment_index": 1,
+      "at_sample": 71680,
+      "samples": 20480,
+      "duration_sec": 1.28,
+      "transcript": "Esta es una grabación.",
+      "language": "es"
+    },
+    {
+      "segment_index": 1,
+      "at_sample": 87552,
+      "samples": 36352,
+      "duration_sec": 2.272,
+      "transcript": "Esta es una grabación del Librebox.",
+      "language": "es"
+    },
+    {
+      "segment_index": 2,
+      "at_sample": 118272,
+      "samples": 20480,
+      "duration_sec": 1.28,
+      "transcript": "Todas las grabaciones",
+      "language": "es"
+    },
+    {
+      "segment_index": 2,
+      "at_sample": 140800,
+      "samples": 42496,
+      "duration_sec": 2.656,
+      "transcript": "Todas las grabaciones de Librebox.",
+      "language": "es"
+    },
+    {
+      "segment_index": 2,
+      "at_sample": 155136,
+      "samples": 58368,
+      "duration_sec": 3.648,
+      "transcript": "Todas las grabaciones de Librebox son del dominio público.",
+      "language": "es"
+    },
+    {
+      "segment_index": 3,
+      "at_sample": 192000,
+      "samples": 20480,
+      "duration_sec": 1.28,
+      "transcript": "para más información.",
+      "language": "es"
+    },
+    {
+      "segment_index": 3,
+      "at_sample": 209408,
+      "samples": 37888,
+      "duration_sec": 2.368,
+      "transcript": "para más información o para hacer voluntad.",
+      "language": "es"
+    },
+    {
+      "segment_index": 4,
+      "at_sample": 243200,
+      "samples": 20480,
+      "duration_sec": 1.28,
+      "transcript": "Por favor visite.",
+      "language": "es"
+    },
+    {
+      "segment_index": 4,
+      "at_sample": 266752,
+      "samples": 45056,
+      "duration_sec": 2.816,
+      "transcript": "por favor visite LibriVox.com",
+      "language": "es"
+    },
+    {
+      "segment_index": 4,
+      "at_sample": 286208,
+      "samples": 64512,
+      "duration_sec": 4.032,
+      "transcript": "Por favor visite LibriVox.org",
+      "language": "es"
+    },
+    {
+      "segment_index": 6,
+      "at_sample": 342016,
+      "samples": 20480,
+      "duration_sec": 1.28,
+      "transcript": "Chantal Torres.",
+      "language": "es"
+    },
+    {
+      "segment_index": 7,
+      "at_sample": 372736,
+      "samples": 20480,
+      "duration_sec": 1.28,
+      "transcript": "La Edad de Oro",
+      "language": "es"
+    },
+    {
+      "segment_index": 8,
+      "at_sample": 401408,
+      "samples": 20480,
+      "duration_sec": 1.28,
+      "transcript": "Por José Martí.",
+      "language": "es"
+    },
+    {
+      "segment_index": 8,
+      "at_sample": 423936,
+      "samples": 43008,
+      "duration_sec": 2.688,
+      "transcript": "Por José Martí, dos milagros.",
+      "language": "es"
+    },
+    {
+      "segment_index": 9,
+      "at_sample": 462336,
+      "samples": 20480,
+      "duration_sec": 1.28,
+      "transcript": "iba a un niño otra vez",
+      "language": "es"
+    },
+    {
+      "segment_index": 9,
+      "at_sample": 478208,
+      "samples": 36352,
+      "duration_sec": 2.272,
+      "transcript": "Iba un niño travieso, casando mariposa.",
+      "language": "es"
+    },
+    {
+      "segment_index": 10,
+      "at_sample": 516608,
+      "samples": 20480,
+      "duration_sec": 1.28,
+      "transcript": "las casas del bribón",
+      "language": "es"
+    },
+    {
+      "segment_index": 10,
+      "at_sample": 537600,
+      "samples": 41984,
+      "duration_sec": 2.624,
+      "transcript": "Las casabas al bribón les abumbe.",
+      "language": "es"
+    },
+    {
+      "segment_index": 11,
+      "at_sample": 573952,
+      "samples": 20480,
+      "duration_sec": 1.28,
+      "transcript": "y después la sol...",
+      "language": "es"
+    },
+    {
+      "segment_index": 11,
+      "at_sample": 590336,
+      "samples": 36352,
+      "duration_sec": 2.272,
+      "transcript": "y después la soltaba entre el arroz",
+      "language": "es"
+    },
+    {
+      "segment_index": 12,
+      "at_sample": 644608,
+      "samples": 26624,
+      "duration_sec": 1.664,
+      "transcript": "por tierra en un",
+      "language": "es"
+    },
+    {
+      "segment_index": 13,
+      "at_sample": 684544,
+      "samples": 20480,
+      "duration_sec": 1.28,
+      "transcript": "estaba así como",
+      "language": "es"
+    },
+    {
+      "segment_index": 14,
+      "at_sample": 726016,
+      "samples": 20480,
+      "duration_sec": 1.28,
+      "transcript": "le da un rollo de sol",
+      "language": "es"
+    },
+    {
+      "segment_index": 14,
+      "at_sample": 747008,
+      "samples": 40960,
+      "duration_sec": 2.56,
+      "transcript": "Le da un rayo de sol y del madero.",
+      "language": "es"
+    },
+    {
+      "segment_index": 16,
+      "at_sample": 804352,
+      "samples": 21504,
+      "duration_sec": 1.344,
+      "transcript": "sale volando",
+      "language": "es"
+    },
+    {
+      "segment_index": 17,
+      "at_sample": 866816,
+      "samples": 28160,
+      "duration_sec": 1.76,
+      "transcript": "fin de dos mil",
+      "language": "es"
+    },
+    {
+      "segment_index": 18,
+      "at_sample": 918016,
+      "samples": 26624,
+      "duration_sec": 1.664,
+      "transcript": "grabado por",
+      "language": "es"
+    },
+    {
+      "segment_index": 18,
+      "at_sample": 934400,
+      "samples": 42496,
+      "duration_sec": 2.656,
+      "transcript": "grabado por Chantal Torres.",
+      "language": "es"
+    },
+    {
+      "segment_index": 20,
+      "at_sample": 991744,
+      "samples": 20480,
+      "duration_sec": 1.28,
+      "transcript": "por José Martí.",
+      "language": "es"
+    }
+  ]
+}

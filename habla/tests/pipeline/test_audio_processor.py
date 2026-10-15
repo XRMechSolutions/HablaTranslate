@@ -546,3 +546,17 @@ class TestQuickAsrDoesNotVote:
             audio_processor._run_quick_asr("/fake/partial.wav")
         assert len(audio_processor._language_votes) == 0
         assert audio_processor._last_detected_language == "en"
+
+
+class TestQuickAsrLanguageBeforeFirstFinal:
+    def test_partial_before_any_vote_uses_source_language(self, audio_processor, mock_whisperx_model):
+        audio_processor._whisperx_model = mock_whisperx_model
+        assert audio_processor._last_detected_language is None
+        audio_processor._run_quick_asr("/fake/partial.wav")
+        assert mock_whisperx_model.transcribe.call_args.kwargs["language"] == "es"
+
+    def test_partial_uses_voted_language_once_known(self, audio_processor, mock_whisperx_model):
+        audio_processor._whisperx_model = mock_whisperx_model
+        audio_processor._last_detected_language = "en"
+        audio_processor._run_quick_asr("/fake/partial.wav")
+        assert mock_whisperx_model.transcribe.call_args.kwargs["language"] == "en"

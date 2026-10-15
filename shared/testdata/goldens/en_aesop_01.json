@@ -1,0 +1,394 @@
+{
+  "clip": "en_aesop_01.wav",
+  "clip_samples": 744803,
+  "generated_at": "2026-10-15T20:09:52+00:00",
+  "server_commit": "f23598b",
+  "ffmpeg": "ffmpeg version 8.0.1-full_build-www.gyan.dev Copyright (c) 2000-2025 the FFmpeg developers",
+  "asr": {
+    "engine": "whisperx",
+    "model": "small",
+    "compute_type": "int8",
+    "beam_size": 5
+  },
+  "translate_model": null,
+  "profile_version": 1,
+  "feed_chunk_samples": 1600,
+  "noise_floor_rms": 9.607,
+  "segments": [
+    {
+      "index": 0,
+      "start_sample": 32256,
+      "end_sample": 192000,
+      "samples": 159744,
+      "duration_sec": 9.984,
+      "rms": 1961.966,
+      "vad_avg_prob": 0.97777
+    },
+    {
+      "index": 1,
+      "start_sample": 202752,
+      "end_sample": 260608,
+      "samples": 57856,
+      "duration_sec": 3.616,
+      "rms": 1584.427,
+      "vad_avg_prob": 0.983057
+    },
+    {
+      "index": 2,
+      "start_sample": 272896,
+      "end_sample": 454144,
+      "samples": 181248,
+      "duration_sec": 11.328,
+      "rms": 1575.368,
+      "vad_avg_prob": 0.990218
+    },
+    {
+      "index": 3,
+      "start_sample": 449536,
+      "end_sample": 671744,
+      "samples": 222208,
+      "duration_sec": 13.888,
+      "rms": 1205.626,
+      "vad_avg_prob": 0.98941
+    },
+    {
+      "index": 4,
+      "start_sample": 686080,
+      "end_sample": 727552,
+      "samples": 41472,
+      "duration_sec": 2.592,
+      "rms": 1066.238,
+      "vad_avg_prob": 0.995655
+    }
+  ],
+  "utterances": [
+    {
+      "index": 0,
+      "segment_indices": [
+        0
+      ],
+      "samples": 159744,
+      "duration_sec": 9.984,
+      "rms": 1961.966,
+      "vad_avg_prob": 0.97777,
+      "transcript": "This is a LibriVox recording. All LibriVox recordings are in the public domain. For more information or to volunteer, please visit LibriVox.org.",
+      "detected_language": "en",
+      "asr_status": "ok",
+      "voted_language": "en"
+    },
+    {
+      "index": 1,
+      "segment_indices": [
+        1
+      ],
+      "samples": 57856,
+      "duration_sec": 3.616,
+      "rms": 1584.427,
+      "vad_avg_prob": 0.983057,
+      "transcript": "Aesop's fables, the fox, and the grapes.",
+      "detected_language": "en",
+      "asr_status": "ok",
+      "voted_language": "en"
+    },
+    {
+      "index": 2,
+      "segment_indices": [
+        2
+      ],
+      "samples": 181248,
+      "duration_sec": 11.328,
+      "rms": 1575.368,
+      "vad_avg_prob": 0.990218,
+      "transcript": "A hungry fox saw some fine bunches of grapes hanging from a vine that was trained along a high trellis, and did his best to reach them by jumping as high as he could into the air.",
+      "detected_language": "en",
+      "asr_status": "ok",
+      "voted_language": "en"
+    },
+    {
+      "index": 3,
+      "segment_indices": [
+        3
+      ],
+      "samples": 222208,
+      "duration_sec": 13.888,
+      "rms": 1205.626,
+      "vad_avg_prob": 0.98941,
+      "transcript": "But it was all in vain, for they were just out of reach. So he gave up trying, and walked away with an air of dignity and unconcern, remarking, I thought those grapes were ripe, but I see now they are quite sour.",
+      "detected_language": "en",
+      "asr_status": "ok",
+      "voted_language": "en"
+    },
+    {
+      "index": 4,
+      "segment_indices": [
+        4
+      ],
+      "samples": 41472,
+      "duration_sec": 2.592,
+      "rms": 1066.238,
+      "vad_avg_prob": 0.995655,
+      "transcript": "End of Fox and the Grapes.",
+      "detected_language": "en",
+      "asr_status": "ok",
+      "voted_language": "en"
+    }
+  ],
+  "partials": [
+    {
+      "segment_index": 0,
+      "at_sample": 51200,
+      "samples": 20480,
+      "duration_sec": 1.28,
+      "transcript": "This is a Lieberwock.",
+      "language": "en"
+    },
+    {
+      "segment_index": 0,
+      "at_sample": 68608,
+      "samples": 36864,
+      "duration_sec": 2.304,
+      "transcript": "This is a LibreVox recording.",
+      "language": "en"
+    },
+    {
+      "segment_index": 0,
+      "at_sample": 84480,
+      "samples": 52736,
+      "duration_sec": 3.296,
+      "transcript": "This is a LibriVox recording. All LibriVox recordings",
+      "language": "en"
+    },
+    {
+      "segment_index": 0,
+      "at_sample": 100352,
+      "samples": 68608,
+      "duration_sec": 4.288,
+      "transcript": "This is a LibriVox recording. All LibriVox recordings are in the public",
+      "language": "en"
+    },
+    {
+      "segment_index": 0,
+      "at_sample": 116736,
+      "samples": 85504,
+      "duration_sec": 5.344,
+      "transcript": "This is a LibreVox recording. All LibreVox recordings are in the public domain.",
+      "language": "en"
+    },
+    {
+      "segment_index": 0,
+      "at_sample": 134144,
+      "samples": 102912,
+      "duration_sec": 6.432,
+      "transcript": "This is a LibreVox recording. All LibreVox recordings are in the public domain. For more information or",
+      "language": "en"
+    },
+    {
+      "segment_index": 0,
+      "at_sample": 153600,
+      "samples": 121344,
+      "duration_sec": 7.584,
+      "transcript": "This is a LibreVox recording. All LibreVox recordings are in the public domain. For more information or to volunteer, please",
+      "language": "en"
+    },
+    {
+      "segment_index": 0,
+      "at_sample": 167936,
+      "samples": 137216,
+      "duration_sec": 8.576,
+      "transcript": "This is a LibriVox recording. All LibriVox recordings are in the public domain. For more information or to volunteer, please visit LibriVox.",
+      "language": "en"
+    },
+    {
+      "segment_index": 1,
+      "at_sample": 223744,
+      "samples": 20480,
+      "duration_sec": 1.28,
+      "transcript": "ASOP's fables.",
+      "language": "en"
+    },
+    {
+      "segment_index": 1,
+      "at_sample": 244736,
+      "samples": 41472,
+      "duration_sec": 2.592,
+      "transcript": "Aesop's fables, the fox, and the grass.",
+      "language": "en"
+    },
+    {
+      "segment_index": 2,
+      "at_sample": 294400,
+      "samples": 20480,
+      "duration_sec": 1.28,
+      "transcript": "A hungry fox.",
+      "language": "en"
+    },
+    {
+      "segment_index": 2,
+      "at_sample": 308736,
+      "samples": 36352,
+      "duration_sec": 2.272,
+      "transcript": "A hungry fox saw some fine bunch",
+      "language": "en"
+    },
+    {
+      "segment_index": 2,
+      "at_sample": 324608,
+      "samples": 52224,
+      "duration_sec": 3.264,
+      "transcript": "A hungry fox saw some fine bunches of grapes hang",
+      "language": "en"
+    },
+    {
+      "segment_index": 2,
+      "at_sample": 340480,
+      "samples": 68096,
+      "duration_sec": 4.256,
+      "transcript": "A hungry fox saw some fine bunches of grapes hanging from a vine that",
+      "language": "en"
+    },
+    {
+      "segment_index": 2,
+      "at_sample": 356352,
+      "samples": 83968,
+      "duration_sec": 5.248,
+      "transcript": "A hungry fox saw some fine bunches of grapes hanging from a vine that was trained along",
+      "language": "en"
+    },
+    {
+      "segment_index": 2,
+      "at_sample": 372736,
+      "samples": 99840,
+      "duration_sec": 6.24,
+      "transcript": "A hungry fox saw some fine bunches of grapes hanging from a vine that was trained along a high trellis.",
+      "language": "en"
+    },
+    {
+      "segment_index": 2,
+      "at_sample": 393216,
+      "samples": 120320,
+      "duration_sec": 7.52,
+      "transcript": "A hungry fox saw some fine bunches of grapes hanging from a vine that was trained along a high trellis, and did his best",
+      "language": "en"
+    },
+    {
+      "segment_index": 2,
+      "at_sample": 409600,
+      "samples": 136192,
+      "duration_sec": 8.512,
+      "transcript": "A hungry fox saw some fine bunches of grapes hanging from a vine that was trained along a high trellis, and did his best to reach them by",
+      "language": "en"
+    },
+    {
+      "segment_index": 2,
+      "at_sample": 425472,
+      "samples": 152064,
+      "duration_sec": 9.504,
+      "transcript": "A hungry fox saw some fine bunches of grapes hanging from a vine that was trained along a high trellis, and did his best to reach them by jumping as high as",
+      "language": "en"
+    },
+    {
+      "segment_index": 2,
+      "at_sample": 441344,
+      "samples": 167936,
+      "duration_sec": 10.496,
+      "transcript": "A hungry fox saw some fine bunches of grapes hanging from a vine that was trained along a high trellis, and did his best to reach them by jumping as high as he could into the air.",
+      "language": "en"
+    },
+    {
+      "segment_index": 3,
+      "at_sample": 475136,
+      "samples": 25600,
+      "duration_sec": 1.6,
+      "transcript": "But it was all in vain.",
+      "language": "en"
+    },
+    {
+      "segment_index": 3,
+      "at_sample": 491008,
+      "samples": 41472,
+      "duration_sec": 2.592,
+      "transcript": "But it was all in vain, for they were just",
+      "language": "en"
+    },
+    {
+      "segment_index": 3,
+      "at_sample": 515072,
+      "samples": 65024,
+      "duration_sec": 4.064,
+      "transcript": "But it was all in vain, for they were just out of reach.",
+      "language": "en"
+    },
+    {
+      "segment_index": 3,
+      "at_sample": 530944,
+      "samples": 80896,
+      "duration_sec": 5.056,
+      "transcript": "But it was all in vain, for they were just out of reach. So he gave up trying.",
+      "language": "en"
+    },
+    {
+      "segment_index": 3,
+      "at_sample": 546816,
+      "samples": 97280,
+      "duration_sec": 6.08,
+      "transcript": "But it was all in vain, for they were just out of reach. So he gave up trying, and walked away",
+      "language": "en"
+    },
+    {
+      "segment_index": 3,
+      "at_sample": 563200,
+      "samples": 113152,
+      "duration_sec": 7.072,
+      "transcript": "But it was all in vain, for they were just out of reach. So he gave up trying, and walked away with an air of dignity.",
+      "language": "en"
+    },
+    {
+      "segment_index": 3,
+      "at_sample": 579072,
+      "samples": 129024,
+      "duration_sec": 8.064,
+      "transcript": "But it was all in vain, for they were just out of reach. So he gave up trying, and walked away with an air of dignity and unconcerned.",
+      "language": "en"
+    },
+    {
+      "segment_index": 3,
+      "at_sample": 596480,
+      "samples": 146432,
+      "duration_sec": 9.152,
+      "transcript": "But it was all in vain, for they were just out of reach. So he gave up trying, and walked away with an air of dignity and unconcern, remarking,",
+      "language": "en"
+    },
+    {
+      "segment_index": 3,
+      "at_sample": 620544,
+      "samples": 170496,
+      "duration_sec": 10.656,
+      "transcript": "But it was all in vain, for they were just out of reach. So he gave up trying, and walked away with an air of dignity and unconcern, remarking, I thought those grapes",
+      "language": "en"
+    },
+    {
+      "segment_index": 3,
+      "at_sample": 636416,
+      "samples": 187392,
+      "duration_sec": 11.712,
+      "transcript": "But it was all in vain, for they were just out of reach. So he gave up trying, and walked away with an air of dignity and unconcern, remarking, I thought those grapes were ripe, but I",
+      "language": "en"
+    },
+    {
+      "segment_index": 3,
+      "at_sample": 652800,
+      "samples": 203264,
+      "duration_sec": 12.704,
+      "transcript": "But it was all in vain, for they were just out of reach. So he gave up trying, and walked away with an air of dignity and unconcern, remarking, I thought those grapes were ripe, but I see now they are quite",
+      "language": "en"
+    },
+    {
+      "segment_index": 4,
+      "at_sample": 707072,
+      "samples": 20480,
+      "duration_sec": 1.28,
+      "transcript": "End of Fox.",
+      "language": "en"
+    }
+  ]
+}

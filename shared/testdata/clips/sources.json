@@ -1,0 +1,26 @@
+{
+  "_comment": "Test clips: public-domain LibriVox recordings, cut and resampled to 16 kHz mono PCM16 with ffmpeg. No private recordings or other people's voices without consent belong here.",
+  "clips": {
+    "en_aesop_01.wav": {
+      "source": "https://archive.org/download/aesop_fables_volume_one_librivox/fables_01_01_aesop_64kb.mp3",
+      "work": "Aesop's Fables, Volume 1 - The Fox and the Grapes (LibriVox)",
+      "license": "Public domain (LibriVox)",
+      "cut": "whole file"
+    },
+    "es_marti_02.wav": {
+      "source": "https://archive.org/download/edad_de_oro_1001_librivox/edaddeoro_02_marti_64kb.mp3",
+      "work": "José Martí, La Edad de Oro (LibriVox)",
+      "license": "Public domain (LibriVox)",
+      "cut": "whole file"
+    },
+    "mixed_es_en_es.wav": {
+      "source": [
+        "https://archive.org/download/edad_de_oro_1001_librivox/edaddeoro_04_marti_64kb.mp3",
+        "https://archive.org/download/aesop_fables_volume_one_librivox/fables_01_08_aesop_64kb.mp3"
+      ],
+      "work": "La Edad de Oro ch. 4 and Aesop's Fables 1-08 (LibriVox)",
+      "license": "Public domain (LibriVox)",
+      "cut": "es 20-32 s, 1.2 s silence, en 10-24 s, 1.2 s silence, es 40-52 s, 1.2 s silence"
+    }
+  }
+}

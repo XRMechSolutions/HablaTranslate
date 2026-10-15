@@ -52,6 +52,25 @@ _CLIPPED_ONSET_PAIRS: tuple[tuple[str, str], ...] = tuple(
 )
 
 
+def prepare_partial_pcm(pcm_bytes: bytes) -> bytes:
+    """Clean up a partial-audio snapshot for the quick ASR pass.
+
+    4th-order Butterworth bandpass (80-7500 Hz, SOS form) to cut rumble and
+    hiss, then RMS gain toward the target (capped) unless the clip is near
+    silence. Output is int16 PCM; float-to-int16 truncates toward zero.
+    """
+    from scipy.signal import butter, sosfilt
+
+    audio = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32)
+    sos = butter(_PARTIAL_ORDER, list(_PARTIAL_BAND_HZ), btype="band", fs=16000, output="sos")
+    audio = sosfilt(sos, audio)
+    rms = np.sqrt(np.mean(audio ** 2))
+    if rms > _PARTIAL_MIN_RMS:  # skip near-silence
+        gain = min(_PARTIAL_TARGET_RMS / rms, _PARTIAL_MAX_GAIN)
+        audio = np.clip(audio * gain, -32768, 32767)
+    return audio.astype(np.int16).tobytes()
+
+
 def _final_prep_filter() -> str:
     """ffmpeg filter chain for final-segment ASR input, built from the shared profile."""
     prep = _PROFILE["final_prep"]
@@ -291,7 +310,12 @@ class AudioProcessor:
         Returns (transcript, detected_language).
         """
         try:
-            lang_arg = self._last_detected_language if self.config.asr.auto_language else self._source_language
+            # Before the first final there is no vote yet; use the session source
+            # language rather than whatever WhisperX cached from an earlier call.
+            lang_arg = (
+                (self._last_detected_language or self._source_language)
+                if self.config.asr.auto_language else self._source_language
+            )
             with self._asr_lock:
                 result = self._whisperx_model.transcribe(
                     wav_path,
