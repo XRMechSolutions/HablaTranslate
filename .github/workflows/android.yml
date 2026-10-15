@@ -1,0 +1,135 @@
+name: android
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install SDK platform, build tools, NDK and CMake
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" --install "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006" "cmake;3.22.1" > /dev/null
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # (1) Public builds never read android/.env (D022): they must succeed without it.
+      - name: Build public APKs without .env
+        run: |
+          test ! -e .env
+          ./gradlew --no-configuration-cache assemblePublicDebug assemblePublicRelease :app:verifyMergedManifest
+
+      # (2) No OpenAI key shape anywhere in a public APK, and no SEED_OPENAI_KEY field (D010).
+      # Hits print the file path only, never the matched text.
+      - name: Scan public APKs for keys
+        run: |
+          set -euo pipefail
+          KEY_RE='sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_\-]{20,}'
+          found=0
+          for apk in $(find app/build/outputs/apk/public -name '*.apk'); do
+            out="$(mktemp -d)"
+            unzip -qo "$apk" -d "$out"
+            if grep -raElq "$KEY_RE" "$out"; then
+              echo "::error::key-shaped string in $apk:"
+              grep -raEl "$KEY_RE" "$out" | sed "s|$out/||"
+              found=1
+            fi
+            if grep -aq 'SEED_OPENAI_KEY' "$out"/classes*.dex; then
+              echo "::error::SEED_OPENAI_KEY present in $apk"
+              found=1
+            fi
+            echo "scanned $apk"
+          done
+          test "$found" -eq 0
+
+      # (3) Positive control: a personal build with a synthetic key must be caught by the same scan.
+      # The key is generated at run time (no literal here, so Gitleaks stays clean) and masked.
+      - name: Personal build with a synthetic key must be detected
+        run: |
+          set -euo pipefail
+          DUMMY="sk-proj-$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 40)"
+          echo "::add-mask::$DUMMY"
+          printf 'OPENAI_API_KEY=%s\n' "$DUMMY" > .env
+          ./gradlew --no-configuration-cache assemblePersonalDebug
+          KEY_RE='sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_\-]{20,}'
+          apk="$(find app/build/outputs/apk/personal/debug -name '*.apk' | head -n 1)"
+          out="$(mktemp -d)"
+          unzip -qo "$apk" -d "$out"
+          if grep -raElq "$KEY_RE" "$out"; then
+            echo "positive control: scanner found the synthetic key in $apk"
+          else
+            echo "::error::scanner did not find the synthetic key in the personal APK; the public scan proves nothing"
+            exit 1
+          fi
+
+      # (4) Every module's unit tests, all variants (the synthetic .env keeps personal tests buildable).
+      - name: Unit tests
+        run: ./gradlew --no-configuration-cache test
+
+      # (5) The synthetic key never outlives the job; personal APKs are never uploaded.
+      - name: Remove .env
+        if: always()
+        run: rm -f .env
+
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: habla
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: habla/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - run: pytest
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GITLEAKS_VERSION: "8.28.0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Pinned CLI release, checksum-verified; not gitleaks-action (licence key for org repos, D018).
+      - name: Install Gitleaks
+        run: |
+          set -euo pipefail
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "$tarball" "$base/$tarball"
+          curl -sSfL -o checksums.txt "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          grep " $tarball\$" checksums.txt | sha256sum -c -
+          tar -xzf "$tarball" gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+      - name: Scan full history
+        run: gitleaks git --redact --verbose .

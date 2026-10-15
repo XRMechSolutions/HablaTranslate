@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- No Material Components XML theme is on the classpath; Compose draws everything, so the
+         window theme only sets the dark page colour shown before the first frame. -->
+    <style name="Theme.Habla" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/habla_page</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>
