@@ -1,0 +1,36 @@
+{
+  "session_id": "20261015_141502_abcd",
+  "started_at": "2026-10-15T14:15:02.120000",
+  "raw_audio_format": "webm_opus",
+  "sample_rate": 16000,
+  "segments": [
+    {
+      "segment_id": 1,
+      "filename": "segment_001.wav",
+      "size_bytes": 96000,
+      "duration_seconds": 3.0,
+      "recorded_at": "2026-10-15T14:15:09.004000",
+      "audio_rms": 812.4,
+      "vad_avg_prob": 0.712,
+      "detected_language": "es",
+      "raw_transcript": "¿Qué onda?",
+      "translation": "What's up?",
+      "speaker": "SPEAKER_00",
+      "confidence": 0.92,
+      "idioms_detected": 1
+    },
+    {
+      "segment_id": 2,
+      "filename": "segment_002.wav",
+      "size_bytes": 16000,
+      "duration_seconds": 0.5,
+      "recorded_at": "2026-10-15T14:15:12.410000",
+      "audio_rms": 301.0,
+      "vad_avg_prob": 0.402,
+      "detected_language": "es",
+      "asr_status": "rejected"
+    }
+  ],
+  "ended_at": "2026-10-15T14:40:55.871000",
+  "total_segments": 2
+}

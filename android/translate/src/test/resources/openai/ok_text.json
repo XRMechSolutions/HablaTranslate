@@ -1,0 +1,13 @@
+{
+  "id": "resp_ok_text",
+  "object": "response",
+  "status": "completed",
+  "model": "gpt-6-luna",
+  "output": [
+    {"type": "message", "id": "msg_1", "role": "assistant", "content": [
+      {"type": "output_text", "text": "  where is  ", "annotations": []},
+      {"type": "output_text", "text": "second part ignored", "annotations": []}
+    ]}
+  ],
+  "usage": {"input_tokens": 40, "input_tokens_details": {"cached_tokens": 0}, "output_tokens": 4, "output_tokens_details": {"reasoning_tokens": 0}, "total_tokens": 44}
+}

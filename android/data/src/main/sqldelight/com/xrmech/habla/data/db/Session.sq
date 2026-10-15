@@ -1,0 +1,56 @@
+CREATE TABLE sessions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at      TEXT NOT NULL,
+    ended_at        TEXT,
+    mode            TEXT NOT NULL DEFAULT 'conversation',
+    direction       TEXT NOT NULL DEFAULT 'es_to_en',
+    topic_summary   TEXT,
+    notes           TEXT,
+    asr_model       TEXT NOT NULL,
+    translate_model TEXT
+);
+
+insertSession:
+INSERT INTO sessions (started_at, mode, direction, asr_model) VALUES (?, ?, ?, ?);
+
+lastInsertRowId:
+SELECT last_insert_rowid();
+
+closeDanglingSessions:
+UPDATE sessions
+SET ended_at = COALESCE((SELECT MAX(e.timestamp) FROM exchanges e WHERE e.session_id = sessions.id), started_at)
+WHERE ended_at IS NULL;
+
+endSession:
+UPDATE sessions
+SET ended_at = :endedAt,
+    topic_summary = :topicSummary,
+    translate_model = (SELECT u.model FROM usage_log u
+                       WHERE u.session_id = :id AND u.kind = 'final'
+                       GROUP BY u.model ORDER BY COUNT(*) DESC, MAX(u.id) DESC LIMIT 1)
+WHERE id = :id AND ended_at IS NULL;
+
+selectSessions:
+SELECT s.id, s.started_at, s.ended_at, s.mode, s.direction, s.topic_summary, s.notes,
+       s.asr_model, s.translate_model,
+       (SELECT COUNT(*) FROM exchanges e WHERE e.session_id = s.id) AS exchange_count,
+       (SELECT TOTAL(u.cost_usd) FROM usage_log u WHERE u.session_id = s.id) AS cost_usd
+FROM sessions s
+ORDER BY s.started_at DESC, s.id DESC;
+
+selectSessionById:
+SELECT s.id, s.started_at, s.ended_at, s.mode, s.direction, s.topic_summary, s.notes,
+       s.asr_model, s.translate_model,
+       (SELECT COUNT(*) FROM exchanges e WHERE e.session_id = s.id) AS exchange_count,
+       (SELECT TOTAL(u.cost_usd) FROM usage_log u WHERE u.session_id = s.id) AS cost_usd
+FROM sessions s
+WHERE s.id = ?;
+
+sessionExists:
+SELECT COUNT(*) FROM sessions WHERE id = ?;
+
+selectAllSessionIds:
+SELECT id FROM sessions;
+
+deleteSession:
+DELETE FROM sessions WHERE id = ?;

@@ -1,0 +1,14 @@
+[
+  {"model": "gpt-6-luna", "input": 600, "cached": 0, "output": 120},
+  {"model": "gpt-6-luna", "input": 2048, "cached": 1024, "output": 100},
+  {"model": "gpt-6-luna", "input": 100, "cached": 500, "output": 10},
+  {"model": "gpt-5.4-mini", "input": 2048, "cached": 1024, "output": 100},
+  {"model": "gpt-5.4-mini", "input": 850, "cached": 0, "output": 230},
+  {"model": "gpt-5.4-mini", "input": 0, "cached": 0, "output": 0},
+  {"model": "gpt-5.4-mini", "input": 1, "cached": 1, "output": 1},
+  {"model": "gpt-5.4-nano", "input": 1500, "cached": 300, "output": 77},
+  {"model": "gpt-5.4-nano", "input": 1234567, "cached": 0, "output": 765432},
+  {"model": "gpt-4o-mini", "input": 640, "cached": 0, "output": 64},
+  {"model": "gpt-4o-mini", "input": 3000, "cached": 2048, "output": 512},
+  {"model": "gpt-unknown-model", "input": 600, "cached": 0, "output": 120}
+]

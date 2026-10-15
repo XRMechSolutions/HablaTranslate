@@ -1,0 +1,37 @@
+CREATE TABLE training_segments (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id        INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    segment_id        INTEGER NOT NULL,
+    filename          TEXT NOT NULL,
+    size_bytes        INTEGER NOT NULL,
+    duration_seconds  REAL NOT NULL,
+    recorded_at       TEXT NOT NULL,
+    audio_rms         REAL NOT NULL,
+    vad_avg_prob      REAL NOT NULL,
+    detected_language TEXT,
+    asr_status        TEXT NOT NULL,
+    asr_time_seconds  REAL NOT NULL DEFAULT 0,
+    asr_avg_logprob   REAL,
+    UNIQUE (session_id, segment_id)
+);
+
+insertTrainingSegment:
+INSERT INTO training_segments (session_id, segment_id, filename, size_bytes, duration_seconds, recorded_at,
+                               audio_rms, vad_avg_prob, detected_language, asr_status, asr_time_seconds,
+                               asr_avg_logprob)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectTrainingFilename:
+SELECT filename FROM training_segments WHERE session_id = ? AND segment_id = ?;
+
+selectTrainingSegmentsForSession:
+SELECT t.session_id, t.segment_id, t.filename, t.size_bytes, t.duration_seconds, t.recorded_at,
+       t.audio_rms, t.vad_avg_prob, t.detected_language, t.asr_status, t.asr_time_seconds,
+       t.asr_avg_logprob,
+       e.id AS exchange_id, e.raw_transcript, e.translation, e.confidence, e.flagged_json,
+       e.corrected_transcript
+FROM training_segments t
+LEFT JOIN exchanges e
+  ON e.id = (SELECT MIN(x.id) FROM exchanges x WHERE x.session_id = t.session_id AND x.segment_id = t.segment_id)
+WHERE t.session_id = ?
+ORDER BY t.segment_id ASC;

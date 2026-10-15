@@ -1,0 +1,8 @@
+{
+  "error": {
+    "message": "Project spend limit exceeded.",
+    "type": "invalid_request_error",
+    "param": null,
+    "code": "project_spend_limit_exceeded"
+  }
+}

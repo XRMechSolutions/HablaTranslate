@@ -1,0 +1,17 @@
+{
+  "id": "resp_reasoning",
+  "object": "response",
+  "status": "completed",
+  "model": "gpt-5.4-mini",
+  "output": [
+    {"type": "reasoning", "id": "rs_1", "summary": [{"type": "summary_text", "text": "not the answer"}]},
+    {"type": "message", "id": "msg_1", "role": "assistant", "content": [
+      {"type": "refusal", "refusal": "skip me"},
+      {"type": "output_text", "text": "the answer", "annotations": []}
+    ]},
+    {"type": "message", "id": "msg_2", "role": "assistant", "content": [
+      {"type": "output_text", "text": "a later message", "annotations": []}
+    ]}
+  ],
+  "usage": {"input_tokens": 500, "input_tokens_details": {"cached_tokens": 0}, "output_tokens": 220, "output_tokens_details": {"reasoning_tokens": 200}, "total_tokens": 720}
+}

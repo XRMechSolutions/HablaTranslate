@@ -1,0 +1,36 @@
+{
+  "generated_at": "2026-10-16T09:00:00.000000",
+  "whisper_model": "small",
+  "direction": "es_to_en",
+  "total_segments": 2,
+  "segments": [
+    {
+      "segment_id": 1,
+      "filename": "segment_001.wav",
+      "transcript": "¿Qué onda, güey?",
+      "confidence": -0.312,
+      "asr_time_seconds": 1.84,
+      "translation": "What's up?",
+      "asr_corrections": "",
+      "reviewed": true,
+      "human_corrected": true
+    },
+    {
+      "segment_id": 2,
+      "filename": "segment_002.wav",
+      "transcript": "[inaudible]",
+      "confidence": 0.0,
+      "asr_time_seconds": 0.95,
+      "translation": "",
+      "asr_corrections": "",
+      "reviewed": false,
+      "human_corrected": false
+    }
+  ],
+  "corrected_at": "2026-10-16T09:00:00.000000+00:00",
+  "correction_stats": {
+    "reviewed": 1,
+    "human_corrected": 1,
+    "total": 2
+  }
+}

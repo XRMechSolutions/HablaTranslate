@@ -1,0 +1,8 @@
+{
+  "error": {
+    "message": "Your credit balance is too low.",
+    "type": "credit_balance_exhausted",
+    "param": null,
+    "code": null
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "settings": ["es_to_en", "en_to_es", "auto"],
+  "detected": ["es", "en", "fr", null, ""]
+}

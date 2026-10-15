@@ -1,0 +1,39 @@
+{
+  "field": [
+    ["{\"corrected\": \"Hola\", \"translated\": \"Hello\"}", "corrected"],
+    ["{\"corrected\": \"Hola\", \"translated\": \"Hello\"}", "translated"],
+    ["{\"corrected\":\"Hola\"", "corrected"],
+    ["{\"translated\" :   \"  padded  \"}", "translated"],
+    ["{\"translated\": \"line\\nbreak\"}", "translated"],
+    ["{\"translated\": \"multi\nline\nvalue\"}", "translated"],
+    ["{\"translated\": \"crlf\r\nvalue\"}", "translated"],
+    ["{\"translated\": \"\"}", "translated"],
+    ["{\"translated\": 5}", "translated"],
+    ["no field here", "translated"],
+    ["\"translated\": \"first\", \"translated\": \"second\"", "translated"],
+    ["{\"corrected\": \"a \\\" b\"}", "corrected"],
+    ["{\"translated\":\r\n\"after crlf\"}", "translated"],
+    ["{\"translated\": \"tab\tinside\"}", "translated"]
+  ],
+  "raw": [
+    "Translation: Hello there",
+    "Translated: \"Hello there\"",
+    "translation = \"quoted\" ",
+    "TRANSLATED:Hello",
+    "Some preamble\nTranslation: Good morning   \nOther stuff",
+    "Original: hola\r\nTranslation: Hello\r\nNotes: none",
+    "Translation: Hello\r\n",
+    "Translation: first\nTranslation: second",
+    "The translation: is here",
+    "\"Just a quoted sentence\"",
+    "  \"Quoted with spaces\"  ",
+    "\"multi\nline quoted\"",
+    "\"crlf\r\nquoted\"\r\n",
+    "no pattern at all",
+    "",
+    "Translation:",
+    "Translation: \"\"",
+    "translations: plural form",
+    "untranslated: weird"
+  ]
+}

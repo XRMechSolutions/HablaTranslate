@@ -1,0 +1,27 @@
+CREATE TABLE vocab (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    exchange_id       INTEGER REFERENCES exchanges(id) ON DELETE SET NULL,
+    term              TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    literal           TEXT,
+    meaning           TEXT NOT NULL,
+    category          TEXT NOT NULL DEFAULT 'idiom',
+    source_sentence   TEXT,
+    region            TEXT DEFAULT 'universal',
+    created_at        TEXT NOT NULL,
+    times_encountered INTEGER NOT NULL DEFAULT 1
+);
+
+selectVocabByTerm:
+SELECT id, times_encountered FROM vocab WHERE term = ?;
+
+incrementVocabEncounter:
+UPDATE vocab SET times_encountered = times_encountered + 1,
+                 source_sentence = COALESCE(:sourceSentence, source_sentence)
+WHERE id = :id;
+
+insertVocab:
+INSERT INTO vocab (exchange_id, term, literal, meaning, category, source_sentence, region, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+selectAllVocab:
+SELECT * FROM vocab ORDER BY created_at DESC, id DESC;

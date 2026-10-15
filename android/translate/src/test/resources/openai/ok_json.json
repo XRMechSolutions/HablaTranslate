@@ -1,0 +1,25 @@
+{
+  "id": "resp_ok_json",
+  "object": "response",
+  "created_at": 1760500000,
+  "status": "completed",
+  "model": "gpt-5.4-mini-2026-03-01",
+  "output": [
+    {
+      "type": "message",
+      "id": "msg_1",
+      "status": "completed",
+      "role": "assistant",
+      "content": [
+        {"type": "output_text", "text": "{\"corrected\": \"Me importa un pepino.\", \"translated\": \"I couldn't care less.\", \"flagged_phrases\": [], \"confidence\": 0.95}", "annotations": []}
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 812,
+    "input_tokens_details": {"cached_tokens": 0},
+    "output_tokens": 64,
+    "output_tokens_details": {"reasoning_tokens": 0},
+    "total_tokens": 876
+  }
+}

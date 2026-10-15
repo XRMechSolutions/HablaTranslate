@@ -1,0 +1,14 @@
+{
+  "_comment": "Every model in shared/models.json is added by the generator; these are the extra ids and the call shapes.",
+  "extra_models": ["gpt-unknown-model"],
+  "calls": [
+    {"system": "SYS", "user": "USER", "max_tokens": 1024, "json": true},
+    {"system": "SYS", "user": "USER", "max_tokens": 2048, "json": true},
+    {"system": "SYS", "user": "retry prompt", "max_tokens": 512, "json": true},
+    {"system": "", "user": "quick prompt", "max_tokens": 256, "json": false},
+    {"system": "", "user": "topic prompt", "max_tokens": 200, "json": false},
+    {"system": "", "user": "Reply with OK.", "max_tokens": 16, "json": false},
+    {"system": "", "user": "json without system", "max_tokens": 64, "json": true},
+    {"system": "SYS ñ \"quoted\"", "user": "üñíçødé {x}", "max_tokens": 100, "json": false}
+  ]
+}

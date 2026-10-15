@@ -1,0 +1,35 @@
+CREATE TABLE exchanges (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id           INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    segment_id           INTEGER NOT NULL,
+    timestamp            TEXT NOT NULL,
+    direction            TEXT NOT NULL,
+    raw_transcript       TEXT NOT NULL,
+    corrected_source     TEXT,
+    translation          TEXT NOT NULL,
+    confidence           REAL,
+    is_correction        INTEGER NOT NULL DEFAULT 0,
+    correction_json      TEXT,
+    flagged_json         TEXT NOT NULL DEFAULT '[]',
+    processing_ms        INTEGER,
+    detected_language    TEXT,
+    translation_error    INTEGER NOT NULL DEFAULT 0,
+    audio_path           TEXT,
+    corrected_transcript TEXT
+);
+CREATE INDEX exchanges_session_idx ON exchanges(session_id, segment_id);
+
+insertExchange:
+INSERT INTO exchanges (session_id, segment_id, timestamp, direction, raw_transcript, corrected_source,
+                       translation, confidence, is_correction, correction_json, flagged_json,
+                       processing_ms, detected_language, translation_error, audio_path)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectExchangesForSession:
+SELECT * FROM exchanges WHERE session_id = ? ORDER BY segment_id ASC, id ASC;
+
+exchangeExists:
+SELECT COUNT(*) FROM exchanges WHERE id = ?;
+
+setCorrectedTranscript:
+UPDATE exchanges SET corrected_transcript = ? WHERE id = ?;

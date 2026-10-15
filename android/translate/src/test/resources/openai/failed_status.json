@@ -1,0 +1,9 @@
+{
+  "id": "resp_failed",
+  "object": "response",
+  "status": "failed",
+  "error": {"code": "server_error", "message": "The model failed to generate a response."},
+  "model": "gpt-5.4-mini",
+  "output": [],
+  "usage": null
+}

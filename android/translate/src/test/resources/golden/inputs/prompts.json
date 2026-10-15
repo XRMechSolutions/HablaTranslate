@@ -1,0 +1,31 @@
+{
+  "system": [
+    ["es_to_en", "conversation"],
+    ["es_to_en", "classroom"],
+    ["en_to_es", "conversation"],
+    ["en_to_es", "classroom"],
+    ["auto", "conversation"]
+  ],
+  "user": [
+    {"transcript": "me importa un pepino", "context": [], "topic": ""},
+    {"transcript": "y luego fuimos al mercado", "context": [["Hola, ¿qué tal?", "Hi, how are you?"], ["Bien, gracias.", "Fine, thanks."], ["¿Vamos al centro?", "Shall we go downtown?"]], "topic": "Greetings and plans to go downtown."},
+    {"transcript": "siete", "context": [["uno", "one"], ["dos", "two"], ["tres", "three"], ["cuatro", "four"], ["cinco", "five"], ["seis", "six"], ["siete", "seven"]], "topic": ""},
+    {"transcript": "dijo \"hola\" y {x} con {{llaves}} y {0}", "context": [["a {b} c", "d \"e\" f"]], "topic": "Topic with {braces}"}
+  ],
+  "quick": [
+    ["¿dónde está", "es_to_en"],
+    ["where is the", "en_to_es"],
+    ["texto con {x} y \"comillas\"", "es_to_en"]
+  ],
+  "topic": [
+    ["", "¿Cuánto cuesta?", "How much is it?"],
+    ["Shopping at a market.", "Es muy caro.", "It's very expensive."],
+    ["{prev}", "a {b}", "c \"d\""]
+  ],
+  "passthrough_retry": [
+    ["me importa un pepino", "es_to_en"],
+    ["I don't care", "en_to_es"],
+    ["hola mundo", "auto"],
+    ["texto con {x} y \"comillas\"", "es_to_en"]
+  ]
+}

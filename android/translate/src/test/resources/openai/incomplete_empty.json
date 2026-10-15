@@ -1,0 +1,11 @@
+{
+  "id": "resp_incomplete_empty",
+  "object": "response",
+  "status": "incomplete",
+  "incomplete_details": {"reason": "max_output_tokens"},
+  "model": "gpt-5.4-mini",
+  "output": [
+    {"type": "reasoning", "id": "rs_1", "summary": []}
+  ],
+  "usage": {"input_tokens": 900, "output_tokens": 1024}
+}
