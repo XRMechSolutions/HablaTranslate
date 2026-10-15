@@ -51,6 +51,13 @@ def models() -> dict:
     return load_json("models.json")
 
 
+IDIOM_INDEX = "index.json"
+
+
 def idiom_files() -> list[Path]:
-    """Bundled idiom pattern files, sorted by name."""
-    return sorted((shared_dir() / "idioms").glob("*.json"))
+    """Bundled idiom pattern files, sorted by name.
+
+    idioms/index.json lists these files for the Android app (which cannot
+    list asset directories); it is not a pattern file, so it is skipped.
+    """
+    return sorted(p for p in (shared_dir() / "idioms").glob("*.json") if p.name != IDIOM_INDEX)

@@ -1,0 +1,1296 @@
+{
+ "python": "3.13.5",
+ "sources": {
+  "idioms/spain.json": "dc4f122af15a687fb52023ce293664c8213d2a0c13550f9dad2e52b1e5a050e6"
+ },
+ "whitespace_bmp": [
+  9,
+  10,
+  11,
+  12,
+  13,
+  28,
+  29,
+  30,
+  31,
+  32,
+  133,
+  160,
+  5760,
+  8192,
+  8193,
+  8194,
+  8195,
+  8196,
+  8197,
+  8198,
+  8199,
+  8200,
+  8201,
+  8202,
+  8232,
+  8233,
+  8239,
+  8287,
+  12288
+ ],
+ "casefold": {
+  "a": [
+   65,
+   97
+  ],
+  "b": [
+   66,
+   98
+  ],
+  "c": [
+   67,
+   99
+  ],
+  "d": [
+   68,
+   100
+  ],
+  "e": [
+   69,
+   101
+  ],
+  "f": [
+   70,
+   102
+  ],
+  "g": [
+   71,
+   103
+  ],
+  "h": [
+   72,
+   104
+  ],
+  "i": [
+   73,
+   105,
+   304,
+   305
+  ],
+  "j": [
+   74,
+   106
+  ],
+  "l": [
+   76,
+   108
+  ],
+  "m": [
+   77,
+   109
+  ],
+  "n": [
+   78,
+   110
+  ],
+  "o": [
+   79,
+   111
+  ],
+  "p": [
+   80,
+   112
+  ],
+  "q": [
+   81,
+   113
+  ],
+  "r": [
+   82,
+   114
+  ],
+  "s": [
+   83,
+   115,
+   383
+  ],
+  "t": [
+   84,
+   116
+  ],
+  "u": [
+   85,
+   117
+  ],
+  "v": [
+   86,
+   118
+  ],
+  "z": [
+   90,
+   122
+  ],
+  "á": [
+   193,
+   225
+  ],
+  "ñ": [
+   209,
+   241
+  ],
+  "ó": [
+   211,
+   243
+  ]
+ },
+ "patterns": [
+  "idioms/spain.json#0",
+  "idioms/spain.json#1",
+  "idioms/spain.json#2",
+  "idioms/spain.json#3",
+  "idioms/spain.json#4",
+  "idioms/spain.json#5",
+  "idioms/spain.json#6",
+  "idioms/spain.json#7",
+  "idioms/spain.json#8",
+  "idioms/spain.json#9",
+  "idioms/spain.json#10",
+  "idioms/spain.json#11",
+  "idioms/spain.json#12",
+  "idioms/spain.json#13",
+  "idioms/spain.json#14",
+  "idioms/spain.json#15",
+  "idioms/spain.json#16",
+  "idioms/spain.json#17",
+  "idioms/spain.json#18",
+  "idioms/spain.json#19",
+  "idioms/spain.json#20",
+  "idioms/spain.json#21",
+  "idioms/spain.json#22",
+  "idioms/spain.json#23"
+ ],
+ "python_compile_errors": {},
+ "probes": [
+  "importar un pepino",
+  "IMPORTAR UN PEPINO",
+  "Importar Un Pepino",
+  "importar un pepino",
+  "importar\tun\tpepino",
+  "importar  un  pepino",
+  "Ayer dije que importar un pepino, ¿vale?",
+  "estar en las nubes",
+  "ESTAR EN LAS NUBES",
+  "Estar En Las Nubes",
+  "estar en las nubes",
+  "estar\ten\tlas\tnubes",
+  "estar  en  las  nubes",
+  "Ayer dije que estar en las nubes, ¿vale?",
+  "tomar el pelo",
+  "TOMAR EL PELO",
+  "Tomar El Pelo",
+  "tomar el pelo",
+  "tomar\tel\tpelo",
+  "tomar  el  pelo",
+  "Ayer dije que tomar el pelo, ¿vale?",
+  "meter la pata",
+  "METER LA PATA",
+  "Meter La Pata",
+  "meter la pata",
+  "meter\tla\tpata",
+  "meter  la  pata",
+  "Ayer dije que meter la pata, ¿vale?",
+  "no tener pelos en la lengua",
+  "NO TENER PELOS EN LA LENGUA",
+  "No Tener Pelos En La Lengua",
+  "no tener pelos en la lengua",
+  "no\ttener\tpelos\ten\tla\tlengua",
+  "no  tener  pelos  en  la  lengua",
+  "Ayer dije que no tener pelos en la lengua, ¿vale?",
+  "dar en el clavo",
+  "DAR EN EL CLAVO",
+  "Dar En El Clavo",
+  "dar en el clavo",
+  "dar\ten\tel\tclavo",
+  "dar  en  el  clavo",
+  "Ayer dije que dar en el clavo, ¿vale?",
+  "echar una mano",
+  "ECHAR UNA MANO",
+  "Echar Una Mano",
+  "echar una mano",
+  "echar\tuna\tmano",
+  "echar  una  mano",
+  "Ayer dije que echar una mano, ¿vale?",
+  "tirar la toalla",
+  "TIRAR LA TOALLA",
+  "Tirar La Toalla",
+  "tirar la toalla",
+  "tirar\tla\ttoalla",
+  "tirar  la  toalla",
+  "Ayer dije que tirar la toalla, ¿vale?",
+  "costar un ojo de la cara",
+  "COSTAR UN OJO DE LA CARA",
+  "Costar Un Ojo De La Cara",
+  "costar un ojo de la cara",
+  "costar\tun\tojo\tde\tla\tcara",
+  "costar  un  ojo  de  la  cara",
+  "Ayer dije que costar un ojo de la cara, ¿vale?",
+  "tener cara dura",
+  "TENER CARA DURA",
+  "Tener Cara Dura",
+  "tener cara dura",
+  "tener\tcara\tdura",
+  "tener  cara  dura",
+  "Ayer dije que tener cara dura, ¿vale?",
+  "quedarse de piedra",
+  "QUEDARSE DE PIEDRA",
+  "Quedarse De Piedra",
+  "quedarse de piedra",
+  "quedarse\tde\tpiedra",
+  "quedarse  de  piedra",
+  "Ayer dije que quedarse de piedra, ¿vale?",
+  "flipar en colores",
+  "FLIPAR EN COLORES",
+  "Flipar En Colores",
+  "flipar en colores",
+  "flipar\ten\tcolores",
+  "flipar  en  colores",
+  "Ayer dije que flipar en colores, ¿vale?",
+  "molar",
+  "MOLAR",
+  "Molar",
+  "Ayer dije que molar, ¿vale?",
+  "estar hasta las narices",
+  "ESTAR HASTA LAS NARICES",
+  "Estar Hasta Las Narices",
+  "estar hasta las narices",
+  "estar\thasta\tlas\tnarices",
+  "estar  hasta  las  narices",
+  "Ayer dije que estar hasta las narices, ¿vale?",
+  "dar la lata",
+  "DAR LA LATA",
+  "Dar La Lata",
+  "dar la lata",
+  "dar\tla\tlata",
+  "dar  la  lata",
+  "Ayer dije que dar la lata, ¿vale?",
+  "ser pan comido",
+  "SER PAN COMIDO",
+  "Ser Pan Comido",
+  "ser pan comido",
+  "ser\tpan\tcomido",
+  "ser  pan  comido",
+  "Ayer dije que ser pan comido, ¿vale?",
+  "llover a cántaros",
+  "LLOVER A CÁNTAROS",
+  "Llover A Cántaros",
+  "llover a cántaros",
+  "llover\ta\tcántaros",
+  "llover  a  cántaros",
+  "Ayer dije que llover a cántaros, ¿vale?",
+  "no pegar ojo",
+  "NO PEGAR OJO",
+  "No Pegar Ojo",
+  "no pegar ojo",
+  "no\tpegar\tojo",
+  "no  pegar  ojo",
+  "Ayer dije que no pegar ojo, ¿vale?",
+  "ponerse las pilas",
+  "PONERSE LAS PILAS",
+  "Ponerse Las Pilas",
+  "ponerse las pilas",
+  "ponerse\tlas\tpilas",
+  "ponerse  las  pilas",
+  "Ayer dije que ponerse las pilas, ¿vale?",
+  "mala leche",
+  "MALA LECHE",
+  "Mala Leche",
+  "mala leche",
+  "mala\tleche",
+  "mala  leche",
+  "Ayer dije que mala leche, ¿vale?",
+  "ser la caña",
+  "SER LA CAÑA",
+  "Ser La Caña",
+  "ser la caña",
+  "ser\tla\tcaña",
+  "ser  la  caña",
+  "Ayer dije que ser la caña, ¿vale?",
+  "tener morriña",
+  "TENER MORRIÑA",
+  "Tener Morriña",
+  "tener morriña",
+  "tener\tmorriña",
+  "tener  morriña",
+  "Ayer dije que tener morriña, ¿vale?",
+  "ser un borde",
+  "SER UN BORDE",
+  "Ser Un Borde",
+  "ser un borde",
+  "ser\tun\tborde",
+  "ser  un  borde",
+  "Ayer dije que ser un borde, ¿vale?",
+  "irse de cañas",
+  "IRSE DE CAÑAS",
+  "Irse De Cañas",
+  "irse de cañas",
+  "irse\tde\tcañas",
+  "irse  de  cañas",
+  "Ayer dije que irse de cañas, ¿vale?",
+  "tomarpelo",
+  "hola qué tal",
+  "",
+  "estar",
+  "pelo",
+  "en las",
+  "buenos días",
+  "TOMAR EL",
+  "importa",
+  "no pasa nada"
+ ],
+ "hits": [
+  {
+   "pattern": 0,
+   "probe": 0,
+   "start": 0,
+   "end": 18
+  },
+  {
+   "pattern": 0,
+   "probe": 1,
+   "start": 0,
+   "end": 18
+  },
+  {
+   "pattern": 0,
+   "probe": 2,
+   "start": 0,
+   "end": 18
+  },
+  {
+   "pattern": 0,
+   "probe": 3,
+   "start": 0,
+   "end": 18
+  },
+  {
+   "pattern": 0,
+   "probe": 4,
+   "start": 0,
+   "end": 18
+  },
+  {
+   "pattern": 0,
+   "probe": 5,
+   "start": 0,
+   "end": 20
+  },
+  {
+   "pattern": 0,
+   "probe": 6,
+   "start": 14,
+   "end": 32
+  },
+  {
+   "pattern": 1,
+   "probe": 7,
+   "start": 0,
+   "end": 18
+  },
+  {
+   "pattern": 1,
+   "probe": 8,
+   "start": 0,
+   "end": 18
+  },
+  {
+   "pattern": 1,
+   "probe": 9,
+   "start": 0,
+   "end": 18
+  },
+  {
+   "pattern": 1,
+   "probe": 10,
+   "start": 0,
+   "end": 18
+  },
+  {
+   "pattern": 1,
+   "probe": 11,
+   "start": 0,
+   "end": 18
+  },
+  {
+   "pattern": 1,
+   "probe": 12,
+   "start": 0,
+   "end": 21
+  },
+  {
+   "pattern": 1,
+   "probe": 13,
+   "start": 14,
+   "end": 32
+  },
+  {
+   "pattern": 2,
+   "probe": 14,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 2,
+   "probe": 15,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 2,
+   "probe": 16,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 2,
+   "probe": 17,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 2,
+   "probe": 18,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 2,
+   "probe": 19,
+   "start": 0,
+   "end": 15
+  },
+  {
+   "pattern": 2,
+   "probe": 20,
+   "start": 14,
+   "end": 27
+  },
+  {
+   "pattern": 3,
+   "probe": 21,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 3,
+   "probe": 22,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 3,
+   "probe": 23,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 3,
+   "probe": 24,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 3,
+   "probe": 25,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 3,
+   "probe": 26,
+   "start": 0,
+   "end": 15
+  },
+  {
+   "pattern": 3,
+   "probe": 27,
+   "start": 14,
+   "end": 27
+  },
+  {
+   "pattern": 5,
+   "probe": 35,
+   "start": 0,
+   "end": 15
+  },
+  {
+   "pattern": 5,
+   "probe": 36,
+   "start": 0,
+   "end": 15
+  },
+  {
+   "pattern": 5,
+   "probe": 37,
+   "start": 0,
+   "end": 15
+  },
+  {
+   "pattern": 5,
+   "probe": 38,
+   "start": 0,
+   "end": 15
+  },
+  {
+   "pattern": 5,
+   "probe": 39,
+   "start": 0,
+   "end": 15
+  },
+  {
+   "pattern": 5,
+   "probe": 40,
+   "start": 0,
+   "end": 18
+  },
+  {
+   "pattern": 5,
+   "probe": 41,
+   "start": 14,
+   "end": 29
+  },
+  {
+   "pattern": 6,
+   "probe": 42,
+   "start": 0,
+   "end": 14
+  },
+  {
+   "pattern": 6,
+   "probe": 43,
+   "start": 0,
+   "end": 14
+  },
+  {
+   "pattern": 6,
+   "probe": 44,
+   "start": 0,
+   "end": 14
+  },
+  {
+   "pattern": 6,
+   "probe": 45,
+   "start": 0,
+   "end": 14
+  },
+  {
+   "pattern": 6,
+   "probe": 46,
+   "start": 0,
+   "end": 14
+  },
+  {
+   "pattern": 6,
+   "probe": 47,
+   "start": 0,
+   "end": 16
+  },
+  {
+   "pattern": 6,
+   "probe": 48,
+   "start": 14,
+   "end": 28
+  },
+  {
+   "pattern": 7,
+   "probe": 49,
+   "start": 0,
+   "end": 15
+  },
+  {
+   "pattern": 7,
+   "probe": 50,
+   "start": 0,
+   "end": 15
+  },
+  {
+   "pattern": 7,
+   "probe": 51,
+   "start": 0,
+   "end": 15
+  },
+  {
+   "pattern": 7,
+   "probe": 52,
+   "start": 0,
+   "end": 15
+  },
+  {
+   "pattern": 7,
+   "probe": 53,
+   "start": 0,
+   "end": 15
+  },
+  {
+   "pattern": 7,
+   "probe": 54,
+   "start": 0,
+   "end": 17
+  },
+  {
+   "pattern": 7,
+   "probe": 55,
+   "start": 14,
+   "end": 29
+  },
+  {
+   "pattern": 8,
+   "probe": 56,
+   "start": 0,
+   "end": 24
+  },
+  {
+   "pattern": 8,
+   "probe": 57,
+   "start": 0,
+   "end": 24
+  },
+  {
+   "pattern": 8,
+   "probe": 58,
+   "start": 0,
+   "end": 24
+  },
+  {
+   "pattern": 8,
+   "probe": 59,
+   "start": 0,
+   "end": 24
+  },
+  {
+   "pattern": 8,
+   "probe": 60,
+   "start": 0,
+   "end": 24
+  },
+  {
+   "pattern": 8,
+   "probe": 61,
+   "start": 0,
+   "end": 29
+  },
+  {
+   "pattern": 8,
+   "probe": 62,
+   "start": 14,
+   "end": 38
+  },
+  {
+   "pattern": 9,
+   "probe": 63,
+   "start": 0,
+   "end": 15
+  },
+  {
+   "pattern": 9,
+   "probe": 64,
+   "start": 0,
+   "end": 15
+  },
+  {
+   "pattern": 9,
+   "probe": 65,
+   "start": 0,
+   "end": 15
+  },
+  {
+   "pattern": 9,
+   "probe": 66,
+   "start": 0,
+   "end": 15
+  },
+  {
+   "pattern": 9,
+   "probe": 67,
+   "start": 0,
+   "end": 15
+  },
+  {
+   "pattern": 9,
+   "probe": 68,
+   "start": 0,
+   "end": 17
+  },
+  {
+   "pattern": 9,
+   "probe": 69,
+   "start": 14,
+   "end": 29
+  },
+  {
+   "pattern": 10,
+   "probe": 70,
+   "start": 0,
+   "end": 18
+  },
+  {
+   "pattern": 10,
+   "probe": 71,
+   "start": 0,
+   "end": 18
+  },
+  {
+   "pattern": 10,
+   "probe": 72,
+   "start": 0,
+   "end": 18
+  },
+  {
+   "pattern": 10,
+   "probe": 73,
+   "start": 0,
+   "end": 18
+  },
+  {
+   "pattern": 10,
+   "probe": 74,
+   "start": 0,
+   "end": 18
+  },
+  {
+   "pattern": 10,
+   "probe": 75,
+   "start": 0,
+   "end": 20
+  },
+  {
+   "pattern": 10,
+   "probe": 76,
+   "start": 14,
+   "end": 32
+  },
+  {
+   "pattern": 11,
+   "probe": 77,
+   "start": 0,
+   "end": 17
+  },
+  {
+   "pattern": 11,
+   "probe": 78,
+   "start": 0,
+   "end": 17
+  },
+  {
+   "pattern": 11,
+   "probe": 79,
+   "start": 0,
+   "end": 17
+  },
+  {
+   "pattern": 11,
+   "probe": 80,
+   "start": 0,
+   "end": 17
+  },
+  {
+   "pattern": 11,
+   "probe": 81,
+   "start": 0,
+   "end": 17
+  },
+  {
+   "pattern": 11,
+   "probe": 82,
+   "start": 0,
+   "end": 19
+  },
+  {
+   "pattern": 11,
+   "probe": 83,
+   "start": 14,
+   "end": 31
+  },
+  {
+   "pattern": 12,
+   "probe": 84,
+   "start": 0,
+   "end": 5
+  },
+  {
+   "pattern": 12,
+   "probe": 85,
+   "start": 0,
+   "end": 5
+  },
+  {
+   "pattern": 12,
+   "probe": 86,
+   "start": 0,
+   "end": 5
+  },
+  {
+   "pattern": 12,
+   "probe": 87,
+   "start": 14,
+   "end": 19
+  },
+  {
+   "pattern": 13,
+   "probe": 88,
+   "start": 6,
+   "end": 23
+  },
+  {
+   "pattern": 13,
+   "probe": 89,
+   "start": 6,
+   "end": 23
+  },
+  {
+   "pattern": 13,
+   "probe": 90,
+   "start": 6,
+   "end": 23
+  },
+  {
+   "pattern": 13,
+   "probe": 91,
+   "start": 6,
+   "end": 23
+  },
+  {
+   "pattern": 13,
+   "probe": 92,
+   "start": 6,
+   "end": 23
+  },
+  {
+   "pattern": 13,
+   "probe": 93,
+   "start": 7,
+   "end": 26
+  },
+  {
+   "pattern": 13,
+   "probe": 94,
+   "start": 20,
+   "end": 37
+  },
+  {
+   "pattern": 14,
+   "probe": 95,
+   "start": 0,
+   "end": 11
+  },
+  {
+   "pattern": 14,
+   "probe": 96,
+   "start": 0,
+   "end": 11
+  },
+  {
+   "pattern": 14,
+   "probe": 97,
+   "start": 0,
+   "end": 11
+  },
+  {
+   "pattern": 14,
+   "probe": 98,
+   "start": 0,
+   "end": 11
+  },
+  {
+   "pattern": 14,
+   "probe": 99,
+   "start": 0,
+   "end": 11
+  },
+  {
+   "pattern": 14,
+   "probe": 100,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 14,
+   "probe": 101,
+   "start": 14,
+   "end": 25
+  },
+  {
+   "pattern": 15,
+   "probe": 102,
+   "start": 4,
+   "end": 14
+  },
+  {
+   "pattern": 15,
+   "probe": 103,
+   "start": 4,
+   "end": 14
+  },
+  {
+   "pattern": 15,
+   "probe": 104,
+   "start": 4,
+   "end": 14
+  },
+  {
+   "pattern": 15,
+   "probe": 105,
+   "start": 4,
+   "end": 14
+  },
+  {
+   "pattern": 15,
+   "probe": 106,
+   "start": 4,
+   "end": 14
+  },
+  {
+   "pattern": 15,
+   "probe": 107,
+   "start": 5,
+   "end": 16
+  },
+  {
+   "pattern": 15,
+   "probe": 108,
+   "start": 18,
+   "end": 28
+  },
+  {
+   "pattern": 16,
+   "probe": 109,
+   "start": 0,
+   "end": 17
+  },
+  {
+   "pattern": 16,
+   "probe": 110,
+   "start": 0,
+   "end": 17
+  },
+  {
+   "pattern": 16,
+   "probe": 111,
+   "start": 0,
+   "end": 17
+  },
+  {
+   "pattern": 16,
+   "probe": 112,
+   "start": 0,
+   "end": 17
+  },
+  {
+   "pattern": 16,
+   "probe": 113,
+   "start": 0,
+   "end": 17
+  },
+  {
+   "pattern": 16,
+   "probe": 114,
+   "start": 0,
+   "end": 19
+  },
+  {
+   "pattern": 16,
+   "probe": 115,
+   "start": 14,
+   "end": 31
+  },
+  {
+   "pattern": 17,
+   "probe": 116,
+   "start": 0,
+   "end": 12
+  },
+  {
+   "pattern": 17,
+   "probe": 117,
+   "start": 0,
+   "end": 12
+  },
+  {
+   "pattern": 17,
+   "probe": 118,
+   "start": 0,
+   "end": 12
+  },
+  {
+   "pattern": 17,
+   "probe": 119,
+   "start": 0,
+   "end": 12
+  },
+  {
+   "pattern": 17,
+   "probe": 120,
+   "start": 0,
+   "end": 12
+  },
+  {
+   "pattern": 17,
+   "probe": 121,
+   "start": 0,
+   "end": 14
+  },
+  {
+   "pattern": 17,
+   "probe": 122,
+   "start": 14,
+   "end": 26
+  },
+  {
+   "pattern": 18,
+   "probe": 123,
+   "start": 0,
+   "end": 17
+  },
+  {
+   "pattern": 18,
+   "probe": 124,
+   "start": 0,
+   "end": 17
+  },
+  {
+   "pattern": 18,
+   "probe": 125,
+   "start": 0,
+   "end": 17
+  },
+  {
+   "pattern": 18,
+   "probe": 126,
+   "start": 0,
+   "end": 17
+  },
+  {
+   "pattern": 18,
+   "probe": 127,
+   "start": 0,
+   "end": 17
+  },
+  {
+   "pattern": 18,
+   "probe": 128,
+   "start": 0,
+   "end": 19
+  },
+  {
+   "pattern": 18,
+   "probe": 129,
+   "start": 14,
+   "end": 31
+  },
+  {
+   "pattern": 19,
+   "probe": 130,
+   "start": 0,
+   "end": 10
+  },
+  {
+   "pattern": 19,
+   "probe": 131,
+   "start": 0,
+   "end": 10
+  },
+  {
+   "pattern": 19,
+   "probe": 132,
+   "start": 0,
+   "end": 10
+  },
+  {
+   "pattern": 19,
+   "probe": 133,
+   "start": 0,
+   "end": 10
+  },
+  {
+   "pattern": 19,
+   "probe": 134,
+   "start": 0,
+   "end": 10
+  },
+  {
+   "pattern": 19,
+   "probe": 135,
+   "start": 0,
+   "end": 11
+  },
+  {
+   "pattern": 19,
+   "probe": 136,
+   "start": 14,
+   "end": 24
+  },
+  {
+   "pattern": 20,
+   "probe": 137,
+   "start": 0,
+   "end": 11
+  },
+  {
+   "pattern": 20,
+   "probe": 138,
+   "start": 0,
+   "end": 11
+  },
+  {
+   "pattern": 20,
+   "probe": 139,
+   "start": 0,
+   "end": 11
+  },
+  {
+   "pattern": 20,
+   "probe": 140,
+   "start": 0,
+   "end": 11
+  },
+  {
+   "pattern": 20,
+   "probe": 141,
+   "start": 0,
+   "end": 11
+  },
+  {
+   "pattern": 20,
+   "probe": 142,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 20,
+   "probe": 143,
+   "start": 14,
+   "end": 25
+  },
+  {
+   "pattern": 21,
+   "probe": 144,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 21,
+   "probe": 145,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 21,
+   "probe": 146,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 21,
+   "probe": 147,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 21,
+   "probe": 148,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 21,
+   "probe": 149,
+   "start": 0,
+   "end": 14
+  },
+  {
+   "pattern": 21,
+   "probe": 150,
+   "start": 14,
+   "end": 27
+  },
+  {
+   "pattern": 22,
+   "probe": 151,
+   "start": 0,
+   "end": 12
+  },
+  {
+   "pattern": 22,
+   "probe": 152,
+   "start": 0,
+   "end": 12
+  },
+  {
+   "pattern": 22,
+   "probe": 153,
+   "start": 0,
+   "end": 12
+  },
+  {
+   "pattern": 22,
+   "probe": 154,
+   "start": 0,
+   "end": 12
+  },
+  {
+   "pattern": 22,
+   "probe": 155,
+   "start": 0,
+   "end": 12
+  },
+  {
+   "pattern": 22,
+   "probe": 156,
+   "start": 0,
+   "end": 14
+  },
+  {
+   "pattern": 22,
+   "probe": 157,
+   "start": 14,
+   "end": 26
+  },
+  {
+   "pattern": 23,
+   "probe": 158,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 23,
+   "probe": 159,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 23,
+   "probe": 160,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 23,
+   "probe": 161,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 23,
+   "probe": 162,
+   "start": 0,
+   "end": 13
+  },
+  {
+   "pattern": 23,
+   "probe": 163,
+   "start": 0,
+   "end": 15
+  },
+  {
+   "pattern": 23,
+   "probe": 164,
+   "start": 14,
+   "end": 27
+  }
+ ]
+}

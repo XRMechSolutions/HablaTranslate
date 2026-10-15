@@ -56,6 +56,23 @@
     "auto_language": true,
     "default_language": "es"
   },
+  "whisper_cpp": {
+    "threads": 4,
+    "final": {
+      "beam_size": null,
+      "temperature": 0.0,
+      "temperature_inc": 0.0,
+      "entropy_thold": 0.0,
+      "logprob_thold": -1.0,
+      "no_speech_thold": 1.0
+    },
+    "partial": {
+      "level": "greedy_scaled_ctx",
+      "audio_ctx_pad_frames": 64,
+      "audio_ctx_min_frames": 128
+    },
+    "measured": null
+  },
   "language_vote": {
     "window": 5,
     "switch_ratio": 0.7

@@ -68,3 +68,12 @@ def test_idiom_files_are_valid_json():
     for f in files:
         data = json.loads(f.read_text(encoding="utf-8"))
         assert all({"pattern", "canonical", "meaning"} <= set(e) for e in data)
+
+
+def test_idiom_index_lists_every_pattern_file():
+    """idioms/index.json (Android's file list) must equal the server's sorted glob."""
+    idioms_dir = shared_assets.shared_dir() / "idioms"
+    globbed = sorted(p.name for p in idioms_dir.glob("*.json") if p.name != shared_assets.IDIOM_INDEX)
+    assert [p.name for p in shared_assets.idiom_files()] == globbed
+    index = json.loads((idioms_dir / shared_assets.IDIOM_INDEX).read_text(encoding="utf-8"))
+    assert index["files"] == globbed, f"index.json files {index['files']} != directory {globbed}"

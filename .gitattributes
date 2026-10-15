@@ -15,3 +15,7 @@
 *.opus binary
 *.wav binary
 *.mp3 binary
+
+# shared/ JSON assets are hashed by golden tests; keep LF on every checkout.
+# JSON only: shared/testdata holds WAV clips that must stay binary.
+shared/**/*.json text eol=lf

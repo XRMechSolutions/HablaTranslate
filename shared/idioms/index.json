@@ -1,0 +1,4 @@
+{
+  "_comment": "Idiom files the Android app loads, in this order. Android cannot list asset directories, so every *.json in this folder except this one must be listed, sorted by name. The server globs and skips this file.",
+  "files": ["spain.json"]
+}

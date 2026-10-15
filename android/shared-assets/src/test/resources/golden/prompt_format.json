@@ -1,0 +1,731 @@
+{
+ "python": "3.13.5",
+ "sources": {
+  "prompts.json": "4ce72eae97c8bbe4b1bbea443ea7610d5fdf9552cabf3b6826491eb9d2611fe8"
+ },
+ "cases": [
+  {
+   "id": "translator_system.upper",
+   "template_key": "translator_system",
+   "template": "You are a {source_lang}-to-{target_lang} interpreter for a live conversation.\n\nYou receive a speech-to-text transcription that may contain ASR errors,\nalong with speaker information and recent conversation context.\n\nTasks:\n1. CORRECT: Fix likely ASR errors. Consider homophones, dropped words, and\n   context. Output the corrected {source_lang} text.\n2. TRANSLATE: Produce natural, idiomatic {target_lang}. NEVER leave {source_lang}\n   words untranslated in the output. Handle idioms by meaning, not literally.\n3. FLAG PHRASES: Mark notable items worth learning — idioms, slang, false\n   friends, regional expressions, interesting grammar constructions.\n4. SPEAKER HINT: If you can infer the speaker's role (teacher, student,\n   shopkeeper, friend, doctor...) from what they say, suggest it.\n{classroom_extra}\nIMPORTANT: Respond ONLY with a SINGLE valid JSON object. No explanation outside the JSON.\nIf you output anything else, the response will be discarded. Do NOT add markdown or code fences.\n\nOutput format:\n{{\n  \"corrected\": \"corrected {source_lang} text\",\n  \"translated\": \"natural {target_lang} translation\",\n  \"flagged_phrases\": [\n    {{\n      \"phrase\": \"the {source_lang} phrase\",\n      \"literal\": \"word-for-word {target_lang}\",\n      \"meaning\": \"actual meaning in {target_lang}\",\n      \"type\": \"idiom | slang | false_friend | correction | grammar_note\",\n      \"save_worthy\": true\n    }}\n  ],\n  \"confidence\": 0.95,\n  \"speaker_hint\": \"role or null\",\n  \"is_correction\": false,\n  \"correction_detail\": null\n}}",
+   "values": {
+    "source_lang": "SOURCE_LANG",
+    "target_lang": "TARGET_LANG",
+    "classroom_extra": "CLASSROOM_EXTRA"
+   },
+   "kind": "ok",
+   "expected": "You are a SOURCE_LANG-to-TARGET_LANG interpreter for a live conversation.\n\nYou receive a speech-to-text transcription that may contain ASR errors,\nalong with speaker information and recent conversation context.\n\nTasks:\n1. CORRECT: Fix likely ASR errors. Consider homophones, dropped words, and\n   context. Output the corrected SOURCE_LANG text.\n2. TRANSLATE: Produce natural, idiomatic TARGET_LANG. NEVER leave SOURCE_LANG\n   words untranslated in the output. Handle idioms by meaning, not literally.\n3. FLAG PHRASES: Mark notable items worth learning — idioms, slang, false\n   friends, regional expressions, interesting grammar constructions.\n4. SPEAKER HINT: If you can infer the speaker's role (teacher, student,\n   shopkeeper, friend, doctor...) from what they say, suggest it.\nCLASSROOM_EXTRA\nIMPORTANT: Respond ONLY with a SINGLE valid JSON object. No explanation outside the JSON.\nIf you output anything else, the response will be discarded. Do NOT add markdown or code fences.\n\nOutput format:\n{\n  \"corrected\": \"corrected SOURCE_LANG text\",\n  \"translated\": \"natural TARGET_LANG translation\",\n  \"flagged_phrases\": [\n    {\n      \"phrase\": \"the SOURCE_LANG phrase\",\n      \"literal\": \"word-for-word TARGET_LANG\",\n      \"meaning\": \"actual meaning in TARGET_LANG\",\n      \"type\": \"idiom | slang | false_friend | correction | grammar_note\",\n      \"save_worthy\": true\n    }\n  ],\n  \"confidence\": 0.95,\n  \"speaker_hint\": \"role or null\",\n  \"is_correction\": false,\n  \"correction_detail\": null\n}",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "translator_system.braces",
+   "template_key": "translator_system",
+   "template": "You are a {source_lang}-to-{target_lang} interpreter for a live conversation.\n\nYou receive a speech-to-text transcription that may contain ASR errors,\nalong with speaker information and recent conversation context.\n\nTasks:\n1. CORRECT: Fix likely ASR errors. Consider homophones, dropped words, and\n   context. Output the corrected {source_lang} text.\n2. TRANSLATE: Produce natural, idiomatic {target_lang}. NEVER leave {source_lang}\n   words untranslated in the output. Handle idioms by meaning, not literally.\n3. FLAG PHRASES: Mark notable items worth learning — idioms, slang, false\n   friends, regional expressions, interesting grammar constructions.\n4. SPEAKER HINT: If you can infer the speaker's role (teacher, student,\n   shopkeeper, friend, doctor...) from what they say, suggest it.\n{classroom_extra}\nIMPORTANT: Respond ONLY with a SINGLE valid JSON object. No explanation outside the JSON.\nIf you output anything else, the response will be discarded. Do NOT add markdown or code fences.\n\nOutput format:\n{{\n  \"corrected\": \"corrected {source_lang} text\",\n  \"translated\": \"natural {target_lang} translation\",\n  \"flagged_phrases\": [\n    {{\n      \"phrase\": \"the {source_lang} phrase\",\n      \"literal\": \"word-for-word {target_lang}\",\n      \"meaning\": \"actual meaning in {target_lang}\",\n      \"type\": \"idiom | slang | false_friend | correction | grammar_note\",\n      \"save_worthy\": true\n    }}\n  ],\n  \"confidence\": 0.95,\n  \"speaker_hint\": \"role or null\",\n  \"is_correction\": false,\n  \"correction_detail\": null\n}}",
+   "values": {
+    "source_lang": "{source_lang}}{{",
+    "target_lang": "{target_lang}}{{",
+    "classroom_extra": "{classroom_extra}}{{"
+   },
+   "kind": "ok",
+   "expected": "You are a {source_lang}}{{-to-{target_lang}}{{ interpreter for a live conversation.\n\nYou receive a speech-to-text transcription that may contain ASR errors,\nalong with speaker information and recent conversation context.\n\nTasks:\n1. CORRECT: Fix likely ASR errors. Consider homophones, dropped words, and\n   context. Output the corrected {source_lang}}{{ text.\n2. TRANSLATE: Produce natural, idiomatic {target_lang}}{{. NEVER leave {source_lang}}{{\n   words untranslated in the output. Handle idioms by meaning, not literally.\n3. FLAG PHRASES: Mark notable items worth learning — idioms, slang, false\n   friends, regional expressions, interesting grammar constructions.\n4. SPEAKER HINT: If you can infer the speaker's role (teacher, student,\n   shopkeeper, friend, doctor...) from what they say, suggest it.\n{classroom_extra}}{{\nIMPORTANT: Respond ONLY with a SINGLE valid JSON object. No explanation outside the JSON.\nIf you output anything else, the response will be discarded. Do NOT add markdown or code fences.\n\nOutput format:\n{\n  \"corrected\": \"corrected {source_lang}}{{ text\",\n  \"translated\": \"natural {target_lang}}{{ translation\",\n  \"flagged_phrases\": [\n    {\n      \"phrase\": \"the {source_lang}}{{ phrase\",\n      \"literal\": \"word-for-word {target_lang}}{{\",\n      \"meaning\": \"actual meaning in {target_lang}}{{\",\n      \"type\": \"idiom | slang | false_friend | correction | grammar_note\",\n      \"save_worthy\": true\n    }\n  ],\n  \"confidence\": 0.95,\n  \"speaker_hint\": \"role or null\",\n  \"is_correction\": false,\n  \"correction_detail\": null\n}",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "translator_system.unicode",
+   "template_key": "translator_system",
+   "template": "You are a {source_lang}-to-{target_lang} interpreter for a live conversation.\n\nYou receive a speech-to-text transcription that may contain ASR errors,\nalong with speaker information and recent conversation context.\n\nTasks:\n1. CORRECT: Fix likely ASR errors. Consider homophones, dropped words, and\n   context. Output the corrected {source_lang} text.\n2. TRANSLATE: Produce natural, idiomatic {target_lang}. NEVER leave {source_lang}\n   words untranslated in the output. Handle idioms by meaning, not literally.\n3. FLAG PHRASES: Mark notable items worth learning — idioms, slang, false\n   friends, regional expressions, interesting grammar constructions.\n4. SPEAKER HINT: If you can infer the speaker's role (teacher, student,\n   shopkeeper, friend, doctor...) from what they say, suggest it.\n{classroom_extra}\nIMPORTANT: Respond ONLY with a SINGLE valid JSON object. No explanation outside the JSON.\nIf you output anything else, the response will be discarded. Do NOT add markdown or code fences.\n\nOutput format:\n{{\n  \"corrected\": \"corrected {source_lang} text\",\n  \"translated\": \"natural {target_lang} translation\",\n  \"flagged_phrases\": [\n    {{\n      \"phrase\": \"the {source_lang} phrase\",\n      \"literal\": \"word-for-word {target_lang}\",\n      \"meaning\": \"actual meaning in {target_lang}\",\n      \"type\": \"idiom | slang | false_friend | correction | grammar_note\",\n      \"save_worthy\": true\n    }}\n  ],\n  \"confidence\": 0.95,\n  \"speaker_hint\": \"role or null\",\n  \"is_correction\": false,\n  \"correction_detail\": null\n}}",
+   "values": {
+    "source_lang": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin",
+    "target_lang": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin",
+    "classroom_extra": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin"
+   },
+   "kind": "ok",
+   "expected": "You are a ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin-to-¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin interpreter for a live conversation.\n\nYou receive a speech-to-text transcription that may contain ASR errors,\nalong with speaker information and recent conversation context.\n\nTasks:\n1. CORRECT: Fix likely ASR errors. Consider homophones, dropped words, and\n   context. Output the corrected ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin text.\n2. TRANSLATE: Produce natural, idiomatic ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin. NEVER leave ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin\n   words untranslated in the output. Handle idioms by meaning, not literally.\n3. FLAG PHRASES: Mark notable items worth learning — idioms, slang, false\n   friends, regional expressions, interesting grammar constructions.\n4. SPEAKER HINT: If you can infer the speaker's role (teacher, student,\n   shopkeeper, friend, doctor...) from what they say, suggest it.\n¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin\nIMPORTANT: Respond ONLY with a SINGLE valid JSON object. No explanation outside the JSON.\nIf you output anything else, the response will be discarded. Do NOT add markdown or code fences.\n\nOutput format:\n{\n  \"corrected\": \"corrected ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin text\",\n  \"translated\": \"natural ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin translation\",\n  \"flagged_phrases\": [\n    {\n      \"phrase\": \"the ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin phrase\",\n      \"literal\": \"word-for-word ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin\",\n      \"meaning\": \"actual meaning in ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin\",\n      \"type\": \"idiom | slang | false_friend | correction | grammar_note\",\n      \"save_worthy\": true\n    }\n  ],\n  \"confidence\": 0.95,\n  \"speaker_hint\": \"role or null\",\n  \"is_correction\": false,\n  \"correction_detail\": null\n}",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "translator_system.empty",
+   "template_key": "translator_system",
+   "template": "You are a {source_lang}-to-{target_lang} interpreter for a live conversation.\n\nYou receive a speech-to-text transcription that may contain ASR errors,\nalong with speaker information and recent conversation context.\n\nTasks:\n1. CORRECT: Fix likely ASR errors. Consider homophones, dropped words, and\n   context. Output the corrected {source_lang} text.\n2. TRANSLATE: Produce natural, idiomatic {target_lang}. NEVER leave {source_lang}\n   words untranslated in the output. Handle idioms by meaning, not literally.\n3. FLAG PHRASES: Mark notable items worth learning — idioms, slang, false\n   friends, regional expressions, interesting grammar constructions.\n4. SPEAKER HINT: If you can infer the speaker's role (teacher, student,\n   shopkeeper, friend, doctor...) from what they say, suggest it.\n{classroom_extra}\nIMPORTANT: Respond ONLY with a SINGLE valid JSON object. No explanation outside the JSON.\nIf you output anything else, the response will be discarded. Do NOT add markdown or code fences.\n\nOutput format:\n{{\n  \"corrected\": \"corrected {source_lang} text\",\n  \"translated\": \"natural {target_lang} translation\",\n  \"flagged_phrases\": [\n    {{\n      \"phrase\": \"the {source_lang} phrase\",\n      \"literal\": \"word-for-word {target_lang}\",\n      \"meaning\": \"actual meaning in {target_lang}\",\n      \"type\": \"idiom | slang | false_friend | correction | grammar_note\",\n      \"save_worthy\": true\n    }}\n  ],\n  \"confidence\": 0.95,\n  \"speaker_hint\": \"role or null\",\n  \"is_correction\": false,\n  \"correction_detail\": null\n}}",
+   "values": {
+    "source_lang": "",
+    "target_lang": "",
+    "classroom_extra": ""
+   },
+   "kind": "ok",
+   "expected": "You are a -to- interpreter for a live conversation.\n\nYou receive a speech-to-text transcription that may contain ASR errors,\nalong with speaker information and recent conversation context.\n\nTasks:\n1. CORRECT: Fix likely ASR errors. Consider homophones, dropped words, and\n   context. Output the corrected  text.\n2. TRANSLATE: Produce natural, idiomatic . NEVER leave \n   words untranslated in the output. Handle idioms by meaning, not literally.\n3. FLAG PHRASES: Mark notable items worth learning — idioms, slang, false\n   friends, regional expressions, interesting grammar constructions.\n4. SPEAKER HINT: If you can infer the speaker's role (teacher, student,\n   shopkeeper, friend, doctor...) from what they say, suggest it.\n\nIMPORTANT: Respond ONLY with a SINGLE valid JSON object. No explanation outside the JSON.\nIf you output anything else, the response will be discarded. Do NOT add markdown or code fences.\n\nOutput format:\n{\n  \"corrected\": \"corrected  text\",\n  \"translated\": \"natural  translation\",\n  \"flagged_phrases\": [\n    {\n      \"phrase\": \"the  phrase\",\n      \"literal\": \"word-for-word \",\n      \"meaning\": \"actual meaning in \",\n      \"type\": \"idiom | slang | false_friend | correction | grammar_note\",\n      \"save_worthy\": true\n    }\n  ],\n  \"confidence\": 0.95,\n  \"speaker_hint\": \"role or null\",\n  \"is_correction\": false,\n  \"correction_detail\": null\n}",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "translator_user.upper",
+   "template_key": "translator_user",
+   "template": "Recent conversation:\n{context_block}\n\nTopic context: {topic_block}\n\nCurrent utterance:\nSpeaker: {speaker_label}\nTranscript: \"{transcript}\"\n\nTranslate now. Respond with a single JSON object only. No extra text.",
+   "values": {
+    "context_block": "CONTEXT_BLOCK",
+    "topic_block": "TOPIC_BLOCK",
+    "speaker_label": "SPEAKER_LABEL",
+    "transcript": "TRANSCRIPT"
+   },
+   "kind": "ok",
+   "expected": "Recent conversation:\nCONTEXT_BLOCK\n\nTopic context: TOPIC_BLOCK\n\nCurrent utterance:\nSpeaker: SPEAKER_LABEL\nTranscript: \"TRANSCRIPT\"\n\nTranslate now. Respond with a single JSON object only. No extra text.",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "translator_user.braces",
+   "template_key": "translator_user",
+   "template": "Recent conversation:\n{context_block}\n\nTopic context: {topic_block}\n\nCurrent utterance:\nSpeaker: {speaker_label}\nTranscript: \"{transcript}\"\n\nTranslate now. Respond with a single JSON object only. No extra text.",
+   "values": {
+    "context_block": "{context_block}}{{",
+    "topic_block": "{topic_block}}{{",
+    "speaker_label": "{speaker_label}}{{",
+    "transcript": "{transcript}}{{"
+   },
+   "kind": "ok",
+   "expected": "Recent conversation:\n{context_block}}{{\n\nTopic context: {topic_block}}{{\n\nCurrent utterance:\nSpeaker: {speaker_label}}{{\nTranscript: \"{transcript}}{{\"\n\nTranslate now. Respond with a single JSON object only. No extra text.",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "translator_user.unicode",
+   "template_key": "translator_user",
+   "template": "Recent conversation:\n{context_block}\n\nTopic context: {topic_block}\n\nCurrent utterance:\nSpeaker: {speaker_label}\nTranscript: \"{transcript}\"\n\nTranslate now. Respond with a single JSON object only. No extra text.",
+   "values": {
+    "context_block": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin",
+    "topic_block": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin",
+    "speaker_label": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin",
+    "transcript": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin"
+   },
+   "kind": "ok",
+   "expected": "Recent conversation:\n¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin\n\nTopic context: ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin\n\nCurrent utterance:\nSpeaker: ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin\nTranscript: \"¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin\"\n\nTranslate now. Respond with a single JSON object only. No extra text.",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "translator_user.empty",
+   "template_key": "translator_user",
+   "template": "Recent conversation:\n{context_block}\n\nTopic context: {topic_block}\n\nCurrent utterance:\nSpeaker: {speaker_label}\nTranscript: \"{transcript}\"\n\nTranslate now. Respond with a single JSON object only. No extra text.",
+   "values": {
+    "context_block": "",
+    "topic_block": "",
+    "speaker_label": "",
+    "transcript": ""
+   },
+   "kind": "ok",
+   "expected": "Recent conversation:\n\n\nTopic context: \n\nCurrent utterance:\nSpeaker: \nTranscript: \"\"\n\nTranslate now. Respond with a single JSON object only. No extra text.",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "translator_context_line.upper",
+   "template_key": "translator_context_line",
+   "template": "  [{speaker}] {source} → {translated}",
+   "values": {
+    "speaker": "SPEAKER",
+    "source": "SOURCE",
+    "translated": "TRANSLATED"
+   },
+   "kind": "ok",
+   "expected": "  [SPEAKER] SOURCE → TRANSLATED",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "translator_context_line.braces",
+   "template_key": "translator_context_line",
+   "template": "  [{speaker}] {source} → {translated}",
+   "values": {
+    "speaker": "{speaker}}{{",
+    "source": "{source}}{{",
+    "translated": "{translated}}{{"
+   },
+   "kind": "ok",
+   "expected": "  [{speaker}}{{] {source}}{{ → {translated}}{{",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "translator_context_line.unicode",
+   "template_key": "translator_context_line",
+   "template": "  [{speaker}] {source} → {translated}",
+   "values": {
+    "speaker": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin",
+    "source": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin",
+    "translated": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin"
+   },
+   "kind": "ok",
+   "expected": "  [¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin] ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin → ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "translator_context_line.empty",
+   "template_key": "translator_context_line",
+   "template": "  [{speaker}] {source} → {translated}",
+   "values": {
+    "speaker": "",
+    "source": "",
+    "translated": ""
+   },
+   "kind": "ok",
+   "expected": "  []  → ",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "translator_passthrough_retry.upper",
+   "template_key": "translator_passthrough_retry",
+   "template": "The following {source_lang} text MUST be translated to {target_lang}. Do NOT repeat the {source_lang}. Output ONLY the {target_lang} translation.\n\nText: \"{transcript}\"\n\nRespond with JSON: {{\"corrected\": \"<corrected {source_lang}>\", \"translated\": \"<{target_lang} translation>\", \"confidence\": 0.5}}",
+   "values": {
+    "source_lang": "SOURCE_LANG",
+    "target_lang": "TARGET_LANG",
+    "transcript": "TRANSCRIPT"
+   },
+   "kind": "ok",
+   "expected": "The following SOURCE_LANG text MUST be translated to TARGET_LANG. Do NOT repeat the SOURCE_LANG. Output ONLY the TARGET_LANG translation.\n\nText: \"TRANSCRIPT\"\n\nRespond with JSON: {\"corrected\": \"<corrected SOURCE_LANG>\", \"translated\": \"<TARGET_LANG translation>\", \"confidence\": 0.5}",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "translator_passthrough_retry.braces",
+   "template_key": "translator_passthrough_retry",
+   "template": "The following {source_lang} text MUST be translated to {target_lang}. Do NOT repeat the {source_lang}. Output ONLY the {target_lang} translation.\n\nText: \"{transcript}\"\n\nRespond with JSON: {{\"corrected\": \"<corrected {source_lang}>\", \"translated\": \"<{target_lang} translation>\", \"confidence\": 0.5}}",
+   "values": {
+    "source_lang": "{source_lang}}{{",
+    "target_lang": "{target_lang}}{{",
+    "transcript": "{transcript}}{{"
+   },
+   "kind": "ok",
+   "expected": "The following {source_lang}}{{ text MUST be translated to {target_lang}}{{. Do NOT repeat the {source_lang}}{{. Output ONLY the {target_lang}}{{ translation.\n\nText: \"{transcript}}{{\"\n\nRespond with JSON: {\"corrected\": \"<corrected {source_lang}}{{>\", \"translated\": \"<{target_lang}}{{ translation>\", \"confidence\": 0.5}",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "translator_passthrough_retry.unicode",
+   "template_key": "translator_passthrough_retry",
+   "template": "The following {source_lang} text MUST be translated to {target_lang}. Do NOT repeat the {source_lang}. Output ONLY the {target_lang} translation.\n\nText: \"{transcript}\"\n\nRespond with JSON: {{\"corrected\": \"<corrected {source_lang}>\", \"translated\": \"<{target_lang} translation>\", \"confidence\": 0.5}}",
+   "values": {
+    "source_lang": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin",
+    "target_lang": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin",
+    "transcript": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin"
+   },
+   "kind": "ok",
+   "expected": "The following ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin text MUST be translated to ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin. Do NOT repeat the ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin. Output ONLY the ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin translation.\n\nText: \"¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin\"\n\nRespond with JSON: {\"corrected\": \"<corrected ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin>\", \"translated\": \"<¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin translation>\", \"confidence\": 0.5}",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "translator_passthrough_retry.empty",
+   "template_key": "translator_passthrough_retry",
+   "template": "The following {source_lang} text MUST be translated to {target_lang}. Do NOT repeat the {source_lang}. Output ONLY the {target_lang} translation.\n\nText: \"{transcript}\"\n\nRespond with JSON: {{\"corrected\": \"<corrected {source_lang}>\", \"translated\": \"<{target_lang} translation>\", \"confidence\": 0.5}}",
+   "values": {
+    "source_lang": "",
+    "target_lang": "",
+    "transcript": ""
+   },
+   "kind": "ok",
+   "expected": "The following  text MUST be translated to . Do NOT repeat the . Output ONLY the  translation.\n\nText: \"\"\n\nRespond with JSON: {\"corrected\": \"<corrected >\", \"translated\": \"< translation>\", \"confidence\": 0.5}",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "quick_translate.upper",
+   "template_key": "quick_translate",
+   "template": "Translate this {source_lang} to natural {target_lang}. Output ONLY the translation, nothing else.\n\n{text}",
+   "values": {
+    "source_lang": "SOURCE_LANG",
+    "target_lang": "TARGET_LANG",
+    "text": "TEXT"
+   },
+   "kind": "ok",
+   "expected": "Translate this SOURCE_LANG to natural TARGET_LANG. Output ONLY the translation, nothing else.\n\nTEXT",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "quick_translate.braces",
+   "template_key": "quick_translate",
+   "template": "Translate this {source_lang} to natural {target_lang}. Output ONLY the translation, nothing else.\n\n{text}",
+   "values": {
+    "source_lang": "{source_lang}}{{",
+    "target_lang": "{target_lang}}{{",
+    "text": "{text}}{{"
+   },
+   "kind": "ok",
+   "expected": "Translate this {source_lang}}{{ to natural {target_lang}}{{. Output ONLY the translation, nothing else.\n\n{text}}{{",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "quick_translate.unicode",
+   "template_key": "quick_translate",
+   "template": "Translate this {source_lang} to natural {target_lang}. Output ONLY the translation, nothing else.\n\n{text}",
+   "values": {
+    "source_lang": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin",
+    "target_lang": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin",
+    "text": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin"
+   },
+   "kind": "ok",
+   "expected": "Translate this ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin to natural ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin. Output ONLY the translation, nothing else.\n\n¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "quick_translate.empty",
+   "template_key": "quick_translate",
+   "template": "Translate this {source_lang} to natural {target_lang}. Output ONLY the translation, nothing else.\n\n{text}",
+   "values": {
+    "source_lang": "",
+    "target_lang": "",
+    "text": ""
+   },
+   "kind": "ok",
+   "expected": "Translate this  to natural . Output ONLY the translation, nothing else.\n\n",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "topic_summary.upper",
+   "template_key": "topic_summary",
+   "template": "Update the conversation summary. Keep it under 100 words.\nTrack: main topics, key entities, speaking style, domain context.\n\nPrevious summary: {previous_summary}\n\nLatest exchange:\n  [{speaker_label}] {latest_source} → {latest_translation}\n\nUpdated summary (plain text, no JSON):",
+   "values": {
+    "previous_summary": "PREVIOUS_SUMMARY",
+    "speaker_label": "SPEAKER_LABEL",
+    "latest_source": "LATEST_SOURCE",
+    "latest_translation": "LATEST_TRANSLATION"
+   },
+   "kind": "ok",
+   "expected": "Update the conversation summary. Keep it under 100 words.\nTrack: main topics, key entities, speaking style, domain context.\n\nPrevious summary: PREVIOUS_SUMMARY\n\nLatest exchange:\n  [SPEAKER_LABEL] LATEST_SOURCE → LATEST_TRANSLATION\n\nUpdated summary (plain text, no JSON):",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "topic_summary.braces",
+   "template_key": "topic_summary",
+   "template": "Update the conversation summary. Keep it under 100 words.\nTrack: main topics, key entities, speaking style, domain context.\n\nPrevious summary: {previous_summary}\n\nLatest exchange:\n  [{speaker_label}] {latest_source} → {latest_translation}\n\nUpdated summary (plain text, no JSON):",
+   "values": {
+    "previous_summary": "{previous_summary}}{{",
+    "speaker_label": "{speaker_label}}{{",
+    "latest_source": "{latest_source}}{{",
+    "latest_translation": "{latest_translation}}{{"
+   },
+   "kind": "ok",
+   "expected": "Update the conversation summary. Keep it under 100 words.\nTrack: main topics, key entities, speaking style, domain context.\n\nPrevious summary: {previous_summary}}{{\n\nLatest exchange:\n  [{speaker_label}}{{] {latest_source}}{{ → {latest_translation}}{{\n\nUpdated summary (plain text, no JSON):",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "topic_summary.unicode",
+   "template_key": "topic_summary",
+   "template": "Update the conversation summary. Keep it under 100 words.\nTrack: main topics, key entities, speaking style, domain context.\n\nPrevious summary: {previous_summary}\n\nLatest exchange:\n  [{speaker_label}] {latest_source} → {latest_translation}\n\nUpdated summary (plain text, no JSON):",
+   "values": {
+    "previous_summary": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin",
+    "speaker_label": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin",
+    "latest_source": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin",
+    "latest_translation": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin"
+   },
+   "kind": "ok",
+   "expected": "Update the conversation summary. Keep it under 100 words.\nTrack: main topics, key entities, speaking style, domain context.\n\nPrevious summary: ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin\n\nLatest exchange:\n  [¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin] ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin → ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin\n\nUpdated summary (plain text, no JSON):",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "topic_summary.empty",
+   "template_key": "topic_summary",
+   "template": "Update the conversation summary. Keep it under 100 words.\nTrack: main topics, key entities, speaking style, domain context.\n\nPrevious summary: {previous_summary}\n\nLatest exchange:\n  [{speaker_label}] {latest_source} → {latest_translation}\n\nUpdated summary (plain text, no JSON):",
+   "values": {
+    "previous_summary": "",
+    "speaker_label": "",
+    "latest_source": "",
+    "latest_translation": ""
+   },
+   "kind": "ok",
+   "expected": "Update the conversation summary. Keep it under 100 words.\nTrack: main topics, key entities, speaking style, domain context.\n\nPrevious summary: \n\nLatest exchange:\n  []  → \n\nUpdated summary (plain text, no JSON):",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "study_summary_system.upper",
+   "template_key": "study_summary_system",
+   "template": "You analyze a completed conversation and produce a structured language-learning study report.{mode_note}\n\nRespond ONLY with a single valid JSON object. No markdown, no text outside the JSON.\n\nOutput format:\n{{\n  \"summary\": \"2-3 sentence overview of what was discussed\",\n  \"vocab\": [{{\"term\": \"phrase\", \"meaning\": \"English meaning\", \"count\": 1}}],\n  \"grammar\": [\"One sentence describing a grammar pattern or issue observed\"],\n  \"corrections\": [{{\"wrong\": \"incorrect form\", \"right\": \"correct form\", \"explanation\": \"why\"}}],\n  \"idioms\": [{{\"phrase\": \"the idiom\", \"meaning\": \"what it means\"}}],\n  \"review_topics\": [\"concrete grammar or vocabulary topic to study next\"]\n}}\n\nRules: vocab max 10 items — include only idioms, false friends, and phrases worth learning.\ngrammar max 5 items. corrections max 5. idioms max 5. review_topics 1–4.\nUse empty arrays [] for sections with nothing to report.",
+   "values": {
+    "mode_note": "MODE_NOTE"
+   },
+   "kind": "ok",
+   "expected": "You analyze a completed conversation and produce a structured language-learning study report.MODE_NOTE\n\nRespond ONLY with a single valid JSON object. No markdown, no text outside the JSON.\n\nOutput format:\n{\n  \"summary\": \"2-3 sentence overview of what was discussed\",\n  \"vocab\": [{\"term\": \"phrase\", \"meaning\": \"English meaning\", \"count\": 1}],\n  \"grammar\": [\"One sentence describing a grammar pattern or issue observed\"],\n  \"corrections\": [{\"wrong\": \"incorrect form\", \"right\": \"correct form\", \"explanation\": \"why\"}],\n  \"idioms\": [{\"phrase\": \"the idiom\", \"meaning\": \"what it means\"}],\n  \"review_topics\": [\"concrete grammar or vocabulary topic to study next\"]\n}\n\nRules: vocab max 10 items — include only idioms, false friends, and phrases worth learning.\ngrammar max 5 items. corrections max 5. idioms max 5. review_topics 1–4.\nUse empty arrays [] for sections with nothing to report.",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "study_summary_system.braces",
+   "template_key": "study_summary_system",
+   "template": "You analyze a completed conversation and produce a structured language-learning study report.{mode_note}\n\nRespond ONLY with a single valid JSON object. No markdown, no text outside the JSON.\n\nOutput format:\n{{\n  \"summary\": \"2-3 sentence overview of what was discussed\",\n  \"vocab\": [{{\"term\": \"phrase\", \"meaning\": \"English meaning\", \"count\": 1}}],\n  \"grammar\": [\"One sentence describing a grammar pattern or issue observed\"],\n  \"corrections\": [{{\"wrong\": \"incorrect form\", \"right\": \"correct form\", \"explanation\": \"why\"}}],\n  \"idioms\": [{{\"phrase\": \"the idiom\", \"meaning\": \"what it means\"}}],\n  \"review_topics\": [\"concrete grammar or vocabulary topic to study next\"]\n}}\n\nRules: vocab max 10 items — include only idioms, false friends, and phrases worth learning.\ngrammar max 5 items. corrections max 5. idioms max 5. review_topics 1–4.\nUse empty arrays [] for sections with nothing to report.",
+   "values": {
+    "mode_note": "{mode_note}}{{"
+   },
+   "kind": "ok",
+   "expected": "You analyze a completed conversation and produce a structured language-learning study report.{mode_note}}{{\n\nRespond ONLY with a single valid JSON object. No markdown, no text outside the JSON.\n\nOutput format:\n{\n  \"summary\": \"2-3 sentence overview of what was discussed\",\n  \"vocab\": [{\"term\": \"phrase\", \"meaning\": \"English meaning\", \"count\": 1}],\n  \"grammar\": [\"One sentence describing a grammar pattern or issue observed\"],\n  \"corrections\": [{\"wrong\": \"incorrect form\", \"right\": \"correct form\", \"explanation\": \"why\"}],\n  \"idioms\": [{\"phrase\": \"the idiom\", \"meaning\": \"what it means\"}],\n  \"review_topics\": [\"concrete grammar or vocabulary topic to study next\"]\n}\n\nRules: vocab max 10 items — include only idioms, false friends, and phrases worth learning.\ngrammar max 5 items. corrections max 5. idioms max 5. review_topics 1–4.\nUse empty arrays [] for sections with nothing to report.",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "study_summary_system.unicode",
+   "template_key": "study_summary_system",
+   "template": "You analyze a completed conversation and produce a structured language-learning study report.{mode_note}\n\nRespond ONLY with a single valid JSON object. No markdown, no text outside the JSON.\n\nOutput format:\n{{\n  \"summary\": \"2-3 sentence overview of what was discussed\",\n  \"vocab\": [{{\"term\": \"phrase\", \"meaning\": \"English meaning\", \"count\": 1}}],\n  \"grammar\": [\"One sentence describing a grammar pattern or issue observed\"],\n  \"corrections\": [{{\"wrong\": \"incorrect form\", \"right\": \"correct form\", \"explanation\": \"why\"}}],\n  \"idioms\": [{{\"phrase\": \"the idiom\", \"meaning\": \"what it means\"}}],\n  \"review_topics\": [\"concrete grammar or vocabulary topic to study next\"]\n}}\n\nRules: vocab max 10 items — include only idioms, false friends, and phrases worth learning.\ngrammar max 5 items. corrections max 5. idioms max 5. review_topics 1–4.\nUse empty arrays [] for sections with nothing to report.",
+   "values": {
+    "mode_note": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin"
+   },
+   "kind": "ok",
+   "expected": "You analyze a completed conversation and produce a structured language-learning study report.¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin\n\nRespond ONLY with a single valid JSON object. No markdown, no text outside the JSON.\n\nOutput format:\n{\n  \"summary\": \"2-3 sentence overview of what was discussed\",\n  \"vocab\": [{\"term\": \"phrase\", \"meaning\": \"English meaning\", \"count\": 1}],\n  \"grammar\": [\"One sentence describing a grammar pattern or issue observed\"],\n  \"corrections\": [{\"wrong\": \"incorrect form\", \"right\": \"correct form\", \"explanation\": \"why\"}],\n  \"idioms\": [{\"phrase\": \"the idiom\", \"meaning\": \"what it means\"}],\n  \"review_topics\": [\"concrete grammar or vocabulary topic to study next\"]\n}\n\nRules: vocab max 10 items — include only idioms, false friends, and phrases worth learning.\ngrammar max 5 items. corrections max 5. idioms max 5. review_topics 1–4.\nUse empty arrays [] for sections with nothing to report.",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "study_summary_system.empty",
+   "template_key": "study_summary_system",
+   "template": "You analyze a completed conversation and produce a structured language-learning study report.{mode_note}\n\nRespond ONLY with a single valid JSON object. No markdown, no text outside the JSON.\n\nOutput format:\n{{\n  \"summary\": \"2-3 sentence overview of what was discussed\",\n  \"vocab\": [{{\"term\": \"phrase\", \"meaning\": \"English meaning\", \"count\": 1}}],\n  \"grammar\": [\"One sentence describing a grammar pattern or issue observed\"],\n  \"corrections\": [{{\"wrong\": \"incorrect form\", \"right\": \"correct form\", \"explanation\": \"why\"}}],\n  \"idioms\": [{{\"phrase\": \"the idiom\", \"meaning\": \"what it means\"}}],\n  \"review_topics\": [\"concrete grammar or vocabulary topic to study next\"]\n}}\n\nRules: vocab max 10 items — include only idioms, false friends, and phrases worth learning.\ngrammar max 5 items. corrections max 5. idioms max 5. review_topics 1–4.\nUse empty arrays [] for sections with nothing to report.",
+   "values": {
+    "mode_note": ""
+   },
+   "kind": "ok",
+   "expected": "You analyze a completed conversation and produce a structured language-learning study report.\n\nRespond ONLY with a single valid JSON object. No markdown, no text outside the JSON.\n\nOutput format:\n{\n  \"summary\": \"2-3 sentence overview of what was discussed\",\n  \"vocab\": [{\"term\": \"phrase\", \"meaning\": \"English meaning\", \"count\": 1}],\n  \"grammar\": [\"One sentence describing a grammar pattern or issue observed\"],\n  \"corrections\": [{\"wrong\": \"incorrect form\", \"right\": \"correct form\", \"explanation\": \"why\"}],\n  \"idioms\": [{\"phrase\": \"the idiom\", \"meaning\": \"what it means\"}],\n  \"review_topics\": [\"concrete grammar or vocabulary topic to study next\"]\n}\n\nRules: vocab max 10 items — include only idioms, false friends, and phrases worth learning.\ngrammar max 5 items. corrections max 5. idioms max 5. review_topics 1–4.\nUse empty arrays [] for sections with nothing to report.",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "study_summary_user.upper",
+   "template_key": "study_summary_user",
+   "template": "Session transcript:\n{exchanges_text}\n\nTopic context: {topic_block}\n\nProduce the study report JSON.",
+   "values": {
+    "exchanges_text": "EXCHANGES_TEXT",
+    "topic_block": "TOPIC_BLOCK"
+   },
+   "kind": "ok",
+   "expected": "Session transcript:\nEXCHANGES_TEXT\n\nTopic context: TOPIC_BLOCK\n\nProduce the study report JSON.",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "study_summary_user.braces",
+   "template_key": "study_summary_user",
+   "template": "Session transcript:\n{exchanges_text}\n\nTopic context: {topic_block}\n\nProduce the study report JSON.",
+   "values": {
+    "exchanges_text": "{exchanges_text}}{{",
+    "topic_block": "{topic_block}}{{"
+   },
+   "kind": "ok",
+   "expected": "Session transcript:\n{exchanges_text}}{{\n\nTopic context: {topic_block}}{{\n\nProduce the study report JSON.",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "study_summary_user.unicode",
+   "template_key": "study_summary_user",
+   "template": "Session transcript:\n{exchanges_text}\n\nTopic context: {topic_block}\n\nProduce the study report JSON.",
+   "values": {
+    "exchanges_text": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin",
+    "topic_block": "¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin"
+   },
+   "kind": "ok",
+   "expected": "Session transcript:\n¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin\n\nTopic context: ¿Qué tal, señor? 😀\nlínea \"dos\" \\ fin\n\nProduce the study report JSON.",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "study_summary_user.empty",
+   "template_key": "study_summary_user",
+   "template": "Session transcript:\n{exchanges_text}\n\nTopic context: {topic_block}\n\nProduce the study report JSON.",
+   "values": {
+    "exchanges_text": "",
+    "topic_block": ""
+   },
+   "kind": "ok",
+   "expected": "Session transcript:\n\n\nTopic context: \n\nProduce the study report JSON.",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "translator_system.classroom_extra",
+   "template_key": "translator_system",
+   "template": "You are a {source_lang}-to-{target_lang} interpreter for a live conversation.\n\nYou receive a speech-to-text transcription that may contain ASR errors,\nalong with speaker information and recent conversation context.\n\nTasks:\n1. CORRECT: Fix likely ASR errors. Consider homophones, dropped words, and\n   context. Output the corrected {source_lang} text.\n2. TRANSLATE: Produce natural, idiomatic {target_lang}. NEVER leave {source_lang}\n   words untranslated in the output. Handle idioms by meaning, not literally.\n3. FLAG PHRASES: Mark notable items worth learning — idioms, slang, false\n   friends, regional expressions, interesting grammar constructions.\n4. SPEAKER HINT: If you can infer the speaker's role (teacher, student,\n   shopkeeper, friend, doctor...) from what they say, suggest it.\n{classroom_extra}\nIMPORTANT: Respond ONLY with a SINGLE valid JSON object. No explanation outside the JSON.\nIf you output anything else, the response will be discarded. Do NOT add markdown or code fences.\n\nOutput format:\n{{\n  \"corrected\": \"corrected {source_lang} text\",\n  \"translated\": \"natural {target_lang} translation\",\n  \"flagged_phrases\": [\n    {{\n      \"phrase\": \"the {source_lang} phrase\",\n      \"literal\": \"word-for-word {target_lang}\",\n      \"meaning\": \"actual meaning in {target_lang}\",\n      \"type\": \"idiom | slang | false_friend | correction | grammar_note\",\n      \"save_worthy\": true\n    }}\n  ],\n  \"confidence\": 0.95,\n  \"speaker_hint\": \"role or null\",\n  \"is_correction\": false,\n  \"correction_detail\": null\n}}",
+   "values": {
+    "source_lang": "SOURCE_LANG",
+    "target_lang": "TARGET_LANG",
+    "classroom_extra": "\nAdditionally, in classroom mode:\n- Be more aggressive about flagging vocabulary worth studying.\n- Watch for one speaker correcting another's grammar. If detected, set\n  \"is_correction\" to true and fill in \"correction_detail\" with the wrong\n  form, correct form, and a brief grammatical explanation.\n- Flag false friends and common learner mistakes.\n"
+   },
+   "kind": "ok",
+   "expected": "You are a SOURCE_LANG-to-TARGET_LANG interpreter for a live conversation.\n\nYou receive a speech-to-text transcription that may contain ASR errors,\nalong with speaker information and recent conversation context.\n\nTasks:\n1. CORRECT: Fix likely ASR errors. Consider homophones, dropped words, and\n   context. Output the corrected SOURCE_LANG text.\n2. TRANSLATE: Produce natural, idiomatic TARGET_LANG. NEVER leave SOURCE_LANG\n   words untranslated in the output. Handle idioms by meaning, not literally.\n3. FLAG PHRASES: Mark notable items worth learning — idioms, slang, false\n   friends, regional expressions, interesting grammar constructions.\n4. SPEAKER HINT: If you can infer the speaker's role (teacher, student,\n   shopkeeper, friend, doctor...) from what they say, suggest it.\n\nAdditionally, in classroom mode:\n- Be more aggressive about flagging vocabulary worth studying.\n- Watch for one speaker correcting another's grammar. If detected, set\n  \"is_correction\" to true and fill in \"correction_detail\" with the wrong\n  form, correct form, and a brief grammatical explanation.\n- Flag false friends and common learner mistakes.\n\nIMPORTANT: Respond ONLY with a SINGLE valid JSON object. No explanation outside the JSON.\nIf you output anything else, the response will be discarded. Do NOT add markdown or code fences.\n\nOutput format:\n{\n  \"corrected\": \"corrected SOURCE_LANG text\",\n  \"translated\": \"natural TARGET_LANG translation\",\n  \"flagged_phrases\": [\n    {\n      \"phrase\": \"the SOURCE_LANG phrase\",\n      \"literal\": \"word-for-word TARGET_LANG\",\n      \"meaning\": \"actual meaning in TARGET_LANG\",\n      \"type\": \"idiom | slang | false_friend | correction | grammar_note\",\n      \"save_worthy\": true\n    }\n  ],\n  \"confidence\": 0.95,\n  \"speaker_hint\": \"role or null\",\n  \"is_correction\": false,\n  \"correction_detail\": null\n}",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "study_summary_system.classroom_note",
+   "template_key": "study_summary_system",
+   "template": "You analyze a completed conversation and produce a structured language-learning study report.{mode_note}\n\nRespond ONLY with a single valid JSON object. No markdown, no text outside the JSON.\n\nOutput format:\n{{\n  \"summary\": \"2-3 sentence overview of what was discussed\",\n  \"vocab\": [{{\"term\": \"phrase\", \"meaning\": \"English meaning\", \"count\": 1}}],\n  \"grammar\": [\"One sentence describing a grammar pattern or issue observed\"],\n  \"corrections\": [{{\"wrong\": \"incorrect form\", \"right\": \"correct form\", \"explanation\": \"why\"}}],\n  \"idioms\": [{{\"phrase\": \"the idiom\", \"meaning\": \"what it means\"}}],\n  \"review_topics\": [\"concrete grammar or vocabulary topic to study next\"]\n}}\n\nRules: vocab max 10 items — include only idioms, false friends, and phrases worth learning.\ngrammar max 5 items. corrections max 5. idioms max 5. review_topics 1–4.\nUse empty arrays [] for sections with nothing to report.",
+   "values": {
+    "mode_note": "\nThis was a classroom session — pay extra attention to grammar corrections and teacher feedback."
+   },
+   "kind": "ok",
+   "expected": "You analyze a completed conversation and produce a structured language-learning study report.\nThis was a classroom session — pay extra attention to grammar corrections and teacher feedback.\n\nRespond ONLY with a single valid JSON object. No markdown, no text outside the JSON.\n\nOutput format:\n{\n  \"summary\": \"2-3 sentence overview of what was discussed\",\n  \"vocab\": [{\"term\": \"phrase\", \"meaning\": \"English meaning\", \"count\": 1}],\n  \"grammar\": [\"One sentence describing a grammar pattern or issue observed\"],\n  \"corrections\": [{\"wrong\": \"incorrect form\", \"right\": \"correct form\", \"explanation\": \"why\"}],\n  \"idioms\": [{\"phrase\": \"the idiom\", \"meaning\": \"what it means\"}],\n  \"review_topics\": [\"concrete grammar or vocabulary topic to study next\"]\n}\n\nRules: vocab max 10 items — include only idioms, false friends, and phrases worth learning.\ngrammar max 5 items. corrections max 5. idioms max 5. review_topics 1–4.\nUse empty arrays [] for sections with nothing to report.",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "synthetic.ok.empty_template",
+   "template_key": null,
+   "template": "",
+   "values": {},
+   "kind": "ok",
+   "expected": "",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "synthetic.ok.plain",
+   "template_key": null,
+   "template": "plain",
+   "values": {},
+   "kind": "ok",
+   "expected": "plain",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "synthetic.ok.escaped_field",
+   "template_key": null,
+   "template": "{{a}}",
+   "values": {},
+   "kind": "ok",
+   "expected": "{a}",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "synthetic.ok.triple_braces",
+   "template_key": null,
+   "template": "{{{a}}}",
+   "values": {
+    "a": "x"
+   },
+   "kind": "ok",
+   "expected": "{x}",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "synthetic.ok.escapes_around_field",
+   "template_key": null,
+   "template": "}}{a}{{",
+   "values": {
+    "a": "x"
+   },
+   "kind": "ok",
+   "expected": "}x{",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "synthetic.ok.repeated_field",
+   "template_key": null,
+   "template": "{a}{a}",
+   "values": {
+    "a": "x"
+   },
+   "kind": "ok",
+   "expected": "xx",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "synthetic.ok.value_not_rescanned",
+   "template_key": null,
+   "template": "{a}",
+   "values": {
+    "a": "{b}",
+    "b": "y"
+   },
+   "kind": "ok",
+   "expected": "{b}",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "synthetic.ok.extra_key_ignored",
+   "template_key": null,
+   "template": "{a}",
+   "values": {
+    "a": "x",
+    "extra": "unused"
+   },
+   "kind": "ok",
+   "expected": "x",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "synthetic.ok.spaces_in_name",
+   "template_key": null,
+   "template": "{ a }",
+   "values": {
+    " a ": "x"
+   },
+   "kind": "ok",
+   "expected": "x",
+   "python_error": null,
+   "python_output": null
+  },
+  {
+   "id": "synthetic.error.single_open",
+   "template_key": null,
+   "template": "{",
+   "values": {},
+   "kind": "error",
+   "expected": null,
+   "python_error": "ValueError: Single '{' encountered in format string",
+   "python_output": null
+  },
+  {
+   "id": "synthetic.error.single_close",
+   "template_key": null,
+   "template": "}",
+   "values": {},
+   "kind": "error",
+   "expected": null,
+   "python_error": "ValueError: Single '}' encountered in format string",
+   "python_output": null
+  },
+  {
+   "id": "synthetic.error.unterminated_field",
+   "template_key": null,
+   "template": "{a",
+   "values": {
+    "a": "x"
+   },
+   "kind": "error",
+   "expected": null,
+   "python_error": "ValueError: expected '}' before end of string",
+   "python_output": null
+  },
+  {
+   "id": "synthetic.error.stray_close",
+   "template_key": null,
+   "template": "a}",
+   "values": {},
+   "kind": "error",
+   "expected": null,
+   "python_error": "ValueError: Single '}' encountered in format string",
+   "python_output": null
+  },
+  {
+   "id": "synthetic.error.nested_open",
+   "template_key": null,
+   "template": "{a{b}}",
+   "values": {
+    "a": "x",
+    "b": "y"
+   },
+   "kind": "error",
+   "expected": null,
+   "python_error": "ValueError: unexpected '{' in field name",
+   "python_output": null
+  },
+  {
+   "id": "synthetic.error.missing_key",
+   "template_key": null,
+   "template": "{missing}",
+   "values": {
+    "a": "x"
+   },
+   "kind": "error",
+   "expected": null,
+   "python_error": "KeyError: 'missing'",
+   "python_output": null
+  },
+  {
+   "id": "synthetic.error.missing_key_before_stray_close",
+   "template_key": null,
+   "template": "{missing} }",
+   "values": {},
+   "kind": "error",
+   "expected": null,
+   "python_error": "KeyError: 'missing'",
+   "python_output": null
+  },
+  {
+   "id": "synthetic.unsupported.auto_numbered",
+   "template_key": null,
+   "template": "{}",
+   "values": {
+    "a": "x"
+   },
+   "kind": "unsupported",
+   "expected": null,
+   "python_error": "IndexError: Replacement index 0 out of range for positional args tuple",
+   "python_output": null
+  },
+  {
+   "id": "synthetic.unsupported.positional",
+   "template_key": null,
+   "template": "{0}",
+   "values": {
+    "a": "x"
+   },
+   "kind": "unsupported",
+   "expected": null,
+   "python_error": "IndexError: Replacement index 0 out of range for positional args tuple",
+   "python_output": null
+  },
+  {
+   "id": "synthetic.unsupported.conversion",
+   "template_key": null,
+   "template": "{a!r}",
+   "values": {
+    "a": "x"
+   },
+   "kind": "unsupported",
+   "expected": null,
+   "python_error": null,
+   "python_output": "'x'"
+  },
+  {
+   "id": "synthetic.unsupported.format_spec",
+   "template_key": null,
+   "template": "{a:>5}",
+   "values": {
+    "a": "x"
+   },
+   "kind": "unsupported",
+   "expected": null,
+   "python_error": null,
+   "python_output": "    x"
+  },
+  {
+   "id": "synthetic.unsupported.attribute",
+   "template_key": null,
+   "template": "{a.b}",
+   "values": {
+    "a": "x"
+   },
+   "kind": "unsupported",
+   "expected": null,
+   "python_error": "AttributeError: 'str' object has no attribute 'b'",
+   "python_output": null
+  },
+  {
+   "id": "synthetic.unsupported.index",
+   "template_key": null,
+   "template": "{a[0]}",
+   "values": {
+    "a": "x"
+   },
+   "kind": "unsupported",
+   "expected": null,
+   "python_error": null,
+   "python_output": "x"
+  }
+ ]
+}
