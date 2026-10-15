@@ -1,6 +1,7 @@
 """Multi-provider LLM translator service (Ollama, LM Studio, OpenAI, Claude)."""
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
@@ -77,10 +78,14 @@ def _extract_raw_translation(text: str) -> str:
     return ""
 
 
-def _is_passthrough(source: str, translated: str) -> bool:
-    """Detect when the LLM returned the source language instead of translating.
+def _is_passthrough(source: str, translated: str, direction: str = "") -> bool:
+    """Detect when the LLM returned source language instead of translating.
 
-    Compares normalized texts. If > 70% of words overlap, it's likely a passthrough.
+    Two checks:
+    1. Word overlap: if > 70% of source words appear in translation.
+    2. Script heuristic: if translating *to* English and the output still has
+       significant Spanish-specific characters (accents, ¿, ¡, ñ), flag it.
+       This catches partial passthrough that word overlap misses.
     """
     if not source or not translated:
         return False
@@ -93,7 +98,18 @@ def _is_passthrough(source: str, translated: str) -> bool:
     if not src_words:
         return False
     overlap = len(src_words & tgt_words) / len(src_words)
-    return overlap > 0.7
+    if overlap > 0.7:
+        return True
+
+    # Partial passthrough heuristic: Spanish chars in English output
+    if direction.endswith("_to_en"):
+        # Count chars that are rare in English but common in Spanish
+        spanish_chars = len(re.findall(r'[áéíóúüñ¿¡]', translated.lower()))
+        total_alpha = max(len(re.findall(r'[a-záéíóúüñ]', translated.lower())), 1)
+        if spanish_chars / total_alpha > 0.02 and spanish_chars > 3:
+            return True
+
+    return False
 
 
 def _is_retryable(error: Exception) -> bool:
@@ -140,8 +156,9 @@ class Translator:
     DEGRADED_THRESHOLD = 3
     # In degraded mode, use this shorter timeout to fail fast
     DEGRADED_TIMEOUT = 8.0
-    # Normal timeout for local providers (shorter than the 30s config default)
-    LOCAL_TIMEOUT = 15.0
+    # Normal timeout for local providers — generous enough for 9B models on mid-range
+    # GPUs where prompt processing + generation can take 10-15s per segment.
+    LOCAL_TIMEOUT = 30.0
 
     def __init__(self, config: TranslatorConfig):
         self.config = config
@@ -180,6 +197,12 @@ class Translator:
         # Rate limiting (minimum interval between requests)
         self._last_request_time: float = 0.0
         self._rate_limit_lock = asyncio.Lock()
+
+        # Serialize requests to local LLM backends (LM Studio, Ollama).
+        # These process requests sequentially on one GPU — concurrent requests
+        # just queue internally and cause cascading timeouts when httpx gives up
+        # waiting and disconnects, aborting in-progress generation.
+        self._local_semaphore = asyncio.Semaphore(1)
 
         # Cloud cost tracking (OpenAI + Claude)
         self._costs = {
@@ -279,6 +302,7 @@ class Translator:
     async def _call_llm(
         self, system_prompt: str, user_prompt: str, retries: int | None = None,
         max_tokens: int = 1024, temperature: float | None = None, json_mode: bool = True,
+        bypass_local_sem: bool = False,
     ) -> str:
         """Route LLM call to the active provider with fallback.
 
@@ -297,6 +321,7 @@ class Translator:
         try:
             return await self._call_provider(
                 provider, system_prompt, user_prompt, retries, max_tokens, temp, json_mode,
+                bypass_local_sem=bypass_local_sem,
             )
         except Exception as primary_error:
             # Only fall back from cloud → local, never local → cloud
@@ -363,6 +388,7 @@ class Translator:
         openai_model: str = "",
         lmstudio_model: str = "",
         claude_model: str = "",
+        bypass_local_sem: bool = False,
     ) -> str:
         """Call a specific provider with retry logic. Returns raw text response."""
         # Enforce minimum interval between requests
@@ -388,84 +414,94 @@ class Translator:
             max_retries = self.MAX_RETRIES_LOCAL
         last_error = None
 
-        for attempt in range(max_retries + 1):
-            self._metrics["requests"] += 1
-            start = time.monotonic()
+        # Serialize local provider requests — they process one at a time on the GPU.
+        # Without this, concurrent requests queue inside LM Studio and the httpx read
+        # timeout fires while waiting behind earlier requests, causing the connection
+        # to close ("Client disconnected") and aborting in-progress generation.
+        # bypass_local_sem allows low-priority calls (partials, topic summaries) to
+        # skip the queue — they'll either get served quickly or timeout harmlessly.
+        use_sem = provider in _LOCAL_PROVIDERS and not bypass_local_sem
+        sem = self._local_semaphore if use_sem else contextlib.nullcontext()
 
-            try:
-                if provider == "ollama":
-                    coro = self._call_ollama(system_prompt, user_prompt, temperature, max_tokens, json_mode)
-                elif provider == "lmstudio":
-                    coro = self._call_lmstudio(system_prompt, user_prompt, temperature, max_tokens, json_mode, model_override=lmstudio_model)
-                elif provider == "openai":
-                    coro = self._call_openai(system_prompt, user_prompt, temperature, max_tokens, json_mode, model_override=openai_model)
-                elif provider == "claude":
-                    coro = self._call_claude(system_prompt, user_prompt, temperature, max_tokens, model_override=claude_model)
-                else:
-                    raise ValueError(f"Unknown provider: {provider}")
+        async with sem:
+            for attempt in range(max_retries + 1):
+                self._metrics["requests"] += 1
+                start = time.monotonic()
 
-                # In degraded mode, use a shorter timeout to fail fast
-                if self._degraded:
-                    try:
-                        text = await asyncio.wait_for(coro, timeout=self.DEGRADED_TIMEOUT)
-                    except asyncio.TimeoutError:
-                        raise httpx.ReadTimeout(
-                            f"Degraded mode timeout ({self.DEGRADED_TIMEOUT}s)"
-                        )
-                else:
-                    text = await coro
+                try:
+                    if provider == "ollama":
+                        coro = self._call_ollama(system_prompt, user_prompt, temperature, max_tokens, json_mode)
+                    elif provider == "lmstudio":
+                        coro = self._call_lmstudio(system_prompt, user_prompt, temperature, max_tokens, json_mode, model_override=lmstudio_model)
+                    elif provider == "openai":
+                        coro = self._call_openai(system_prompt, user_prompt, temperature, max_tokens, json_mode, model_override=openai_model)
+                    elif provider == "claude":
+                        coro = self._call_claude(system_prompt, user_prompt, temperature, max_tokens, model_override=claude_model)
+                    else:
+                        raise ValueError(f"Unknown provider: {provider}")
 
-                latency = (time.monotonic() - start) * 1000
-                self._metrics["successes"] += 1
-                self._metrics["total_latency_ms"] += latency
-
-                # Success clears timeout tracking
-                if self._consecutive_timeouts > 0:
+                    # In degraded mode, use a shorter timeout to fail fast
                     if self._degraded:
-                        logger.info(
-                            f"Provider recovered after {self._consecutive_timeouts} "
-                            f"consecutive timeouts — exiting degraded mode"
+                        try:
+                            text = await asyncio.wait_for(coro, timeout=self.DEGRADED_TIMEOUT)
+                        except asyncio.TimeoutError:
+                            raise httpx.ReadTimeout(
+                                f"Degraded mode timeout ({self.DEGRADED_TIMEOUT}s)"
+                            )
+                    else:
+                        text = await coro
+
+                    latency = (time.monotonic() - start) * 1000
+                    self._metrics["successes"] += 1
+                    self._metrics["total_latency_ms"] += latency
+
+                    # Success clears timeout tracking
+                    if self._consecutive_timeouts > 0:
+                        if self._degraded:
+                            logger.info(
+                                f"Provider recovered after {self._consecutive_timeouts} "
+                                f"consecutive timeouts — exiting degraded mode"
+                            )
+                        self._consecutive_timeouts = 0
+                        self._degraded = False
+
+                    return text
+
+                except Exception as e:
+                    last_error = e
+                    latency = (time.monotonic() - start) * 1000
+                    self._metrics["total_latency_ms"] += latency
+
+                    if isinstance(e, httpx.TimeoutException):
+                        self._metrics["timeouts"] += 1
+                        self._consecutive_timeouts += 1
+                        if (self._consecutive_timeouts >= self.DEGRADED_THRESHOLD
+                                and not self._degraded):
+                            self._degraded = True
+                            logger.warning(
+                                f"Provider {provider} entered degraded mode after "
+                                f"{self._consecutive_timeouts} consecutive timeouts — "
+                                f"skipping retries, using {self.DEGRADED_TIMEOUT}s timeout"
+                            )
+
+                    if not _is_retryable(e):
+                        logger.error(f"Permanent {provider} error (no retry): {e}")
+                        self._metrics["failures"] += 1
+                        self._metrics["last_error"] = str(e)
+                        self._metrics["last_error_time"] = time.time()
+                        raise
+
+                    if attempt < max_retries:
+                        delay = min(
+                            self.INITIAL_BACKOFF * (self.BACKOFF_FACTOR ** attempt),
+                            self.MAX_BACKOFF,
                         )
-                    self._consecutive_timeouts = 0
-                    self._degraded = False
-
-                return text
-
-            except Exception as e:
-                last_error = e
-                latency = (time.monotonic() - start) * 1000
-                self._metrics["total_latency_ms"] += latency
-
-                if isinstance(e, httpx.TimeoutException):
-                    self._metrics["timeouts"] += 1
-                    self._consecutive_timeouts += 1
-                    if (self._consecutive_timeouts >= self.DEGRADED_THRESHOLD
-                            and not self._degraded):
-                        self._degraded = True
+                        self._metrics["retries"] += 1
                         logger.warning(
-                            f"Provider {provider} entered degraded mode after "
-                            f"{self._consecutive_timeouts} consecutive timeouts — "
-                            f"skipping retries, using {self.DEGRADED_TIMEOUT}s timeout"
+                            f"{provider} request failed (attempt {attempt + 1}/{max_retries + 1}), "
+                            f"retrying in {delay:.1f}s: {e}"
                         )
-
-                if not _is_retryable(e):
-                    logger.error(f"Permanent {provider} error (no retry): {e}")
-                    self._metrics["failures"] += 1
-                    self._metrics["last_error"] = str(e)
-                    self._metrics["last_error_time"] = time.time()
-                    raise
-
-                if attempt < max_retries:
-                    delay = min(
-                        self.INITIAL_BACKOFF * (self.BACKOFF_FACTOR ** attempt),
-                        self.MAX_BACKOFF,
-                    )
-                    self._metrics["retries"] += 1
-                    logger.warning(
-                        f"{provider} request failed (attempt {attempt + 1}/{max_retries + 1}), "
-                        f"retrying in {delay:.1f}s: {e}"
-                    )
-                    await asyncio.sleep(delay)
+                        await asyncio.sleep(delay)
 
         self._metrics["failures"] += 1
         self._metrics["last_error"] = str(last_error)
@@ -506,8 +542,51 @@ class Translator:
         model_override: str = "",
     ) -> str:
         """LM Studio: POST /v1/chat/completions (OpenAI-compatible)."""
+        model_name = model_override or self.config.lmstudio_model
+        model_lower = model_name.lower()
+
+        # TranslateGemma uses a special structured content format — not a
+        # normal chat model.  Only use it for translation-like requests.
+        # Non-translation calls (topic summary, study summary) fall through
+        # to the standard chat path — they'll fail on TranslateGemma but
+        # that's expected; TranslateGemma should only be a quick model.
+        is_translategemma = "translategemma" in model_lower
+        if is_translategemma:
+            # Detect if this looks like a translation request
+            combined = (system_prompt + " " + user_prompt).lower()
+            is_translation = (
+                "translat" in combined
+                or "transcript" in combined
+                or "spanish" in combined
+                or "english" in combined
+            )
+            if is_translation:
+                return await self._call_lmstudio_translategemma(
+                    model_name, system_prompt, user_prompt, temperature, max_tokens,
+                )
+            else:
+                # Skip TranslateGemma for non-translation tasks
+                logger.warning(
+                    f"Skipping TranslateGemma for non-translation task "
+                    f"(prompt: '{user_prompt[:50]}...')"
+                )
+                raise ValueError(
+                    "TranslateGemma cannot handle non-translation tasks. "
+                    "Use a general-purpose LLM as the main model."
+                )
+
+        # Disable thinking/reasoning mode for Qwen3+ models — translation
+        # doesn't benefit from chain-of-thought and it burns 10-20s of latency.
+        if "qwen3" in model_lower:
+            system_prompt = (
+                system_prompt
+                + "\nDo NOT output any thinking, reasoning, or analysis. "
+                "Respond ONLY with the JSON object."
+            )
+            user_prompt = user_prompt + " /no_think"
+
         body = {
-            "model": model_override or self.config.lmstudio_model,
+            "model": model_name,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -527,6 +606,77 @@ class Translator:
             raise
         data = response.json()
         return data["choices"][0]["message"]["content"]
+
+    async def _call_lmstudio_translategemma(
+        self, model_name: str, system_prompt: str, user_prompt: str,
+        temperature: float, max_tokens: int,
+    ) -> str:
+        """TranslateGemma requires structured content with language codes."""
+        # Infer language codes from system prompt or user prompt
+        src_code, tgt_code = "es", "en"  # defaults
+        combined = (system_prompt + " " + user_prompt).lower()
+        if "spanish to english" in combined or "spanish-to-english" in combined:
+            src_code, tgt_code = "es", "en"
+        elif "english to spanish" in combined or "english-to-spanish" in combined:
+            src_code, tgt_code = "en", "es"
+
+        # Extract the actual text to translate from various prompt formats:
+        #   Full prompt: ... Transcript: "some text" ...
+        #   Quick prompt: Translate this Spanish to ...\n\nsome text
+        transcript = user_prompt
+        if 'Transcript: "' in transcript:
+            start = transcript.index('Transcript: "') + len('Transcript: "')
+            end = transcript.index('"', start)
+            transcript = transcript[start:end]
+        elif "\n\n" in transcript:
+            # Quick translate format: instructions\n\nraw text
+            transcript = transcript.split("\n\n", 1)[-1].strip()
+
+        body = {
+            "model": model_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [{
+                        "type": "text",
+                        "source_lang_code": src_code,
+                        "target_lang_code": tgt_code,
+                        "text": transcript,
+                        "image": None,
+                    }],
+                },
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+
+        response = await self.client.post(
+            f"{self.config.lmstudio_url}/v1/chat/completions", json=body,
+        )
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            logger.error(f"LM Studio error {response.status_code}: {response.text}")
+            raise
+        data = response.json()
+        translated = data["choices"][0]["message"]["content"]
+
+        # If called from _quick_translate (no system prompt), return plain text
+        if not system_prompt:
+            return translated
+
+        # Full translation path — wrap in our JSON format
+        import json as _json
+        return _json.dumps({
+            "corrected": transcript,
+            "translated": translated,
+            "flagged_phrases": [],
+            "confidence": 0.85,
+            "speaker_hint": None,
+            "is_correction": False,
+            "correction_detail": None,
+        })
 
     async def _call_openai(
         self, system_prompt: str, user_prompt: str,
@@ -669,7 +819,7 @@ class Translator:
             result = self._parse_response(raw_text, transcript)
 
             # Detect passthrough: LLM returned source language as translation
-            if _is_passthrough(transcript, result.translated):
+            if _is_passthrough(transcript, result.translated, direction):
                 logger.warning(
                     f"LLM passed source through untranslated: '{transcript[:60]}' "
                     f"-> '{result.translated[:60]}'"
@@ -723,7 +873,7 @@ class Translator:
                 retries=0, max_tokens=512, json_mode=True,
             )
             result = self._parse_response(raw_text, transcript)
-            if not _is_passthrough(transcript, result.translated):
+            if not _is_passthrough(transcript, result.translated, direction):
                 logger.info(f"Passthrough retry succeeded: '{result.translated[:60]}'")
                 result.confidence = min(result.confidence, 0.5)  # cap confidence on retry
                 return result
@@ -736,9 +886,15 @@ class Translator:
     def _parse_response(self, raw: str, original: str) -> TranslationResult:
         """Parse the JSON response from the LLM."""
         cleaned = raw.strip()
-        # Strip chain-of-thought blocks if present
+        # Strip chain-of-thought blocks if present (tagged or plain text)
         if "<think>" in cleaned and "</think>" in cleaned:
             cleaned = cleaned.split("</think>", 1)[-1].strip()
+        # Qwen3 models sometimes output "Thinking Process:\n..." as plain text
+        # before the JSON. Strip everything before the first '{'.
+        if cleaned.lower().startswith("thinking"):
+            brace = cleaned.find("{")
+            if brace != -1:
+                cleaned = cleaned[brace:]
         if "```" in cleaned:
             cleaned = cleaned.replace("```json", "").replace("```", "").strip()
 
@@ -861,11 +1017,12 @@ class Translator:
         try:
             text = await self._call_llm(
                 "", prompt,
-                retries=1, max_tokens=200, temperature=0.2, json_mode=False,
+                retries=0, max_tokens=200, temperature=0.2, json_mode=False,
+                bypass_local_sem=True,
             )
             return text.strip() or previous_summary
         except Exception as e:
-            logger.warning(f"Topic summary update failed: {e}")
+            logger.debug(f"Topic summary update skipped: {e}")
             return previous_summary
 
     async def close(self):

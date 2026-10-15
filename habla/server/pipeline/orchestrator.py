@@ -607,12 +607,14 @@ class PipelineOrchestrator:
                     provider, "", f"Translate this {src} to natural {tgt}. Output ONLY the translation, nothing else.\n\n{text}",
                     retries=0, max_tokens=256, temperature=0.2, json_mode=False,
                     lmstudio_model=model_override,
+                    bypass_local_sem=True,
                 )
             else:
                 result = await self.context_manager.translator._call_llm(
                     "",
                     f"Translate this {src} to natural {tgt}. Output ONLY the translation, nothing else.\n\n{text}",
                     retries=0, max_tokens=256, temperature=0.2, json_mode=False,
+                    bypass_local_sem=True,
                 )
             return result.strip()
         except Exception as e:
@@ -698,6 +700,11 @@ class PipelineOrchestrator:
         """
         start_time = time.monotonic()
         meta = meta or {}
+
+        # Guard: if WhisperX didn't load, we can't process audio
+        if not self.audio_processor._whisperx_model:
+            logger.warning("Audio segment received but WhisperX not loaded — dropping (text-only mode)")
+            return None
 
         # Compute segment duration from WAV header (reads 44 bytes — zero cost)
         try:

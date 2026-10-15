@@ -876,6 +876,26 @@ class TestAsrRejectionCounters:
     - asr_rejected_count: ASR ran but produced garbage output (bad_transcript)
     """
 
+    @pytest.fixture(autouse=True)
+    def _whisperx_loaded(self, orchestrator):
+        # Segment processing drops audio when WhisperX isn't loaded; these tests
+        # exercise the post-ASR path, so present a loaded model.
+        orchestrator.audio_processor._whisperx_model = MagicMock()
+
+    @pytest.mark.asyncio
+    async def test_segment_dropped_when_whisperx_not_loaded(self, orchestrator):
+        """With no ASR model, the segment is dropped before ASR runs and no counter moves."""
+        orchestrator.audio_processor._whisperx_model = None
+        to_thread = AsyncMock()
+
+        with patch("server.pipeline.orchestrator.asyncio.to_thread", new=to_thread):
+            result = await orchestrator._process_audio_segment_from_wav("/fake/path.wav", meta={})
+
+        assert result is None
+        to_thread.assert_not_called()
+        assert orchestrator._metrics["asr_empty_count"] == 0
+        assert orchestrator._metrics["asr_rejected_count"] == 0
+
     @pytest.mark.asyncio
     async def test_no_segments_increments_asr_empty_count(self, orchestrator):
         """reject_reason='no_segments' should increment asr_empty_count, not asr_rejected_count."""
