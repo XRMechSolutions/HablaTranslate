@@ -112,16 +112,15 @@ class OpenAiProvider(
             ?: throw LlmException("OpenAI $status: response body is not a JSON object", Kind.MALFORMED, status).also {
                 log.debug("OpenAI non-JSON 2xx body: ${text.take(ERROR_BODY_LOG_CHARS)}")
             }
+        val incomplete = root.str("status") == "incomplete"
+        val incompleteReason = if (incomplete) (root["incomplete_details"] as? JsonObject)?.str("reason") ?: "unknown" else null
         when (root.str("status")) {
             "failed" -> {
                 val err = root["error"] as? JsonObject
                 val code = err?.str("code") ?: err?.str("type") ?: "failed"
                 throw LlmException(message(status, code, err?.str("message") ?: "response status failed"), Kind.SERVER, status)
             }
-            "incomplete" -> {
-                val reason = (root["incomplete_details"] as? JsonObject)?.str("reason") ?: "unknown"
-                log.warn("OpenAI response incomplete (reason=$reason) model=${request.model}")
-            }
+            "incomplete" -> log.warn("OpenAI response incomplete (reason=$incompleteReason) model=${request.model}")
         }
         val usage = root["usage"] as? JsonObject
         val inputDetails = usage?.get("input_tokens_details") as? JsonObject
@@ -135,7 +134,8 @@ class OpenAiProvider(
                 reasoningTokens = outputDetails.int("reasoning_tokens"),
                 model = request.model,
             ),
-            incomplete = root.str("status") == "incomplete",
+            incomplete = incomplete,
+            incompleteReason = incompleteReason,
         )
     }
 

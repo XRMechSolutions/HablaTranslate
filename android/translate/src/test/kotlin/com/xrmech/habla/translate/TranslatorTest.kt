@@ -110,6 +110,41 @@ class TranslatorTest {
     }
 
     @Test
+    fun contentFilterIncompleteIsNotReasked() = runTest {
+        val provider = FakeProvider(Respond(good, incomplete = true, reason = "content_filter"))
+        val ok = assertIs<TranslationOutcome.Ok>(translator(provider).run())
+        assertEquals("I couldn't care less.", ok.result.translated)
+        assertEquals(1, provider.requests.size)
+    }
+
+    @Test
+    fun truncatedPassthroughRetryIsReaskedAt2048() = runTest {
+        val echo = FakeProvider.json(transcript, transcript, 0.9)
+        val provider = FakeProvider(
+            Respond(echo),
+            Respond("{\"translated\": \"I do", incomplete = true),
+            Respond(FakeProvider.json("Me importa un pepino", "I don't care", 0.9)),
+        )
+        val ok = assertIs<TranslationOutcome.Ok>(translator(provider).run())
+        assertEquals("I don't care", ok.result.translated)
+        assertEquals(0.5, ok.result.confidence)
+        assertEquals(listOf(1024, 512, 2048), provider.requests.map { it.maxOutputTokens })
+        assertEquals(provider.requests[1].input, provider.requests[2].input)
+        assertEquals(0, provider.requests[2].maxRetries)
+    }
+
+    @Test
+    fun failedReaskKeepsTheTruncatedFirstReply() = runTest {
+        val truncated = "{\"corrected\": \"Me importa un pepino.\", \"translated\": \"I couldn't care less.\", \"flagged_phrases\": ["
+        val provider = FakeProvider(Respond(truncated, incomplete = true), Fail(Kind.TIMEOUT))
+        val ok = assertIs<TranslationOutcome.Ok>(translator(provider).run(), "not Failed(TIMEOUT) while a usable first reply exists")
+        assertEquals("I couldn't care less.", ok.result.translated)
+        assertEquals(0.3, ok.result.confidence)
+        assertEquals("gpt-5.4-mini", ok.model)
+        assertEquals(listOf(1024, 2048), provider.requests.map { it.maxOutputTokens })
+    }
+
+    @Test
     fun emptyTextBecomesBracesThenPassthroughRetrySucceeds() = runTest {
         val costs = CostMeter(models)
         val records = mutableListOf<CostRecord>()

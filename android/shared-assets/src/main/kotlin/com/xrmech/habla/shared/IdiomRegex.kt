@@ -20,7 +20,8 @@ object IdiomRegex {
         "\\x{9}-\\x{D}\\x{1C}-\\x{20}\\x{85}\\x{A0}\\x{1680}\\x{2000}-\\x{200A}\\x{2028}\\x{2029}\\x{202F}\\x{205F}\\x{3000}"
     private const val WHITESPACE_CLASS = "[$WHITESPACE_MEMBERS]"
 
-    private val QUANTIFIER = Regex("""\{\d+(,\d*)?}""")
+    // The closing brace is escaped: Android's ICU engine rejects a bare '}' (the JVM accepts it).
+    private val QUANTIFIER = Regex("""\{\d+(,\d*)?\}""")
 
     /**
      * Checks [pythonPattern] against the whitelist and returns the equivalent Java pattern text.

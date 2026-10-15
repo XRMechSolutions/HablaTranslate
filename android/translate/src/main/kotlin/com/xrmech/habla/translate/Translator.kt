@@ -47,13 +47,8 @@ class Translator(
 
         return try {
             val primary = LlmRequest(model, system, user, FINAL_MAX_TOKENS, json = true, kind = UsageKind.FINAL, maxRetries = ResilientProvider.MAX_RETRIES_CLOUD)
-            var (response, used) = fallback.call(provider, primary, ::recordFinal)
-            if (response.incomplete) {
-                // Usually reasoning tokens used up the budget; one larger re-ask on the same model.
-                log.warn("Final from $used was incomplete; re-issuing at $INCOMPLETE_MAX_TOKENS tokens")
-                response = provider.complete(primary.copy(model = used, maxOutputTokens = INCOMPLETE_MAX_TOKENS, maxRetries = 0))
-                recordFinal(response)
-            }
+            val (first, used) = fallback.call(provider, primary, ::recordFinal)
+            val response = reaskIfTruncated(first, primary, used)
             val result = when (val parsed = ResponseParser.parse(response.text.ifEmpty { "{}" }, transcript)) {
                 is ParseResult.Invalid -> {
                     log.warn("Model output failed validation: ${parsed.reason}")
@@ -78,6 +73,25 @@ class Translator(
         }
     }
 
+    /**
+     * Server `_call_openai` rule (D036): a JSON reply cut off by `max_output_tokens` below 2048
+     * tokens (usually reasoning used the budget) is asked once more at 2048 on the model that
+     * produced it. Other incomplete reasons (e.g. `content_filter`) are used as they are. If the
+     * re-ask fails, the first (truncated) reply is kept for the parser's salvage path.
+     */
+    private suspend fun reaskIfTruncated(first: LlmResponse, request: LlmRequest, model: String): LlmResponse {
+        if (!first.incomplete || first.incompleteReason != "max_output_tokens") return first
+        if (!request.json || request.maxOutputTokens >= INCOMPLETE_MAX_TOKENS) return first
+        log.warn("Reply from $model hit max_output_tokens at ${request.maxOutputTokens}; re-asking at $INCOMPLETE_MAX_TOKENS")
+        return try {
+            provider.complete(request.copy(model = model, maxOutputTokens = INCOMPLETE_MAX_TOKENS, maxRetries = 0))
+                .also(::recordFinal)
+        } catch (e: LlmException) {
+            log.warn("Re-ask failed (${e.kind}); using the truncated reply")
+            first
+        }
+    }
+
     /** The retry result and its model, or null when the retry failed or was itself a passthrough. */
     private suspend fun retryPassthrough(
         transcript: String,
@@ -88,7 +102,8 @@ class Translator(
         return try {
             val prompt = prompts.passthroughRetry(transcript, direction)
             val request = LlmRequest(model, system, prompt, RETRY_MAX_TOKENS, json = true, kind = UsageKind.FINAL, maxRetries = 0)
-            val (response, used) = fallback.call(provider, request, ::recordFinal)
+            val (first, used) = fallback.call(provider, request, ::recordFinal)
+            val response = reaskIfTruncated(first, request, used)
             val parsed = ResponseParser.parse(response.text.ifEmpty { "{}" }, transcript)
             if (parsed !is ParseResult.Ok) return null
             if (Passthrough.isPassthrough(transcript, parsed.result.translated, direction.serialName)) {

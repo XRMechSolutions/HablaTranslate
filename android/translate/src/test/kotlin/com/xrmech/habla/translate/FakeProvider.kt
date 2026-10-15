@@ -8,7 +8,13 @@ import com.xrmech.habla.translate.model.TokenUsage
  */
 class FakeProvider(vararg steps: Step) : TranslationProvider {
     sealed interface Step
-    data class Respond(val text: String, val incomplete: Boolean = false, val input: Int = 10, val output: Int = 5) : Step
+    data class Respond(
+        val text: String,
+        val incomplete: Boolean = false,
+        val input: Int = 10,
+        val output: Int = 5,
+        val reason: String? = if (incomplete) "max_output_tokens" else null,
+    ) : Step
     data class Fail(val kind: LlmException.Kind, val status: Int? = null) : Step
     class Run(val block: suspend (LlmRequest) -> LlmResponse) : Step
 
@@ -21,7 +27,7 @@ class FakeProvider(vararg steps: Step) : TranslationProvider {
         synchronized(requests) { requests += request }
         val step = synchronized(queue) { queue.removeFirstOrNull() } ?: error("no scripted step for request ${requests.size}: $request")
         return when (step) {
-            is Respond -> LlmResponse(step.text, TokenUsage(step.input, 0, step.output, 0, request.model), step.incomplete)
+            is Respond -> LlmResponse(step.text, TokenUsage(step.input, 0, step.output, 0, request.model), step.incomplete, step.reason)
             is Fail -> throw LlmException("OpenAI ${step.status ?: 0} scripted: ${step.kind}", step.kind, step.status)
             is Run -> step.block(request)
         }

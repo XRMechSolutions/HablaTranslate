@@ -28,8 +28,15 @@ data class LlmRequest(
 /**
  * @property text first `output_text` of the first `message` output item, `""` when there is none.
  * @property incomplete true when OpenAI reported `status: "incomplete"`.
+ * @property incompleteReason `incomplete_details.reason` (e.g. `max_output_tokens`,
+ *   `content_filter`) when [incomplete], else null.
  */
-data class LlmResponse(val text: String, val usage: TokenUsage, val incomplete: Boolean)
+data class LlmResponse(
+    val text: String,
+    val usage: TokenUsage,
+    val incomplete: Boolean,
+    val incompleteReason: String? = null,
+)
 
 /**
  * A failed completion. [message] is always scrubbed of API keys before construction and is safe
