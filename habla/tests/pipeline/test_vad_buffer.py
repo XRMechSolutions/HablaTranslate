@@ -157,6 +157,32 @@ class TestVADSpeechDetection:
         assert is_speech is False
         assert prob == pytest.approx(0.2)
 
+    def test_model_input_is_normalized(self):
+        """Silero gets float32 samples in [-1, 1], not raw int16 values."""
+        import torch
+        vad = StreamingVADBuffer()
+        vad._vad_ready = True
+        seen = {}
+
+        def model(tensor, sr):
+            seen["t"] = tensor
+            return torch.tensor(0.1)
+
+        vad._vad_model = model
+        frame = np.full(512, -32768, dtype=np.int16)
+        frame[0] = 16384
+        vad._is_speech_frame(frame)
+        t = seen["t"]
+        assert t.dtype == torch.float32
+        assert float(t.min()) == -1.0
+        assert float(t[0]) == 0.5
+
+    def test_reset_clears_model_state(self):
+        vad = StreamingVADBuffer()
+        vad._vad_model = MagicMock()
+        vad.reset()
+        vad._vad_model.reset_states.assert_called_once()
+
 
 class TestNoiseFloorCalibration:
     """Test noise floor calibration on session start."""

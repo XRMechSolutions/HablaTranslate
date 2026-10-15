@@ -148,7 +148,9 @@ class StreamingVADBuffer:
             return False, 0.0
         if self._vad_ready and self._vad_model is not None:
             import torch
-            tensor = torch.from_numpy(pcm_frame).float()
+            # Silero expects float samples in [-1, 1]; raw int16 values make it
+            # miss up to half the speech frames (worst on loud or noisy input).
+            tensor = torch.from_numpy(pcm_frame.astype(np.float32) / 32768.0)
             prob = self._vad_model(tensor, self.config.sample_rate).item()
             return prob > self.config.speech_threshold, prob
         else:
@@ -320,6 +322,9 @@ class StreamingVADBuffer:
         self._calibrating = self.config.calibration_duration_ms > 0
         self._calibration_frame_count = 0
         self._calibration_energy_sum = 0.0
+        # Silero carries recurrent state and 64 samples of context between frames
+        if self._vad_model is not None and hasattr(self._vad_model, "reset_states"):
+            self._vad_model.reset_states()
 
 
 _EBML_MAGIC = b"\x1a\x45\xdf\xa3"
