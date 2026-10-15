@@ -91,9 +91,9 @@ function rebuildMergedCard(el, data) {
   const srcAutoScroll = _shouldAutoScroll(srcEl);
   const tgtAutoScroll = _shouldAutoScroll(tgtEl);
 
-  // Build new source HTML (with idiom highlights)
+  // Build new source HTML — use corrected text (LLM fixes ASR errors in-place)
   const {src: srcFlag, tgt: tgtFlag} = dirFlags(data.effective_direction);
-  const srcRaw = data.source || data.corrected || '';
+  const srcRaw = data.corrected || data.source || '';
   let srcH = esc(srcRaw);
   (data.idioms || []).forEach(i => {
     const e = esc(i.phrase), rx = new RegExp(escRx(e), 'gi');
@@ -111,23 +111,9 @@ function rebuildMergedCard(el, data) {
     if (tgtAutoScroll) _forceScrollBottom(tgtEl);
   }
 
-  // Update corrected line
+  // Remove legacy corrected line if present (now shown in-place as source)
   const oldCorr = el.querySelector('.ex-src.corrected');
-  const hasCorr = data.corrected && data.corrected !== data.source;
-  if (hasCorr) {
-    if (oldCorr) {
-      oldCorr.title = data.corrected;
-      oldCorr.innerHTML = `~ ${esc(data.corrected)}`;
-    } else if (tgtEl) {
-      const corrDiv = document.createElement('div');
-      corrDiv.className = 'ex-src corrected';
-      corrDiv.title = data.corrected;
-      corrDiv.innerHTML = `~ ${esc(data.corrected)}`;
-      tgtEl.insertAdjacentElement('afterend', corrDiv);
-    }
-  } else if (oldCorr) {
-    oldCorr.remove();
-  }
+  if (oldCorr) oldCorr.remove();
 
   // Update metadata (timestamp, confidence)
   const metaEl = el.querySelector('.ex-meta:not(.live-label)');
@@ -419,16 +405,13 @@ function buildExchangeHTML(msg) {
   const color = safeColor(msg.speaker?.color);
   const {src: srcFlag, tgt: tgtFlag} = dirFlags(msg.effective_direction);
 
-  // Highlight idioms in source
-  const srcRaw = msg.source || msg.corrected || '';
+  // Display corrected text as source (LLM fixes ASR errors in-place)
+  const srcRaw = msg.corrected || msg.source || '';
   let srcH = esc(srcRaw);
   (msg.idioms || []).forEach(i => {
     const e = esc(i.phrase), rx = new RegExp(escRx(e), 'gi');
     srcH = srcH.replace(rx, `<span class="hl">${e}</span>`);
   });
-
-  const correctedLine = (msg.corrected && msg.corrected !== msg.source) ?
-    `<div class="ex-src corrected" title="${escA(msg.corrected)}">~ ${esc(msg.corrected)}</div>` : '';
 
   let idiomH = '';
   (msg.idioms || []).forEach(i => {
@@ -456,10 +439,10 @@ function buildExchangeHTML(msg) {
     </div>`;
   }
 
-  const hasNotes = !!(idiomH || corrH || correctedLine);
+  const hasNotes = !!(idiomH || corrH);
   const notesH = hasNotes ? `
     <div class="ex-notes">
-      ${correctedLine}${idiomH}${corrH}
+      ${idiomH}${corrH}
     </div>` : '';
 
   const audioBtn = (msg.has_audio && msg.exchange_id)
