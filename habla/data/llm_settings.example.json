@@ -1,0 +1,10 @@
+{
+  "provider": "openai",
+  "openai_model": "gpt-5.4-mini",
+  "quick_model": "gpt-5.4-nano",
+  "lmstudio_model": "",
+  "ollama_model": "qwen3:4b",
+  "anthropic_model": "claude-sonnet-4-6",
+  "direction": "auto",
+  "mode": "classroom"
+}

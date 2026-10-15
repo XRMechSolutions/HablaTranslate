@@ -67,6 +67,9 @@ htmlcov/
 # Session state (saved on shutdown, not source)
 habla/data/last_session.json
 
+# Runtime LLM settings; can hold API keys (see llm_settings.example.json)
+habla/data/llm_settings.json
+
 # Database backups
 habla/data/backups/
 
