@@ -182,8 +182,12 @@ echo.
 :: 7. Python dependencies
 :: ============================================================
 echo [7/10] Installing Python dependencies...
-if exist "%HABLA_DIR%\requirements.txt" (
-    "%PY%" -m pip install -r "%HABLA_DIR%\requirements.txt"
+:: requirements.lock pins every package to a known-good set (incl. CUDA torch);
+:: requirements.txt is the fallback if the lock is missing.
+set "REQ_FILE=%HABLA_DIR%\requirements.lock"
+if not exist "%REQ_FILE%" set "REQ_FILE=%HABLA_DIR%\requirements.txt"
+if exist "%REQ_FILE%" (
+    "%PY%" -m pip install -r "%REQ_FILE%"
     if errorlevel 1 (
         echo   [WARN] Some packages failed. Check output above.
         set /a WARNINGS+=1
