@@ -997,3 +997,128 @@ class TestOpenAICachedCost:
         assert translator.costs["session_cost_usd"] == pytest.approx(
             1000 / 1_000_000 * _OPENAI_MODELS["gpt-6-luna"]["cached_input"]
         )
+
+
+# ---------------------------------------------------------------------------
+# Server parity follow-ups for the Android translate module
+# ---------------------------------------------------------------------------
+
+class TestQuotaCodesAndRetryAfter:
+    @pytest.mark.parametrize("code", [
+        "organization_spend_limit_exceeded", "project_spend_limit_exceeded",
+        "organization_usage_limit_exceeded", "credit_balance_exhausted",
+    ])
+    def test_billing_codes_are_permanent(self, code):
+        assert not _is_retryable(_status_error(429, {"error": {"code": code}}))
+
+    def test_retry_after_parsing(self):
+        from server.pipeline.translator import _retry_after_seconds
+        req = httpx.Request("POST", "https://api.openai.com/v1/responses")
+        def err(headers):
+            resp = httpx.Response(429, json={"error": {"code": "rate_limit_exceeded"}}, headers=headers, request=req)
+            return httpx.HTTPStatusError("429", request=req, response=resp)
+        assert _retry_after_seconds(err({"retry-after-ms": "1800"})) == pytest.approx(1.8)
+        assert _retry_after_seconds(err({"retry-after": "2"})) == 2.0
+        assert _retry_after_seconds(err({"retry-after": "soon"})) is None
+        assert _retry_after_seconds(err({})) is None
+
+    @pytest.mark.asyncio
+    async def test_long_retry_after_stops_retrying(self, translator_config):
+        translator_config.provider = "openai"
+        translator = Translator(translator_config)
+        req = httpx.Request("POST", "https://api.openai.com/v1/responses")
+        calls = 0
+
+        async def post(url, **kwargs):
+            nonlocal calls
+            calls += 1
+            resp = httpx.Response(429, json={"error": {"code": "rate_limit_exceeded"}},
+                                  headers={"retry-after": "60"}, request=req)
+            resp.raise_for_status()
+
+        translator.client.post = post
+        with patch("asyncio.sleep", new=AsyncMock()) as sleep:
+            with pytest.raises(httpx.HTTPStatusError):
+                await translator._call_provider("openai", "S", "U", retries=3)
+        assert calls == 1
+        sleep.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_short_retry_after_is_honoured(self, translator_config):
+        translator_config.provider = "openai"
+        translator = Translator(translator_config)
+        req = httpx.Request("POST", "https://api.openai.com/v1/responses")
+
+        async def post(url, **kwargs):
+            resp = httpx.Response(429, json={"error": {"code": "rate_limit_exceeded"}},
+                                  headers={"retry-after": "3"}, request=req)
+            resp.raise_for_status()
+
+        translator.client.post = post
+        with patch("server.pipeline.translator.asyncio.sleep", new=AsyncMock()) as sleep:
+            with pytest.raises(httpx.HTTPStatusError):
+                await translator._call_provider("openai", "S", "U", retries=1)
+        delays = [c.args[0] for c in sleep.await_args_list]
+        assert 3.0 in delays
+
+
+class TestModelFallbackSkips:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("error", [
+        ValueError("OpenAI API key not set (invalid_api_key)"),
+        httpx.ConnectError("no route"),
+    ])
+    async def test_key_and_network_errors_skip_cheaper_models(self, translator_config, error):
+        translator_config.provider = "openai"
+        translator_config.fallback_to_local = True
+        translator = Translator(translator_config)
+        tried = []
+
+        async def call_provider(provider, *args, **kwargs):
+            tried.append((provider, kwargs.get("openai_model")))
+            raise error
+
+        translator._call_provider = call_provider
+        with pytest.raises(type(error)):
+            await translator._call_llm("S", "U", retries=0)
+        openai_models = [m for p, m in tried if p == "openai" and m]
+        assert openai_models == []                      # no cheaper-model walk
+        assert ("ollama", None) in tried                # local fallback still tried
+
+
+class TestIncompleteFinal:
+    @pytest.mark.asyncio
+    async def test_truncated_json_reasked_once_with_bigger_budget(self, translator_config):
+        translator = Translator(translator_config)
+        bodies = []
+
+        def response(status, text):
+            r = MagicMock()
+            r.raise_for_status = MagicMock()
+            r.json.return_value = {
+                "status": status,
+                "incomplete_details": {"reason": "max_output_tokens"} if status == "incomplete" else None,
+                "output": [{"type": "message", "content": [{"type": "output_text", "text": text}]}],
+                "usage": {"input_tokens": 10, "output_tokens": 10},
+            }
+            return r
+
+        async def post(url, json=None, **kwargs):
+            bodies.append(json)
+            return response("incomplete", '{"corr') if len(bodies) == 1 else response("completed", "{}")
+
+        translator.client.post = post
+        out = await translator._call_openai("S", "U", 0.3, 512, True, model_override="gpt-5.4-mini")
+        assert out == "{}"
+        assert [b["max_output_tokens"] for b in bodies] == [512, Translator.INCOMPLETE_RETRY_TOKENS]
+
+    @pytest.mark.asyncio
+    async def test_plain_text_incomplete_not_reasked(self, translator_config):
+        translator = Translator(translator_config)
+        r = MagicMock()
+        r.raise_for_status = MagicMock()
+        r.json.return_value = {"status": "incomplete", "incomplete_details": {"reason": "max_output_tokens"},
+                               "output": [{"type": "message", "content": [{"type": "output_text", "text": "Hel"}]}]}
+        translator.client.post = AsyncMock(return_value=r)
+        assert await translator._call_openai("", "U", 0.2, 256, False, model_override="gpt-6-luna") == "Hel"
+        assert translator.client.post.await_count == 1

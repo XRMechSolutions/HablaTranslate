@@ -8,10 +8,11 @@ import time
 import httpx
 import re
 from server import shared_assets
-from server.config import TranslatorConfig
+from server.config import TranslatorConfig, parse_direction, lang_name
 from server.models.prompts import (
     get_translator_system_prompt,
     build_translator_user_prompt,
+    get_passthrough_retry_prompt,
 )
 from server.models.schemas import TranslationResult, FlaggedPhrase, CorrectionDetail
 
@@ -21,7 +22,43 @@ logger = logging.getLogger("habla.translator")
 _PERMANENT_ERRORS = ("model not found", "invalid model", "404", "invalid_api_key")
 
 # OpenAI 429 error codes that mean "out of money", not "slow down"
-_QUOTA_ERROR_CODES = {"insufficient_quota", "billing_hard_limit_reached", "credit_balance_exhausted"}
+_QUOTA_ERROR_CODES = {
+    "insufficient_quota", "billing_hard_limit_reached", "credit_balance_exhausted",
+    "organization_spend_limit_exceeded", "project_spend_limit_exceeded",
+    "organization_usage_limit_exceeded",
+}
+
+
+def _retry_after_seconds(error: Exception) -> float | None:
+    """Server-requested wait from retry-after-ms / retry-after, or None."""
+    if not isinstance(error, httpx.HTTPStatusError):
+        return None
+    headers = error.response.headers
+    try:
+        if "retry-after-ms" in headers:
+            value = float(headers["retry-after-ms"]) / 1000.0
+        elif "retry-after" in headers:
+            value = float(headers["retry-after"])
+        else:
+            return None
+    except ValueError:
+        return None
+    return value if value >= 0 else None
+
+
+def _skips_model_fallback(error: Exception) -> bool:
+    """Errors a cheaper OpenAI model can't fix: no/invalid key, exhausted quota, no network."""
+    if isinstance(error, ValueError) and "invalid_api_key" in str(error):
+        return True
+    if isinstance(error, (httpx.ConnectError, httpx.ConnectTimeout)):
+        return True
+    if isinstance(error, httpx.HTTPStatusError):
+        status = error.response.status_code
+        if status == 401:
+            return True
+        if status == 429 and _openai_error_code(error.response) in _QUOTA_ERROR_CODES:
+            return True
+    return False
 
 
 def _openai_error_code(response: httpx.Response) -> str:
@@ -200,6 +237,8 @@ class Translator:
     DEGRADED_THRESHOLD = 3
     # In degraded mode, use this shorter timeout to fail fast
     DEGRADED_TIMEOUT = 8.0
+    # A final cut off at max_output_tokens is re-asked once with this budget
+    INCOMPLETE_RETRY_TOKENS = 2048
     # Normal timeout for local providers — generous enough for 9B models on mid-range
     # GPUs where prompt processing + generation can take 10-15s per segment.
     LOCAL_TIMEOUT = 30.0
@@ -372,7 +411,10 @@ class Translator:
             if provider not in _CLOUD_PROVIDERS or not self.config.fallback_to_local:
                 raise
 
-            # Cloud fallback: try cheaper models for this provider, then local
+            # Cloud fallback: try cheaper models for this provider, then local.
+            # A missing/invalid key, exhausted quota or no network fails every
+            # model the same way, so go straight to local providers.
+            skip_models = _skips_model_fallback(primary_error)
             if provider == "claude":
                 model_order = _CLAUDE_MODEL_ORDER
                 selected_model = self.config.anthropic_model
@@ -388,7 +430,7 @@ class Translator:
                 idx = -1
 
             # Try each cheaper model (those after the selected one in the order)
-            for model in model_order[idx + 1:]:
+            for model in ([] if skip_models else model_order[idx + 1:]):
                 logger.warning(
                     f"{provider} {selected_model} failed, trying {model}: {primary_error}"
                 )
@@ -540,6 +582,16 @@ class Translator:
                             self.INITIAL_BACKOFF * (self.BACKOFF_FACTOR ** attempt),
                             self.MAX_BACKOFF,
                         )
+                        retry_after = _retry_after_seconds(e)
+                        if retry_after is not None:
+                            if retry_after > self.MAX_BACKOFF:
+                                # A translation that waits this long is stale; let the
+                                # caller's model fallback take over instead.
+                                self._metrics["failures"] += 1
+                                self._metrics["last_error"] = str(e)
+                                self._metrics["last_error_time"] = time.time()
+                                raise
+                            delay = max(delay, retry_after)
                         self._metrics["retries"] += 1
                         logger.warning(
                             f"{provider} request failed (attempt {attempt + 1}/{max_retries + 1}), "
@@ -760,6 +812,12 @@ class Translator:
         if data.get("status") == "incomplete":
             reason = (data.get("incomplete_details") or {}).get("reason", "unknown")
             logger.warning(f"OpenAI {model} response incomplete ({reason})")
+            if reason == "max_output_tokens" and json_mode and max_tokens < self.INCOMPLETE_RETRY_TOKENS:
+                # Truncated JSON is useless; ask once more with room to finish.
+                return await self._call_openai(
+                    system_prompt, user_prompt, temperature, self.INCOMPLETE_RETRY_TOKENS,
+                    json_mode, model_override=model,
+                )
 
         # Extract text: find output item with type "message", then content with type "output_text"
         for item in data.get("output", []):
@@ -915,17 +973,9 @@ class Translator:
         self, transcript: str, direction: str, system_prompt: str,
     ) -> TranslationResult | None:
         """Retry translation with a forceful prompt when passthrough is detected."""
-        if direction == "es_to_en":
-            src, tgt = "Spanish", "English"
-        else:
-            src, tgt = "English", "Spanish"
-
-        forceful_prompt = (
-            f'The following {src} text MUST be translated to {tgt}. '
-            f'Do NOT repeat the {src}. Output ONLY the {tgt} translation.\n\n'
-            f'Text: "{transcript}"\n\n'
-            f'Respond with JSON: {{"corrected": "<corrected {src}>", '
-            f'"translated": "<{tgt} translation>", "confidence": 0.5}}'
+        src_code, tgt_code = parse_direction(direction)
+        forceful_prompt = get_passthrough_retry_prompt(
+            transcript, lang_name(src_code), lang_name(tgt_code),
         )
 
         try:

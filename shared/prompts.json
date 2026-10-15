@@ -6,6 +6,7 @@
   "translator_context_line": "  [{speaker}] {source} → {translated}",
   "translator_no_context": "(none yet)",
   "translator_no_topic": "(no summary yet)",
+  "translator_passthrough_retry": "The following {source_lang} text MUST be translated to {target_lang}. Do NOT repeat the {source_lang}. Output ONLY the {target_lang} translation.\n\nText: \"{transcript}\"\n\nRespond with JSON: {{\"corrected\": \"<corrected {source_lang}>\", \"translated\": \"<{target_lang} translation>\", \"confidence\": 0.5}}",
   "quick_translate": "Translate this {source_lang} to natural {target_lang}. Output ONLY the translation, nothing else.\n\n{text}",
   "topic_summary": "Update the conversation summary. Keep it under 100 words.\nTrack: main topics, key entities, speaking style, domain context.\n\nPrevious summary: {previous_summary}\n\nLatest exchange:\n  [{speaker_label}] {latest_source} → {latest_translation}\n\nUpdated summary (plain text, no JSON):",
   "topic_summary_no_previous": "(start of conversation)",

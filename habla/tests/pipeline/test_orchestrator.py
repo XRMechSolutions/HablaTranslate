@@ -372,6 +372,20 @@ class TestProcessText:
         assert entry["translated"] == "Translated text"
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("marker", ["[translation error]", "[translation timeout]"])
+    async def test_failed_translation_kept_out_of_context_and_topic(self, orchestrator, marker):
+        orchestrator.context_manager.translator.translate = AsyncMock(return_value=TranslationResult(
+            corrected="Hola mundo", translated=f"{marker} Hola mundo", confidence=0.0,
+        ))
+        orchestrator.context_manager._update_topic = AsyncMock()
+
+        exchange = await orchestrator.process_text("Hola mundo")
+
+        assert exchange.translation.startswith(marker)   # still saved and shown
+        assert len(orchestrator.context_manager.recent_exchanges) == 0
+        orchestrator.context_manager._update_topic.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_process_text_sets_speaker_hint(self, orchestrator):
         orchestrator.context_manager.translator.translate = AsyncMock(
             return_value=_make_translation_result(speaker_hint="teacher")

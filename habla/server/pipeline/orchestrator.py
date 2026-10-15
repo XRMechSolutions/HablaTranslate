@@ -29,6 +29,14 @@ import numpy as np
 logger = logging.getLogger("habla.pipeline")
 
 
+_FAILED_TRANSLATION_PREFIXES = ("[translation error]", "[translation timeout]")
+
+
+def _is_failed_translation(result: TranslationResult) -> bool:
+    """True for the fallback result Translator.translate returns when the LLM call failed."""
+    return result.translated.startswith(_FAILED_TRANSLATION_PREFIXES)
+
+
 class PipelineOrchestrator:
     """Coordinates the full translation pipeline: Audio → ASR → Diarization → Translation → Output.
 
@@ -467,19 +475,23 @@ class PipelineOrchestrator:
             detected_language=detected_language,
         )
 
-        # Update context
-        self.context_manager.recent_exchanges.append({
-            "speaker_label": speaker_name,
-            "source": text,
-            "corrected": result.corrected,
-            "translated": result.translated,
-        })
+        # Update context. A failed translation (raw transcript with an error
+        # marker) would only teach the next prompt and the topic summary noise.
+        translation_failed = _is_failed_translation(result)
+        if not translation_failed:
+            self.context_manager.recent_exchanges.append({
+                "speaker_label": speaker_name,
+                "source": text,
+                "corrected": result.corrected,
+                "translated": result.translated,
+            })
 
         # Persist exchange to database
         await self.session_manager.save_exchange(exchange)
 
         # Async topic summary update (fire and forget)
-        asyncio.create_task(self.context_manager._update_topic(result, speaker_name))
+        if not translation_failed:
+            asyncio.create_task(self.context_manager._update_topic(result, speaker_name))
 
         # Notify via callback
         if self._on_translation:

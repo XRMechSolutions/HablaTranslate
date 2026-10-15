@@ -86,3 +86,10 @@ def get_topic_summary_prompt(
         latest_source=latest_source,
         latest_translation=latest_translation,
     )
+
+
+def get_passthrough_retry_prompt(transcript: str, source_lang: str, target_lang: str) -> str:
+    """Forceful re-ask used when the LLM echoed the source instead of translating."""
+    return _t("translator_passthrough_retry").format(
+        source_lang=source_lang, target_lang=target_lang, transcript=transcript,
+    )
