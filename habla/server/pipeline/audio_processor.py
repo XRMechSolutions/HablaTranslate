@@ -213,18 +213,30 @@ class AudioProcessor:
         diarized_segments = []
         if self._diarize_pipeline and segments:
             try:
-                diarize_result = self._diarize_pipeline(wav_path)
+                # Pyannote 4.x requires torchcodec for file-path input, which
+                # doesn't work on Windows.  Pre-load audio as a waveform dict
+                # so Pyannote skips its internal decoder entirely.
+                import torchaudio
+                waveform, sample_rate = torchaudio.load(wav_path)
+                diarize_input = {"waveform": waveform, "sample_rate": sample_rate}
+                diarize_result = self._diarize_pipeline(diarize_input)
+
+                # Pyannote 4.x returns DiarizeOutput; extract the Annotation
+                annotation = getattr(diarize_result, "speaker_diarization", diarize_result)
 
                 # Align diarization with transcription
+                import pandas as pd
                 diarize_segments_raw = []
-                for turn, _, speaker in diarize_result.itertracks(yield_label=True):
+                for turn, _, speaker in annotation.itertracks(yield_label=True):
                     diarize_segments_raw.append({
                         "start": turn.start,
                         "end": turn.end,
                         "speaker": speaker,
                     })
 
-                result_aligned = whisperx.assign_word_speakers(diarize_segments_raw, result)
+                # whisperx 3.8+ expects a DataFrame with iterrows()
+                diarize_df = pd.DataFrame(diarize_segments_raw)
+                result_aligned = whisperx.assign_word_speakers(diarize_df, result)
                 diarized_segments = result_aligned.get("segments", [])
 
             except Exception as e:
