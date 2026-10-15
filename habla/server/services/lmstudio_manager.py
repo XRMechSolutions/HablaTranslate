@@ -69,12 +69,25 @@ class LMStudioManager:
         logger.info("Starting LM Studio: %s", self._config.lmstudio_executable)
 
         port = self._port()
-        self._process = subprocess.Popen(
-            [self._config.lmstudio_executable, "--host", "0.0.0.0", "--port", str(port)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        try:
+            self._process = subprocess.Popen(
+                [self._config.lmstudio_executable, "--host", "0.0.0.0", "--port", str(port)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except OSError as e:
+            # A missing/unlaunchable executable must not take the server down:
+            # health reports LM Studio as down and translation runs degraded.
+            logger.error(
+                "Could not start LM Studio (%s): %s. Set LMSTUDIO_EXECUTABLE in habla/.env "
+                "or start LM Studio yourself.",
+                self._config.lmstudio_executable, e,
+            )
+            self._process = None
+            return
 
         # Drain stdout/stderr on background threads (mirrors C# event handlers)
         threading.Thread(
@@ -155,7 +168,7 @@ class LMStudioManager:
             result = await asyncio.to_thread(
                 subprocess.run,
                 [lms, "ls", "--json"],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
             )
             if result.returncode == 0 and result.stdout.strip():
                 raw = json.loads(result.stdout)
@@ -224,7 +237,7 @@ class LMStudioManager:
             result = await asyncio.to_thread(
                 subprocess.run,
                 [lms, "ls", "--json"],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
             )
             if result.returncode == 0 and result.stdout.strip():
                 best_match = ""
@@ -298,7 +311,10 @@ class LMStudioManager:
            dots that ``Path.stem`` would incorrectly treat as extensions).
         4. Strip GGUF quantization suffixes (``-Q3_K_M``, ``.Q4_K_S``,
            ``-IQ2_XXS``, etc.) so ``.env`` display names match GGUF filenames.
-        5. Lowercase for case-insensitive comparison.
+        5. Strip LM Studio duplicate-instance suffixes (``.i1``, ``-i2``)
+           that may remain after quant stripping (GGUF filenames embed these
+           before the quant suffix, e.g. ``Model.i1-Q4_K_M.gguf``).
+        6. Lowercase for case-insensitive comparison.
         """
         cleaned = re.sub(r":\d+$", "", name)
         basename = cleaned.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
@@ -306,6 +322,9 @@ class LMStudioManager:
             basename = basename[:-5]
         # Strip GGUF quantization suffix (Q3_K_M, Q4_K_S, IQ2_XXS, etc.)
         basename = re.sub(r"[-._][IiQq][Qq]?\d+(_[A-Za-z0-9]+)*$", "", basename)
+        # Strip LM Studio duplicate-instance suffix (.i1, -i1, _i2, etc.)
+        # that may remain after quant stripping (e.g. "model.i1-Q4_K_M" → "model.i1")
+        basename = re.sub(r"[-._]i\d+$", "", basename)
         return basename.lower()
 
     def _port(self) -> int:
@@ -398,7 +417,7 @@ class LMStudioManager:
         try:
             result = subprocess.run(
                 [lms, "ls", "--json"],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
             )
             if result.returncode == 0 and result.stdout.strip():
                 models = json.loads(result.stdout)
@@ -437,7 +456,7 @@ class LMStudioManager:
             result = await asyncio.to_thread(
                 subprocess.run,
                 [lms, "load", filename],
-                capture_output=True, text=True, timeout=60,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
             )
             if result.returncode == 0:
                 logger.info("[lmstudio/cli] OK (display name): %s", filename)
@@ -458,7 +477,7 @@ class LMStudioManager:
             result = await asyncio.to_thread(
                 subprocess.run,
                 [lms, "load", key, "--host", "localhost", "--port", str(port)],
-                capture_output=True, text=True, timeout=60,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
             )
 
             if result.returncode == 0:
@@ -562,7 +581,7 @@ class LMStudioManager:
             result = await asyncio.to_thread(
                 subprocess.run,
                 [lms, "unload", identifier],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
             )
             if result.returncode == 0:
                 self._loaded_models.discard(identifier)
@@ -641,7 +660,7 @@ class LMStudioManager:
             result = await asyncio.to_thread(
                 subprocess.run,
                 [lms, "ps", "--json"],
-                capture_output=True, text=True, timeout=15,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
             )
             if result.returncode == 0 and result.stdout.strip():
                 data = json.loads(result.stdout)

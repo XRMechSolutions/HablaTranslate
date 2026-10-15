@@ -150,6 +150,16 @@ class TestEnsureRunning:
         manager._discover_loaded_models.assert_awaited_once()
         manager.start.assert_not_awaited()
 
+    async def test_start_missing_executable_does_not_raise(self, manager):
+        with patch(
+            "server.services.lmstudio_manager.subprocess.Popen",
+            side_effect=FileNotFoundError(2, "The system cannot find the file specified"),
+        ), patch("server.services.lmstudio_manager.asyncio.sleep", new_callable=AsyncMock) as sleep:
+            await manager.start()
+
+        assert manager._process is None
+        sleep.assert_not_awaited()
+
 
 # ---------------------------------------------------------------------------
 # TestPort
