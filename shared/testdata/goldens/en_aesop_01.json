@@ -1,8 +1,8 @@
 {
   "clip": "en_aesop_01.wav",
   "clip_samples": 744803,
-  "generated_at": "2026-10-15T20:09:52+00:00",
-  "server_commit": "f23598b",
+  "generated_at": "2026-10-15T20:38:12+00:00",
+  "server_commit": "2a5bf66",
   "ffmpeg": "ffmpeg version 8.0.1-full_build-www.gyan.dev Copyright (c) 2000-2025 the FFmpeg developers",
   "asr": {
     "engine": "whisperx",
@@ -74,7 +74,10 @@
       "transcript": "This is a LibriVox recording. All LibriVox recordings are in the public domain. For more information or to volunteer, please visit LibriVox.org.",
       "detected_language": "en",
       "asr_status": "ok",
-      "voted_language": "en"
+      "voted_language": "en",
+      "final_prep_wav": "wav/en_aesop_01/utt_000.wav",
+      "final_prep_sha256": "b8498a7c581f26d67a0cc7684f21170fa2179c02d91d65986c404e872d5c1c4c",
+      "pc_whisper_cpp": "This is a LibreVox recording. All LibreVox recordings are in the public domain. For more information or to volunteer, please visit LibreVox.org."
     },
     {
       "index": 1,
@@ -88,7 +91,10 @@
       "transcript": "Aesop's fables, the fox, and the grapes.",
       "detected_language": "en",
       "asr_status": "ok",
-      "voted_language": "en"
+      "voted_language": "en",
+      "final_prep_wav": "wav/en_aesop_01/utt_001.wav",
+      "final_prep_sha256": "727f718bfb3afc562fa26a4b04a5fcec1ee3c33e8b098fdbfe507b8ee2404bdd",
+      "pc_whisper_cpp": "ASOP's fables, the fox, and the grapes."
     },
     {
       "index": 2,
@@ -102,7 +108,10 @@
       "transcript": "A hungry fox saw some fine bunches of grapes hanging from a vine that was trained along a high trellis, and did his best to reach them by jumping as high as he could into the air.",
       "detected_language": "en",
       "asr_status": "ok",
-      "voted_language": "en"
+      "voted_language": "en",
+      "final_prep_wav": "wav/en_aesop_01/utt_002.wav",
+      "final_prep_sha256": "6226e8064c0490b28b4fabf84ef0930e25c060e51b85135f1ec91239d127d050",
+      "pc_whisper_cpp": "A hungry fox saw some fine bunches of grapes hanging from a vine that was trained along a high trellis, and did his best to reach them by jumping as high as he could into the air."
     },
     {
       "index": 3,
@@ -116,7 +125,10 @@
       "transcript": "But it was all in vain, for they were just out of reach. So he gave up trying, and walked away with an air of dignity and unconcern, remarking, I thought those grapes were ripe, but I see now they are quite sour.",
       "detected_language": "en",
       "asr_status": "ok",
-      "voted_language": "en"
+      "voted_language": "en",
+      "final_prep_wav": "wav/en_aesop_01/utt_003.wav",
+      "final_prep_sha256": "167a0085ac53a719ce3b8e2dd58426e11587aa311b0b89d5f89be0015b32c7e3",
+      "pc_whisper_cpp": "But it was all in vain, for they were just out of reach. So he gave up trying, and walked away with an air of dignity and unconcern, remarking, I thought those grapes were ripe, but I see now they are quite sour."
     },
     {
       "index": 4,
@@ -130,7 +142,10 @@
       "transcript": "End of Fox and the Grapes.",
       "detected_language": "en",
       "asr_status": "ok",
-      "voted_language": "en"
+      "voted_language": "en",
+      "final_prep_wav": "wav/en_aesop_01/utt_004.wav",
+      "final_prep_sha256": "0a26dd0f8f90b39d272a8c9f5a7c827546746235fa6a516a3ec2ebbfeb1cc6ff",
+      "pc_whisper_cpp": "End of Fox and the Grapes."
     }
   ],
   "partials": [
@@ -390,5 +405,32 @@
       "transcript": "End of Fox.",
       "language": "en"
     }
-  ]
+  ],
+  "pc_whisper_cpp_engine": {
+    "whisper_cpp": "v1.9.5",
+    "params": "FINAL (asr design.md section 5)",
+    "flags": [
+      "-bs",
+      "5",
+      "-bo",
+      "5",
+      "-tp",
+      "0.0",
+      "-tpi",
+      "0.0",
+      "-et",
+      "0.0",
+      "-lpt",
+      "-1.0",
+      "-nth",
+      "1.0",
+      "-mc",
+      "0",
+      "-nt",
+      "-sns",
+      "-t",
+      "4"
+    ],
+    "model": "ggml-small-q8_0"
+  }
 }

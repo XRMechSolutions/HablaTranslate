@@ -1,8 +1,8 @@
 {
   "clip": "mixed_es_en_es.wav",
   "clip_samples": 665600,
-  "generated_at": "2026-10-15T20:10:16+00:00",
-  "server_commit": "f23598b",
+  "generated_at": "2026-10-15T20:38:45+00:00",
+  "server_commit": "2a5bf66",
   "ffmpeg": "ffmpeg version 8.0.1-full_build-www.gyan.dev Copyright (c) 2000-2025 the FFmpeg developers",
   "asr": {
     "engine": "whisperx",
@@ -83,7 +83,10 @@
       "transcript": "vayas usted allá a Presumidilla, dijo Confuría aquella, a lo que respondió las tu tardilla, sí que es muy grande usted, muy grande y bella,",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/mixed_es_en_es/utt_000.wav",
+      "final_prep_sha256": "387a645116d75ba4e9eaf803948181d4353967751c8870fe490b7db199a1916d",
+      "pc_whisper_cpp": "vayas usted allá a Presumidilla, dijo Confuria aquella, a lo que respondió las tu tardilla, sí que es muy grande usted, muy grande y bella,"
     },
     {
       "index": 1,
@@ -97,7 +100,10 @@
       "transcript": "Here, please visit LibriVox.org.",
       "detected_language": "en",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/mixed_es_en_es/utt_001.wav",
+      "final_prep_sha256": "388feb6e3d2020f1ef2a6162f04cb5698bd11608e111d6c61bb56f6defca4e27",
+      "pc_whisper_cpp": "Here, please visit LibriVox.org."
     },
     {
       "index": 2,
@@ -111,7 +117,10 @@
       "transcript": "Recorded by Beth Dudek.",
       "detected_language": "en",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/mixed_es_en_es/utt_002.wav",
+      "final_prep_sha256": "42adb2e2b6ddb00fd786732dfe96e7c28ac0d7a24131b7269b408e580c295afa",
+      "pc_whisper_cpp": "Recorded by Beth Dudek."
     },
     {
       "index": 3,
@@ -125,7 +134,10 @@
       "transcript": "Esaps fables, the dog and the sow.",
       "detected_language": "en",
       "asr_status": "ok",
-      "voted_language": "en"
+      "voted_language": "en",
+      "final_prep_wav": "wav/mixed_es_en_es/utt_003.wav",
+      "final_prep_sha256": "038541c161c3222233a0521de89d1a947fa0678a25818c4d595a70d2cc6465e9",
+      "pc_whisper_cpp": "Esaps fables, the dog and the sow."
     },
     {
       "index": 4,
@@ -139,7 +151,10 @@
       "transcript": "Nadie tilde. Preocupar un puesto tan humilde.",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "en"
+      "voted_language": "en",
+      "final_prep_wav": "wav/mixed_es_en_es/utt_004.wav",
+      "final_prep_sha256": "53d243cd62d6a23b14b0a3cc83d736dd6d14f5484438dccb0ae000db249361ae",
+      "pc_whisper_cpp": "Adietilde. Preocupar un puesto tan humilde."
     },
     {
       "index": 5,
@@ -153,7 +168,10 @@
       "transcript": "Si no soy yo tamaña, como usted mi señora la montaña, usted no es tan pequeña como yo, ni a gimnástica me enseña, yo negar no imagino",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "en"
+      "voted_language": "en",
+      "final_prep_wav": "wav/mixed_es_en_es/utt_005.wav",
+      "final_prep_sha256": "9c40f330f229ad103529bcef75083caa1c02a880cbff9170612edb2e42bb3cc6",
+      "pc_whisper_cpp": "Si no soy yo tamaña, como usted, mi señora la montaña, usted no es tan pequeña como yo, ni a gimnástica me enseña, yo negar no imagino"
     }
   ],
   "partials": [
@@ -357,5 +375,32 @@
       "transcript": "Si no soy yo tamaña como usted mi señora la montaña usted no es tan pequeña como yo ni a gimnástica me enseña yo negarnos",
       "language": "en"
     }
-  ]
+  ],
+  "pc_whisper_cpp_engine": {
+    "whisper_cpp": "v1.9.5",
+    "params": "FINAL (asr design.md section 5)",
+    "flags": [
+      "-bs",
+      "5",
+      "-bo",
+      "5",
+      "-tp",
+      "0.0",
+      "-tpi",
+      "0.0",
+      "-et",
+      "0.0",
+      "-lpt",
+      "-1.0",
+      "-nth",
+      "1.0",
+      "-mc",
+      "0",
+      "-nt",
+      "-sns",
+      "-t",
+      "4"
+    ],
+    "model": "ggml-small-q8_0"
+  }
 }

@@ -15,20 +15,49 @@ import argparse
 import json
 import sys
 import asyncio
+import unicodedata
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Sequence, Tuple
 from dataclasses import dataclass, asdict
 import time
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-try:
-    from jiwer import wer as calculate_wer
-except ImportError:
-    print("Error: jiwer library not installed")
-    print("Install with: pip install jiwer")
-    sys.exit(1)
+
+def normalize_for_wer(text: str) -> str:
+    """The D6 parity normalization (asr design.md section 11), shared with A5.
+
+    NFC, lowercase, every Unicode punctuation code point (category P*) -> space,
+    whitespace collapsed. The Android WER uses the same steps so PC and phone
+    numbers compare.
+    """
+    text = unicodedata.normalize("NFC", text).lower()
+    text = "".join(" " if unicodedata.category(ch).startswith("P") else ch for ch in text)
+    return " ".join(text.split())
+
+
+def word_errors(reference: Sequence[str], hypothesis: Sequence[str]) -> int:
+    """Word-level Levenshtein distance (substitutions + deletions + insertions)."""
+    prev = list(range(len(hypothesis) + 1))
+    for i, ref_word in enumerate(reference, 1):
+        cur = [i] + [0] * len(hypothesis)
+        for j, hyp_word in enumerate(hypothesis, 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ref_word != hyp_word))
+        prev = cur
+    return prev[-1]
+
+
+def calculate_wer(reference: str, hypothesis: str) -> float:
+    """WER on whitespace-split words, no normalization (what jiwer.wer computes).
+
+    An empty reference has no defined WER; it scores 0.0 against an empty
+    hypothesis and 1.0 otherwise.
+    """
+    ref, hyp = reference.split(), hypothesis.split()
+    if not ref:
+        return 0.0 if not hyp else 1.0
+    return word_errors(ref, hyp) / len(ref)
 
 
 @dataclass

@@ -80,6 +80,9 @@ habla/data/audio/*.opus
 habla/data/audio/*.webm
 habla/data/audio/*.mp3
 
+# Post-FinalPrep WAVs written by habla/scripts/make_goldens.py (regenerable)
+shared/testdata/goldens/wav/
+
 # Benchmark audio samples
 habla/tests/benchmark/audio_samples/
 habla/tests/benchmark/results/

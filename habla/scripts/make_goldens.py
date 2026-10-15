@@ -9,16 +9,21 @@ actually does, not a re-implementation of it.
 
 Clips: shared/testdata/clips/*.wav (16 kHz mono PCM16; public-domain sources
 listed in shared/testdata/clips/sources.json).
-Output: shared/testdata/goldens/<clip>.json
+Output: shared/testdata/goldens/<clip>.json, plus (ASR runs only) the
+post-FinalPrep WAV WhisperX read for each utterance at
+<wav-dir>/<clip>/utt_NNN.wav (default shared/testdata/goldens/wav/, gitignored),
+referenced from the golden by `final_prep_wav` and `final_prep_sha256`.
 
 Usage (from habla/):
     .venv/Scripts/python.exe scripts/make_goldens.py            # all clips
-    .venv/Scripts/python.exe scripts/make_goldens.py --no-asr   # VAD only (no GPU)
+    .venv/Scripts/python.exe scripts/make_goldens.py --no-asr   # VAD only (no GPU, no WAVs)
     .venv/Scripts/python.exe scripts/make_goldens.py --clip mixed_es_en_es
+    .venv/Scripts/python.exe scripts/make_goldens.py --wav-dir D:/tmp/goldens_wav
 """
 
 import argparse
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -189,17 +194,69 @@ def load_asr(cfg: AppConfig) -> AudioProcessor:
     return ap
 
 
-async def run_asr(ap: AudioProcessor, segments: list[dict], partials: list[dict]) -> None:
-    """Final pass per merged utterance (normalize with ffmpeg, detect, transcribe) and quick pass per partial."""
+def sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def golden_relpath(path: Path, golden_dir: Path) -> str:
+    """Path as stored in a golden: relative to the golden JSON, forward slashes.
+
+    A --wav-dir on another drive has no relative form, so it is stored absolute.
+    """
+    try:
+        return Path(os.path.relpath(path, golden_dir)).as_posix()
+    except ValueError:
+        return path.resolve().as_posix()
+
+
+async def final_prep(ap: AudioProcessor, raw: Path) -> Path | None:
+    """Run the server's FinalPrep (_normalize_wav); None when ffmpeg failed.
+
+    _normalize_wav falls back to the untouched input when ffmpeg fails, so an
+    unchanged file means the prep did not run. A golden built from that audio
+    would not describe FinalPrep, so the caller marks the utterance instead.
+    """
+    before = sha256_file(raw)
+    try:
+        norm = Path(await ap._normalize_wav(str(raw)))
+    except OSError as e:  # ffmpeg not installed / not on PATH
+        logger.warning("FinalPrep could not start ffmpeg for %s: %s", raw.name, e)
+        return None
+    if not norm.exists() or sha256_file(norm) == before:
+        logger.warning("FinalPrep (ffmpeg) failed for %s", raw.name)
+        return None
+    return norm
+
+
+async def run_asr(ap: AudioProcessor, segments: list[dict], partials: list[dict],
+                  wav_dir: Path, golden_dir: Path) -> None:
+    """Final pass per merged utterance (normalize with ffmpeg, detect, transcribe) and quick pass per partial.
+
+    Each utterance's post-FinalPrep WAV is copied to wav_dir/utt_NNN.wav before
+    the temp dir goes away; the golden records its path (relative to
+    golden_dir) and sha256.
+    """
+    wav_dir.mkdir(parents=True, exist_ok=True)
+    for stale in wav_dir.glob("utt_*.wav"):
+        stale.unlink()
     tmp = Path(tempfile.mkdtemp(prefix="habla_goldens_"))
     try:
         for seg in segments:
-            raw = str(tmp / f"seg_{seg['index']:03d}.wav")
-            write_wav(raw, seg["pcm"])
-            norm = await ap._normalize_wav(raw)
-            text, _, detected, reason = await asyncio.to_thread(ap._run_asr_and_diarize, norm)
+            raw = tmp / f"seg_{seg['index']:03d}.wav"
+            write_wav(str(raw), seg["pcm"])
+            norm = await final_prep(ap, raw)
+            if norm is None:
+                seg.update({"transcript": None, "detected_language": None, "asr_status": "prep_failed",
+                            "voted_language": ap._last_detected_language,
+                            "final_prep_wav": None, "final_prep_sha256": None})
+                continue
+            kept = wav_dir / f"utt_{seg['index']:03d}.wav"
+            shutil.copyfile(norm, kept)
+            text, _, detected, reason = await asyncio.to_thread(ap._run_asr_and_diarize, str(norm))
             seg.update({"transcript": text, "detected_language": detected, "asr_status": reason,
-                        "voted_language": ap._last_detected_language})
+                        "voted_language": ap._last_detected_language,
+                        "final_prep_wav": golden_relpath(kept, golden_dir),
+                        "final_prep_sha256": sha256_file(kept)})
         for i, part in enumerate(partials):
             path = str(tmp / f"partial_{i:03d}.wav")
             write_wav(path, prepare_partial_pcm(part["pcm"]))
@@ -240,7 +297,8 @@ def strip_pcm(items: list[dict]) -> list[dict]:
     return [{k: v for k, v in it.items() if k != "pcm"} for it in items]
 
 
-async def process_clip(path: Path, cfg: AppConfig, ap: AudioProcessor | None, out_dir: Path) -> dict:
+async def process_clip(path: Path, cfg: AppConfig, ap: AudioProcessor | None, out_dir: Path,
+                       wav_dir: Path) -> dict:
     audio = read_wav(path)
     if ap is not None:
         ap._last_detected_language = None
@@ -248,7 +306,7 @@ async def process_clip(path: Path, cfg: AppConfig, ap: AudioProcessor | None, ou
     segments, partials, noise_floor = await run_vad(audio, cfg)
     utterances = merge_segments(segments)
     if ap is not None:
-        await run_asr(ap, utterances, partials)
+        await run_asr(ap, utterances, partials, wav_dir / path.stem, out_dir)
     translate_model = await run_translation(cfg, utterances) if ap is not None else None
 
     profile = shared_assets.asr_profile()
@@ -278,7 +336,10 @@ async def process_clip(path: Path, cfg: AppConfig, ap: AudioProcessor | None, ou
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--clip", help="clip stem to process (default: all)")
-    parser.add_argument("--no-asr", action="store_true", help="VAD only; skip WhisperX and translation")
+    parser.add_argument("--no-asr", action="store_true",
+                        help="VAD only; skip WhisperX, translation and the FinalPrep WAVs")
+    parser.add_argument("--wav-dir", type=Path,
+                        help="where post-FinalPrep WAVs go (default: shared/testdata/goldens/wav/)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.WARNING)
@@ -291,11 +352,12 @@ async def main() -> int:
         return 1
     out_dir = testdata / "goldens"
     out_dir.mkdir(parents=True, exist_ok=True)
+    wav_dir = args.wav_dir or out_dir / "wav"
 
     cfg = load_config()
     ap = None if args.no_asr else load_asr(cfg)
     for clip in clips:
-        g = await process_clip(clip, cfg, ap, out_dir)
+        g = await process_clip(clip, cfg, ap, out_dir, wav_dir)
         langs = [u.get("detected_language") for u in g["utterances"]]
         print(f"{clip.stem}: {len(g['segments'])} VAD segments -> {len(g['utterances'])} utterances, "
               f"{len(g['partials'])} partials, languages={langs}")

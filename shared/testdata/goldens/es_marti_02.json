@@ -1,8 +1,8 @@
 {
   "clip": "es_marti_02.wav",
   "clip_samples": 1030496,
-  "generated_at": "2026-10-15T20:10:05+00:00",
-  "server_commit": "f23598b",
+  "generated_at": "2026-10-15T20:38:32+00:00",
+  "server_commit": "2a5bf66",
   "ffmpeg": "ffmpeg version 8.0.1-full_build-www.gyan.dev Copyright (c) 2000-2025 the FFmpeg developers",
   "asr": {
     "engine": "whisperx",
@@ -218,7 +218,10 @@
       "transcript": "de la edad de oro.",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/es_marti_02/utt_000.wav",
+      "final_prep_sha256": "5815fe98ac0f6cd5e088cb90153f13995945d63362febed53265368264436c97",
+      "pc_whisper_cpp": "de la edad de oro."
     },
     {
       "index": 1,
@@ -232,7 +235,10 @@
       "transcript": "Esta es una grabación del Librebox.",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/es_marti_02/utt_001.wav",
+      "final_prep_sha256": "8111364a67ad839442d766cb853c52a7924da6bc2f1e7e7fc1f25e1689d7893a",
+      "pc_whisper_cpp": "Esta es una grabación del Librebox."
     },
     {
       "index": 2,
@@ -246,7 +252,10 @@
       "transcript": "Todas las grabaciones de Librebox son del dominio público.",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/es_marti_02/utt_002.wav",
+      "final_prep_sha256": "d558b12725e77ae4d770ac9f22ee7e3db07f6c4be2a2f12ec8bb05766cdf780e",
+      "pc_whisper_cpp": "Todas las grabaciones de Librebox son del dominio público."
     },
     {
       "index": 3,
@@ -260,7 +269,10 @@
       "transcript": "para más información o para ser voluntario.",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/es_marti_02/utt_003.wav",
+      "final_prep_sha256": "2c696cf56f23ac2e605aaad5269a2f9c43517663b939473b34c0464d62c0a2bd",
+      "pc_whisper_cpp": "para más información o para ser voluntario."
     },
     {
       "index": 4,
@@ -274,7 +286,10 @@
       "transcript": "Por favor visite LibriVox.org",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/es_marti_02/utt_004.wav",
+      "final_prep_sha256": "dff2bf235c0314788dbcb345de99e2b9a65cd415b239041eef38494ea0b978e5",
+      "pc_whisper_cpp": "Por favor visite LibriVox.org"
     },
     {
       "index": 5,
@@ -288,7 +303,10 @@
       "transcript": "grabado por",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/es_marti_02/utt_005.wav",
+      "final_prep_sha256": "1d304e912a1b860d25359d96c525279ab4f4c94af7e95bca0e45e5150f2337bd",
+      "pc_whisper_cpp": "grabado por"
     },
     {
       "index": 6,
@@ -302,7 +320,10 @@
       "transcript": "Chantal Torres.",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/es_marti_02/utt_006.wav",
+      "final_prep_sha256": "3b0f60cca00c723212d5f986b5e903a0f3f423ab409d319e3d71babbf550bdc3",
+      "pc_whisper_cpp": "Chantal Torres."
     },
     {
       "index": 7,
@@ -316,7 +337,10 @@
       "transcript": "La Edad de Oro",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/es_marti_02/utt_007.wav",
+      "final_prep_sha256": "b1a1e6ef65093996d73ec240dfadad9dea5b666a263c2ec9bd80239fa0995ce5",
+      "pc_whisper_cpp": "La Edad de Oro."
     },
     {
       "index": 8,
@@ -330,7 +354,10 @@
       "transcript": "Por José Martí, dos milagros.",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/es_marti_02/utt_008.wav",
+      "final_prep_sha256": "e968114d3f59d768768dd127f612c0fbeca2ee23337070a08819fd27be2d149c",
+      "pc_whisper_cpp": "por José Martí. Dos milagros."
     },
     {
       "index": 9,
@@ -344,7 +371,10 @@
       "transcript": "iba a un niño travieso casando mariposas.",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/es_marti_02/utt_009.wav",
+      "final_prep_sha256": "e3679cddf811fb83d03ef46ee195717a8eb174dd9de1d1c6d0a388d6fa57ae18",
+      "pc_whisper_cpp": "iba a un niño travieso cazando mariposas"
     },
     {
       "index": 10,
@@ -358,7 +388,10 @@
       "transcript": "Las casabel bribón les abon beso.",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/es_marti_02/utt_010.wav",
+      "final_prep_sha256": "1843c633741ce9887fca33a3bad7059a1a20bce8f0b47d04de46439189b71539",
+      "pc_whisper_cpp": "Las casabas el bribón les abon beso."
     },
     {
       "index": 11,
@@ -372,7 +405,10 @@
       "transcript": "y después la soltaba entre las rosas.",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/es_marti_02/utt_011.wav",
+      "final_prep_sha256": "a48045a1c11f2d97919a7f6bf7501cb8948186249bd3b8d0494da68eff979144",
+      "pc_whisper_cpp": "y después la soltaba entre las rosas."
     },
     {
       "index": 12,
@@ -386,7 +422,10 @@
       "transcript": "por tierra, en un estero.",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/es_marti_02/utt_012.wav",
+      "final_prep_sha256": "044e598e7e7caaad9e6e1576157cefe12fc3ec407dbb20bcc0f6ecf58642743d",
+      "pc_whisper_cpp": "por tierra, en un estero."
     },
     {
       "index": 13,
@@ -400,7 +439,10 @@
       "transcript": "Estaba un cicomoro.",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/es_marti_02/utt_013.wav",
+      "final_prep_sha256": "78d2b6ffc5c7e7d233b2a4f14bfa244a6cc0a709b4d34da021d6381983423a86",
+      "pc_whisper_cpp": "estaba un cicomoro"
     },
     {
       "index": 14,
@@ -414,7 +456,10 @@
       "transcript": "Le da un rayo de sol y del madero.",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/es_marti_02/utt_014.wav",
+      "final_prep_sha256": "129cccec7fe4e7018c1640a93914791d0403ab2bfbcff5897e190f9e491b2d7b",
+      "pc_whisper_cpp": "Le da un rayo de sol y del madero."
     },
     {
       "index": 15,
@@ -428,7 +473,10 @@
       "transcript": "Muerto.",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/es_marti_02/utt_015.wav",
+      "final_prep_sha256": "6d005e741495506a8d40e56945d26d2e33079b9fe8b9d8cc76f9c44f23ce33e7",
+      "pc_whisper_cpp": "muerto"
     },
     {
       "index": 16,
@@ -442,7 +490,10 @@
       "transcript": "sale volando una vez de oro.",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/es_marti_02/utt_016.wav",
+      "final_prep_sha256": "796fe7f0c2561d72e2b4e7616f0f4c98146c23f7dab4b9f4103d7b3fe5343731",
+      "pc_whisper_cpp": "sal volando una vez de oro"
     },
     {
       "index": 17,
@@ -456,7 +507,10 @@
       "transcript": "Finde dos milagros.",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/es_marti_02/utt_017.wav",
+      "final_prep_sha256": "542944d69a6dd96e07acaa32ab17674d94c13df0072d7867f944a038fff846d8",
+      "pc_whisper_cpp": "Finde dos milagros."
     },
     {
       "index": 18,
@@ -470,7 +524,10 @@
       "transcript": "grabado por Chantal Torres",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/es_marti_02/utt_018.wav",
+      "final_prep_sha256": "eeba85bcab90f8c43424fe90c47f899b1572cf3a19cd6fd25271c8037d56e6dd",
+      "pc_whisper_cpp": "grabado por Chantal Torres"
     },
     {
       "index": 19,
@@ -484,7 +541,10 @@
       "transcript": "la edad de oro.",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/es_marti_02/utt_019.wav",
+      "final_prep_sha256": "7ab609670b1fd1381a73a900e64a288c66e4b801b19be418034e7a68fdc07ab4",
+      "pc_whisper_cpp": "La Edad de Oro"
     },
     {
       "index": 20,
@@ -498,7 +558,10 @@
       "transcript": "Por José Martí.",
       "detected_language": "es",
       "asr_status": "ok",
-      "voted_language": "es"
+      "voted_language": "es",
+      "final_prep_wav": "wav/es_marti_02/utt_020.wav",
+      "final_prep_sha256": "3ab2e7094dcde1ff76a42745dafcd53de7641c887793b76047164f9978b2791b",
+      "pc_whisper_cpp": "Por José Martí."
     }
   ],
   "partials": [
@@ -734,5 +797,32 @@
       "transcript": "por José Martí.",
       "language": "es"
     }
-  ]
+  ],
+  "pc_whisper_cpp_engine": {
+    "whisper_cpp": "v1.9.5",
+    "params": "FINAL (asr design.md section 5)",
+    "flags": [
+      "-bs",
+      "5",
+      "-bo",
+      "5",
+      "-tp",
+      "0.0",
+      "-tpi",
+      "0.0",
+      "-et",
+      "0.0",
+      "-lpt",
+      "-1.0",
+      "-nth",
+      "1.0",
+      "-mc",
+      "0",
+      "-nt",
+      "-sns",
+      "-t",
+      "4"
+    ],
+    "model": "ggml-small-q8_0"
+  }
 }
