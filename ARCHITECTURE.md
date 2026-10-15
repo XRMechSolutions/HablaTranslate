@@ -11,13 +11,13 @@ Habla puts an LLM in the middle. The LLM sees the last 10 exchanges of conversat
 ## System Overview
 
 ```
-Phone (Chrome PWA)                    MSI Laptop (RTX 3060, 12GB VRAM)
+Phone (Chrome PWA)                    Windows PC (NVIDIA GPU, 8GB+)  
 ┌──────────────┐     Tailscale VPN    ┌─────────────────────────────────┐
 │ Mic → Opus   │ ──── WebSocket ────→ │ ffmpeg → Silero VAD → WhisperX │
 │              │                      │   → Pyannote → LLM → DB        │
 │ UI ← JSON   │ ←─── WebSocket ────  │                                 │
 └──────────────┘                      └─────────────────────────────────┘
-     ~20MB/hr                              ~5GB VRAM steady state
+     ~20MB/hr                              ~1GB VRAM (WhisperX small)
 ```
 
 The owner accesses the server from an Android phone over Tailscale. The PWA client captures Opus audio and streams it over a single WebSocket. The server decodes, segments, transcribes, diarizes, translates, and returns polished results as JSON. All ML models stay loaded — no per-request loading.
@@ -107,7 +107,7 @@ Each module has a detailed architecture doc covering current state, design ratio
 | Component | Technology | Runs On | VRAM |
 |-----------|-----------|---------|------|
 | ASR | WhisperX Small | GPU | ~1GB |
-| Translation | Qwen3 4B Q3_K_M via Ollama | GPU | ~2.5GB |
+| Translation | OpenAI (gpt-5.4-mini finals, gpt-6-luna partials) by default; LM Studio / Ollama / Claude optional | Cloud (local LLMs: GPU) | 0 (local: ~2.5GB) |
 | Diarization | Pyannote 3.1 | CPU | 0 |
 | VAD | Silero VAD | CPU | 0 |
 | Idiom detection | Regex pattern DB + LLM | CPU | 0 |

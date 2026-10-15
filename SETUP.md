@@ -8,9 +8,11 @@ Complete checklist for getting Habla running on a new Windows machine.
 
 ## Prerequisites
 
-### 1. Python 3.11+
+### 1. Python 3.12 (or uv)
 
-Install from [python.org](https://www.python.org/downloads/) or the Microsoft Store. Ensure "Add to PATH" is checked.
+`setup.bat` creates `habla\.venv` with Python 3.12. If [uv](https://docs.astral.sh/uv/) is installed
+it fetches 3.12 for you; otherwise install Python 3.12 from [python.org](https://www.python.org/downloads/).
+Packages come from `hablaequirements.lock` (a pinned, known-good set including CUDA PyTorch).
 
 ### 2. NVIDIA Drivers + CUDA Toolkit
 
@@ -22,7 +24,7 @@ Verify: `nvidia-smi` should show your GPU.
 
 ### 3. PyTorch with CUDA
 
-The `requirements.txt` installs PyTorch, but it may default to CPU-only. Install the CUDA version explicitly:
+`setup.bat` installs it from `requirements.lock`. To do it by hand inside the venv:
 
 ```
 pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu126
@@ -47,7 +49,11 @@ Install from [tailscale.com/download](https://tailscale.com/download). Sign in w
 
 ### 6. LLM Provider (pick one)
 
-**LM Studio** (default):
+**OpenAI** (default): put `OPENAI_API_KEY` in `habla/.env`. Finals use `gpt-5.4-mini`, partials
+`gpt-6-luna` (see `shared/models.json` for prices). Without a key, translation falls back to a
+running LM Studio or Ollama.
+
+**LM Studio** (local, set `LLM_PROVIDER=lmstudio`):
 - Install from [lmstudio.ai](https://lmstudio.ai)
 - **Known compatible versions:** Habla uses the OpenAI-compatible API (`/v1/chat/completions`, `/v1/models`). Any LM Studio version with this API works. Tested with LM Studio 0.3.x. Versions 0.2.x and earlier may have different API behavior.
 - Download your translation models (GGUF format). Recommended:

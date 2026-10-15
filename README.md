@@ -1,102 +1,117 @@
-# Habla — Real-Time Bidirectional Speech Translation
+# Habla: live Spanish ⇄ English speech translation
 
-Self-hosted Spanish ⇄ English speech translator built for noisy classrooms, live conversations, and language learning — where Google Translate gives up.
+Habla listens to a conversation or a classroom, transcribes each speaker turn, and translates it
+with an LLM that sees the recent conversation, so it can fix speech-recognition mistakes and
+translate idioms by meaning instead of word for word. It flags idioms, slang and false friends as
+it goes and saves them for study.
 
-## Why Habla?
+I built it because Google Translate's live mode kept failing me in Spanish classes: it passes
+Spanish through untranslated, mangles idioms, and gives up on quiet or noisy speech.
 
-Google Translate's live speech mode passes Spanish through untranslated, butchers idioms, gives up on complex sentences, and badly mishandles quiet speech and noisy backgrounds. Habla uses an LLM-in-the-middle architecture that sees conversation context and uses reasoning to fix ASR errors, handle idioms by meaning, and infer what was *meant* rather than transcribing what was *heard*.
+There are two parts:
 
-## Features
+- **Server** (`habla/`, working): a Python/FastAPI service on a PC with an NVIDIA GPU. A phone
+  or browser streams microphone audio to it over WebSocket.
+- **Android app** (`android/`, in progress): the same pipeline running on the phone itself, with
+  no server. Only the translation calls leave the device, using the user's own OpenAI key. See
+  [Android status](#android-status).
 
-- **Real-time bidirectional translation** — Spanish ⇄ English with live partial results during speech
-- **Speaker diarization** — identifies and labels different speakers in conversation
-- **Idiom detection** — dual-layer system: fast regex pattern DB + LLM catches novel phrases
-- **Vocabulary capture** — save idioms, corrections, and interesting constructions for study
-- **Classroom mode** — detects teacher corrections, flags vocab for language learners
-- **Mobile-first PWA** — works on your phone over Tailscale VPN
-- **Text-only fallback** — works without a microphone for typed translation
-
-## Architecture
-
-| Component | Model | Where | VRAM |
-|-----------|-------|-------|------|
-| ASR | WhisperX Small | GPU | ~1 GB |
-| Diarization | Pyannote 3.1 | CPU | 0 |
-| Translation | Qwen3 4B Q3_K_M (Ollama) | GPU | ~2.5 GB |
-| VAD | Silero | CPU | 0 |
-| Idiom DB | Regex patterns | CPU | 0 |
-| **Total** | | | **~5 GB** |
-
-Runs comfortably on a single RTX 3060 (12 GB) with ~7 GB headroom for stability.
+## How it works
 
 ```
-Browser Audio (Opus) → WebSocket → ffmpeg → Silero VAD
-  → WhisperX ASR → Pyannote Diarization → Ollama LLM → WebSocket → Browser
+mic audio -> Silero VAD (speech segments + ~1 s partial snapshots)
+  partials: bandpass + gain -> Whisper quick pass -> quick translation (small, cheap model)
+  finals:   highpass/lowpass + dynaudnorm -> detect language -> Whisper (beam 5)
+            -> idiom pattern scan + LLM translation (JSON) -> merge -> history
 ```
 
-## Quick Start
+- **Two-speed output.** Partial transcripts and rough translations show up while someone is still
+  talking. The final, corrected version replaces them when they pause.
+- **Language per turn.** Each finished segment gets its own language detection (limited to the
+  supported languages), so a back-and-forth conversation that alternates Spanish and English is
+  transcribed correctly turn by turn.
+- **Shared tuning.** Prompts, VAD/ASR constants, idiom patterns, the language list and the cloud
+  model table live in [`shared/`](shared/). The server reads them at startup and the Android app
+  packages the same files, so a tuning change lands on both.
+- **Reference outputs.** `habla/scripts/make_goldens.py` runs public-domain test clips
+  (`shared/testdata/clips/`, LibriVox) through the server and records segment boundaries,
+  transcripts and detected languages. The Android port is tested against those files.
 
-### Prerequisites
+| Part | Server | Android (planned) |
+|---|---|---|
+| VAD | Silero (PyTorch) | Silero (ONNX Runtime) |
+| ASR | WhisperX `small`, int8, CUDA | whisper.cpp `small` (q8_0), NDK |
+| Diarization | Pyannote (CPU) | none in v1 |
+| Translation | OpenAI by default; LM Studio, Ollama or Claude also work | OpenAI, user's own key |
+| Storage | SQLite | SQLite (SQLDelight) |
 
-- **NVIDIA GPU** with 12+ GB VRAM and recent drivers
-- **Python 3.11+**
-- **CUDA Toolkit 12.4+**
-- **ffmpeg** — `winget install ffmpeg`
-- **Ollama** — [ollama.com](https://ollama.com) — then `ollama pull qwen3:4b`
-- **HuggingFace token** — [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) (free, needed for Pyannote diarization)
+## Server quick start
 
-### Setup
-
-Run the setup script as Administrator (checks prerequisites, installs dependencies, downloads models):
+Needs Windows, an NVIDIA GPU (8 GB is enough for the default setup), ffmpeg on `PATH`, and either
+Python 3.12 or [uv](https://docs.astral.sh/uv/).
 
 ```
-setup.bat
+setup.bat          :: creates habla\.venv, installs the pinned packages, writes habla\.env
+start-habla.bat    :: starts the server
 ```
 
-See [SETUP.md](SETUP.md) for the full walkthrough and manual steps.
+Then put your keys in `habla\.env` (see [`habla/.env.example`](habla/.env.example)):
 
-### Run
+- `OPENAI_API_KEY`: translation. Finals use `gpt-5.4-mini` and partials use `gpt-6-luna`. My
+  estimate is about $0.01 per minute of conversation; it hasn't been measured yet. Without a key
+  the server falls back to a local LM Studio or Ollama model if one is running.
+- `HF_TOKEN`: optional, enables speaker labels (Pyannote).
 
-```
-start-habla.bat
-```
+Open `https://<your-tailscale-hostname>:8002` on a phone (Tailscale gives you HTTPS, which the
+browser needs for the microphone) or `http://localhost:8002` on the PC.
+[SETUP.md](SETUP.md) has the full walkthrough. A Docker setup is in `habla/docker-compose.yml`.
 
-Open `https://<your-tailscale-hostname>:8002` on your phone or PC.
+Tests: `cd habla && .venv\Scripts\python.exe -m pytest` (about 990 tests, no GPU needed).
 
-### Docker Alternative
+## Android status
 
-```bash
-export HF_TOKEN=hf_your_token_here
-cd habla && docker compose up
-```
+This is being built now. The planning is done (research, module designs, task graph). What's
+decided:
 
-## Usage
+- Runs fully on the phone: audio capture, VAD, Whisper and history. Only translation goes to
+  OpenAI.
+- **No keys ship in the app.** The user enters their own key in Settings. It's stored encrypted
+  with a key from the Android Keystore, and CI fails any build where a key string turns up inside
+  the APK.
+- Port, don't reinvent: each Kotlin component names the server function it copies and is tested
+  against the server's reference outputs.
+- Reference device: Samsung Galaxy A56. Whisper `small` speed on that phone hasn't been measured
+  yet. If partials can't keep a ~1 s cadence, the fallback is a lighter partial pass, recorded in
+  `shared/asr_profile.json`.
 
-- **Push-to-talk** — hold the mic button to record, release to translate
-- **Text input** — type directly to translate without speech
-- **Toggle direction** — tap the direction button to switch ES ⇄ EN
-- **Classroom mode** — detects corrections, flags vocab automatically
-- **Save vocab** — tap the star on idiom/correction cards for spaced repetition study
+## Things I found and fixed while planning the port
+
+Porting forced a careful read of the server, which turned up real bugs:
+
+- The VAD fed Silero raw 16-bit sample values instead of [-1, 1]. On a 30-second speech clip it
+  missed 28% of speech frames (51% with background noise), which split sentences and clipped word
+  onsets.
+- WhisperX only detects language on its first call and then reuses it, so automatic direction
+  never switched languages.
+- The `beam_size: 3` setting was never passed to WhisperX, which ran with its default of 5.
+
+## Limitations
+
+- The server is Windows-first (batch scripts, LM Studio integration). The Python code itself is
+  portable, but I haven't tested it on Linux.
+- Spanish and English only for now. Adding a language is one entry in `shared/languages.json` plus
+  idiom patterns, but nothing else has been tested.
+- Speaker labels need Pyannote and a Hugging Face token, and they're only on the server.
+- Short utterances (under about 2 s) get almost no loudness normalization; that's how ffmpeg's
+  `dynaudnorm` behaves with the current settings.
 
 ## Documentation
 
-- [SETUP.md](SETUP.md) — detailed installation walkthrough
-- [ARCHITECTURE.md](ARCHITECTURE.md) — file tree, module dependencies, technology table
-
-## Hardware
-
-Designed for an RTX 3060 (12 GB) with known thermal constraints. The ~5 GB VRAM budget at ~42% capacity is intentional — large headroom prevents crashes on power-constrained hardware. Do not increase model sizes without careful budgeting.
-
-## Tech Stack
-
-Python 3.11 / FastAPI / WebSocket / WhisperX / Pyannote / Ollama / Silero VAD / SQLite (async, WAL, FTS5) / vanilla JS PWA
+- [SETUP.md](SETUP.md): installation walkthrough
+- [ARCHITECTURE.md](ARCHITECTURE.md): file tree, modules, and where to look for a given problem
+- [shared/](shared/): the files both apps read
 
 ## License
 
-[MIT](LICENSE)
-
-## Support
-
-If you find Habla useful, consider supporting development:
-
-<!-- TODO: Add GitHub Sponsors or Buy Me a Coffee link -->
+[MIT](LICENSE). Test clips are public-domain LibriVox recordings
+([sources](shared/testdata/clips/sources.json)).
