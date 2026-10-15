@@ -187,3 +187,25 @@ class TestCorrectionStats:
         # _playback_service is None (set by autouse fixture)
         r = await client.get("/api/corrections/stats")
         assert r.status_code == 503
+
+
+class TestFailedSegmentClipUrl:
+    async def test_clip_url_uses_recorder_naming_and_playback_route(self, client, mock_db, tmp_path):
+        """AudioRecorder writes segment_NNN.wav (3 digits); the URL must hit /audio/{filename}."""
+        rec = tmp_path / "1234_20260311_140829"
+        rec.mkdir()
+        (rec / "segment_007.wav").write_bytes(b"RIFF")
+        svc = MagicMock()
+        svc.recordings_dir = tmp_path
+        _state._playback_service = svc
+        mock_db.execute_fetchall = AsyncMock(return_value=[{
+            "id": 1, "session_id": 1, "segment_id": 7, "timestamp": "t", "audio_rms": 1.0,
+            "duration_seconds": 1.0, "processing_time_ms": 1, "vad_threshold": 0.35,
+            "model_name": "small", "clipped_onset": False, "status": "asr_rejected",
+            "recording_dir": rec.name,
+        }])
+
+        r = await client.get("/api/corrections/failed-segments")
+
+        seg = r.json()["failed_segments"][0]
+        assert seg["audio_url"] == f"/api/recordings/{rec.name}/audio/segment_007.wav"

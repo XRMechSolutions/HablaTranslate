@@ -219,10 +219,11 @@ async def get_failed_segments(
         # Try to find the WAV clip — recorded segments are named segment_NNN.wav
         audio_url = None
         if recordings_dir and recording_dir and seg_num is not None:
-            clip_path = recordings_dir / recording_dir / f"segment_{seg_num:04d}.wav"
+            clip_name = f"segment_{seg_num:03d}.wav"  # AudioRecorder.save_pcm_segment naming
+            clip_path = recordings_dir / recording_dir / clip_name
             if clip_path.exists():
                 # Expose via the existing playback API
-                audio_url = f"/api/recordings/{recording_dir}/segments/{seg_num:04d}"
+                audio_url = f"/api/recordings/{recording_dir}/audio/{clip_name}"
 
         r["audio_url"] = audio_url
         r["recording_dir"] = recording_dir

@@ -7,7 +7,7 @@ an 80/10/10 train/val/test split as a HuggingFace DatasetDict.
 Usage (from habla/ directory):
     python scripts/prepare_dataset.py
     python scripts/prepare_dataset.py --input data/audio/recordings --output data/whisper_dataset
-    python scripts/prepare_dataset.py --min-confidence 0.5 --max-duration 20.0
+    python scripts/prepare_dataset.py --min-confidence -1.0 --max-duration 20.0
 """
 
 import argparse
@@ -37,8 +37,9 @@ def parse_args():
         help="Skip segments longer than this (seconds, default: 30.0)",
     )
     parser.add_argument(
-        "--min-confidence", type=float, default=0.0,
-        help="Skip segments with confidence below this (default: 0.0)",
+        "--min-confidence", type=float, default=float("-inf"),
+        help="Skip segments whose confidence (Whisper avg_logprob, <= 0) is below this "
+             "(default: no filter)",
     )
     parser.add_argument(
         "--seed", type=int, default=42,
@@ -75,10 +76,12 @@ def _load_segment_metadata(session_dir: Path) -> dict[int, dict]:
     try:
         with open(meta_path, "r", encoding="utf-8") as f:
             raw = json.load(f)
-        return {
-            int(k): v for k, v in raw.get("segments", {}).items()
-        }
-    except (json.JSONDecodeError, OSError, ValueError):
+        segments = raw.get("segments", [])
+        # AudioRecorder writes a list of {"segment_id": n, ...}; older files used a dict.
+        if isinstance(segments, dict):
+            return {int(k): v for k, v in segments.items()}
+        return {int(s["segment_id"]): s for s in segments if "segment_id" in s}
+    except (json.JSONDecodeError, OSError, ValueError, TypeError, KeyError):
         return {}
 
 
