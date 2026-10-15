@@ -32,6 +32,39 @@ Browser Audio (Opus/WebM) → WebSocket → AudioDecoder (ffmpeg)
 
 **Two-tier streaming**: During speech, partial ASR + quick translation update every ~1s (rough but instant). When speech ends, the full pipeline runs and the partial snaps to a polished final card with speaker attribution, idiom highlights, and correction detection.
 
+## Problem → File Lookup
+
+When fixing a bug or changing a feature, start here to find the right files. All paths relative to `habla/server/`.
+
+| Problem / Feature Area | Primary Files | Architecture Doc |
+|----------------------|---------------|-----------------|
+| **Audio not captured / decode failures** | `pipeline/vad_buffer.py` (AudioDecoder, ffmpeg) | [audio-processing.md](docs/architecture/audio-processing.md) |
+| **Speech not detected / VAD sensitivity** | `pipeline/vad_buffer.py` (StreamingVADBuffer, Silero) | [audio-processing.md](docs/architecture/audio-processing.md) |
+| **Transcription wrong / ASR quality** | `pipeline/audio_processor.py` (WhisperX) | [audio-processing.md](docs/architecture/audio-processing.md) |
+| **Wrong speaker labels / diarization** | `pipeline/audio_processor.py` (Pyannote), `services/speaker_tracker.py` | [annotation.md](docs/architecture/annotation.md) |
+| **Translation wrong / quality issues** | `pipeline/translator.py`, `models/prompts.py` | [translation.md](docs/architecture/translation.md) |
+| **Translation slow / timing out** | `pipeline/translator.py` (rate limit, retry, degraded mode), `pipeline/orchestrator.py` (queue) | [translation.md](docs/architecture/translation.md) |
+| **Source language leaking through** | `pipeline/translator.py` (passthrough detection), `models/prompts.py` | [translation.md](docs/architecture/translation.md) |
+| **LLM provider switching / fallback** | `pipeline/translator.py` (provider config, fallback chain) | [translation.md](docs/architecture/translation.md) |
+| **Idioms not detected** | `services/idiom_scanner.py` (regex DB), `pipeline/translator.py` (LLM prompt), `pipeline/context_manager.py` (merge) | [annotation.md](docs/architecture/annotation.md) |
+| **Corrections not detected** | `models/prompts.py` (classroom prompt), `pipeline/translator.py` | [annotation.md](docs/architecture/annotation.md) |
+| **Conversation context / topic drift** | `pipeline/context_manager.py`, `pipeline/translator.py` (topic summary) | [pipeline-overview.md](docs/architecture/pipeline-overview.md) |
+| **Partial/streaming display issues** | `pipeline/orchestrator.py` (two-tier), `routes/websocket.py` (send), client JS | [pipeline-overview.md](docs/architecture/pipeline-overview.md) |
+| **WebSocket connect/disconnect** | `routes/websocket.py` (ClientSession) | [websocket.md](docs/architecture/websocket.md) |
+| **Session create/close/reset** | `pipeline/session_manager.py`, `pipeline/orchestrator.py` | [pipeline-overview.md](docs/architecture/pipeline-overview.md) |
+| **Exchange not saved to DB** | `pipeline/session_manager.py` (persist), `db/database.py` | [database.md](docs/architecture/database.md) |
+| **Vocab / SRS / Anki** | `services/vocab.py`, `routes/api_vocab.py`, `db/database.py` | [services.md](docs/architecture/services.md) |
+| **Cost tracking wrong** | `pipeline/translator.py` (cost calc), `db/database.py` (persist) | [translation.md](docs/architecture/translation.md) |
+| **LM Studio won't start/connect** | `services/lmstudio_manager.py` | [lmstudio.md](docs/architecture/lmstudio.md) |
+| **TTS not working** | `services/tts.py`, `routes/websocket.py` (TTS trigger) | [tts.md](docs/architecture/tts.md) |
+| **Audio playback / recording** | `services/audio_recorder.py`, `services/playback.py`, `routes/api_playback.py` | [audio-storage.md](docs/architecture/audio-storage.md) |
+| **REST API endpoint issues** | `routes/api_*.py` (domain-split) | [api.md](docs/architecture/api.md) |
+| **Client UI / PWA** | `client/js/*.js`, `client/*.html` | [client.md](docs/architecture/client.md) |
+| **Health checks / startup failures** | `services/health.py`, `main.py` (lifespan) | [services.md](docs/architecture/services.md) |
+| **Config / settings / env vars** | `config.py`, `data/llm_settings.json` | [deployment.md](docs/architecture/deployment.md) |
+| **DB schema / migrations** | `db/database.py`, `models/schemas.py` | [database.md](docs/architecture/database.md) |
+| **Docker / deployment** | `Dockerfile`, `docker-compose.yml`, `config.py` | [deployment.md](docs/architecture/deployment.md) |
+
 ## Module Index
 
 Each module has a detailed architecture doc covering current state, design rationale, and planned direction.
@@ -40,7 +73,7 @@ Each module has a detailed architecture doc covering current state, design ratio
 
 | Module | Source | Description | Architecture |
 |--------|--------|-------------|--------------|
-| **Pipeline Overview** | `pipeline/orchestrator.py`, `pipeline/audio_processor.py`, `pipeline/context_manager.py` | Thin coordinator pattern — queue-based processing with concurrent ASR and translation | [pipeline-overview.md](docs/architecture/pipeline-overview.md) |
+| **Pipeline Overview** | `pipeline/orchestrator.py`, `pipeline/audio_processor.py`, `pipeline/context_manager.py`, `pipeline/session_manager.py` | Thin coordinator pattern — queue-based processing with concurrent ASR and translation | [pipeline-overview.md](docs/architecture/pipeline-overview.md) |
 | **Audio Processing** | `pipeline/vad_buffer.py`, `pipeline/audio_processor.py` | Silero VAD segmentation, ffmpeg decode, WhisperX ASR, Pyannote diarization, audio normalization | [audio-processing.md](docs/architecture/audio-processing.md) |
 | **Translation** | `pipeline/translator.py`, `models/prompts.py` | Multi-provider LLM client with fallback chains, cost tracking, retry, rate limiting, and prompt engineering | [translation.md](docs/architecture/translation.md) |
 | **Annotation** | `services/idiom_scanner.py`, `services/speaker_tracker.py`, `pipeline/context_manager.py` | Dual-layer idiom detection, speaker diarization/tracking, correction detection, context management | [annotation.md](docs/architecture/annotation.md) |
@@ -99,6 +132,7 @@ main.py
   │     │     ├── pipeline/translator.py ──→ Ollama / LM Studio / OpenAI / Claude
   │     │     ├── services/idiom_scanner.py ──→ data/idioms/*.json
   │     │     └── services/speaker_tracker.py
+  │     ├── pipeline/session_manager.py ──→ db/database.py, speaker_tracker.py
   │     └── pipeline/vad_buffer.py ──→ ffmpeg, Silero VAD
   ├── routes/websocket.py ──→ orchestrator, vad_buffer, services/tts.py
   ├── routes/api.py

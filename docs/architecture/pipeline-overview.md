@@ -9,6 +9,7 @@ The processing pipeline turns raw browser audio into translated exchange cards w
 | **`orchestrator.py`** (1295L) | Processing queue, background worker, in-flight task tracking, async callbacks, metrics, DB operations, session lifecycle | AudioProcessor, ContextManager |
 | **`audio_processor.py`** (300L) | WhisperX ASR (GPU), Pyannote diarization (CPU), ffmpeg decode/normalize, language detection voting, partial transcript state | — |
 | **`context_manager.py`** (116L) | Translator lifecycle, SpeakerTracker, IdiomScanner, conversation context (direction, mode, topic, exchanges), idiom merge, audio clip saving | Translator, SpeakerTracker, IdiomScanner |
+| **`session_manager.py`** | Session create/close/reset (DB rows), exchange persistence, quality metrics recording, idiom pattern loading from DB, study summary generation, shutdown state save/restore | db/database.py, SpeakerTracker |
 
 ## Processing Flow
 
