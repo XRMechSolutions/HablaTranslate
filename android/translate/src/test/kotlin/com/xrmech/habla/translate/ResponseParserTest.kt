@@ -34,6 +34,19 @@ class ResponseParserTest {
     }
 
     @Test
+    fun nestingAtTheCapNeedsNoCallStack() {
+        // A recursive descent overflowed Linux CI's test thread below the cap; the explicit stack must
+        // decode MAX_DEPTH levels on a thread with a 128 KB stack.
+        val d = StrictJson.MAX_DEPTH
+        val text = "{\"a\": " + "[{\"b\": ".repeat(d / 2 - 1) + "1" + "}]".repeat(d / 2 - 1) + "}"
+        var result: Result<PyJson>? = null
+        val t = Thread(null, { result = runCatching { StrictJson.parse(text) } }, "small-stack", 128 * 1024)
+        t.start()
+        t.join()
+        assertIs<PyJson.Obj>(result!!.getOrThrow())
+    }
+
+    @Test
     fun validJsonAllFields() {
         val r = ok(
             """{"corrected":"Hola, mundo.","translated":"Hello, world.","confidence":0.9,"speaker_hint":"teacher",

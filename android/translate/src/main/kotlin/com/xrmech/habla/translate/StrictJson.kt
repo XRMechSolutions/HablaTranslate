@@ -19,7 +19,7 @@ internal class StrictJsonException(message: String) : Exception(message)
 /**
  * Nesting deeper than [StrictJson.MAX_DEPTH]. Python raises `RecursionError` here (not a
  * `JSONDecodeError`), which the server's `translate` turns into an error result, so this is not a
- * salvage case. The cap also keeps the recursive descent off the end of a coroutine thread's stack.
+ * salvage case.
  */
 internal class StrictJsonTooDeepException(message: String) : Exception(message)
 
@@ -31,8 +31,9 @@ internal class StrictJsonTooDeepException(message: String) : Exception(message)
  */
 internal object StrictJson {
     /**
-     * Max array/object nesting. CPython 3.12 gives up near 3 000 levels; 1 000 stays well inside an
-     * Android worker thread's stack and far above anything a translation contains.
+     * Max array/object nesting. CPython 3.12 gives up near 3 000 levels; 1 000 is far above anything a
+     * translation contains. Nesting is parsed with an explicit stack, so depth never touches the
+     * thread's call stack (a recursive descent overflowed a Linux CI test thread below 1 000).
      */
     const val MAX_DEPTH = 1_000
 
@@ -47,14 +48,16 @@ internal object StrictJson {
 
     private class Parser(val s: String) {
         var pos = 0
-        private var depth = 0
 
-        private inline fun <T> nested(block: () -> T): T {
-            if (++depth > MAX_DEPTH) throw StrictJsonTooDeepException("Nesting deeper than $MAX_DEPTH at $pos")
-            try {
-                return block()
-            } finally {
-                depth--
+        /** An array or object whose closing bracket has not been read yet. */
+        private sealed class Open {
+            class ObjB : Open() {
+                val fields = LinkedHashMap<String, PyJson>()
+                var key = ""
+            }
+
+            class ArrB : Open() {
+                val items = ArrayList<PyJson>()
             }
         }
 
@@ -64,17 +67,83 @@ internal object StrictJson {
 
         fun fail(what: String): Nothing = throw StrictJsonException("$what at $pos")
 
+        /** One complete value; arrays and objects nest on an explicit stack ([MAX_DEPTH] levels). */
         fun value(): PyJson {
+            val stack = ArrayList<Open>()
+            while (true) {
+                var v = scalarOrOpen(stack) ?: continue
+                // Attach the finished value to its container, then read ',' or the closing bracket.
+                while (true) {
+                    val top = stack.lastOrNull() ?: return v
+                    when (top) {
+                        is Open.ArrB -> top.items += v
+                        is Open.ObjB -> top.fields[top.key] = v
+                    }
+                    skipWs()
+                    if (pos >= s.length) fail("Expecting ',' delimiter")
+                    val c = s[pos++]
+                    if (c == (if (top is Open.ArrB) ']' else '}')) {
+                        stack.removeAt(stack.size - 1)
+                        v = if (top is Open.ArrB) PyJson.Arr(top.items) else PyJson.Obj((top as Open.ObjB).fields)
+                        continue
+                    }
+                    if (c != ',') { pos--; fail("Expecting ',' delimiter") }
+                    skipWs()
+                    if (top is Open.ObjB) top.key = memberKey()
+                    break
+                }
+            }
+        }
+
+        /** A scalar or an empty container, or null after opening a container whose first value comes next. */
+        private fun scalarOrOpen(stack: ArrayList<Open>): PyJson? {
             if (pos >= s.length) fail("Expecting value")
             return when (s[pos]) {
                 '"' -> PyJson.Str(string())
-                '{' -> obj()
-                '[' -> arr()
+                '{' -> {
+                    open(stack)
+                    pos++
+                    skipWs()
+                    if (pos < s.length && s[pos] == '}') {
+                        pos++
+                        PyJson.Obj(LinkedHashMap())
+                    } else {
+                        stack += Open.ObjB().also { it.key = memberKey() }
+                        null
+                    }
+                }
+                '[' -> {
+                    open(stack)
+                    pos++
+                    skipWs()
+                    if (pos < s.length && s[pos] == ']') {
+                        pos++
+                        PyJson.Arr(ArrayList())
+                    } else {
+                        stack += Open.ArrB()
+                        null
+                    }
+                }
                 'n' -> literal("null", PyJson.Null)
                 't' -> literal("true", PyJson.Bool(true))
                 'f' -> literal("false", PyJson.Bool(false))
                 else -> number()
             }
+        }
+
+        private fun open(stack: ArrayList<Open>) {
+            if (stack.size + 1 > MAX_DEPTH) throw StrictJsonTooDeepException("Nesting deeper than $MAX_DEPTH at $pos")
+        }
+
+        /** `"key"` then `:`; leaves [pos] at the member's value. */
+        private fun memberKey(): String {
+            if (pos >= s.length || s[pos] != '"') fail("Expecting property name enclosed in double quotes")
+            val key = string()
+            skipWs()
+            if (pos >= s.length || s[pos] != ':') fail("Expecting ':' delimiter")
+            pos++
+            skipWs()
+            return key
         }
 
         fun literal(word: String, v: PyJson): PyJson {
@@ -145,50 +214,6 @@ internal object StrictJson {
             }
             pos += 4
             return v
-        }
-
-        fun obj(): PyJson = nested { objBody() }
-
-        private fun objBody(): PyJson {
-            pos++
-            val fields = LinkedHashMap<String, PyJson>()
-            skipWs()
-            if (pos < s.length && s[pos] == '}') { pos++; return PyJson.Obj(fields) }
-            while (true) {
-                if (pos >= s.length || s[pos] != '"') fail("Expecting property name enclosed in double quotes")
-                val key = string()
-                skipWs()
-                if (pos >= s.length || s[pos] != ':') fail("Expecting ':' delimiter")
-                pos++
-                skipWs()
-                fields[key] = value()
-                skipWs()
-                if (pos >= s.length) fail("Expecting ',' delimiter")
-                when (s[pos++]) {
-                    '}' -> return PyJson.Obj(fields)
-                    ',' -> skipWs()
-                    else -> { pos--; fail("Expecting ',' delimiter") }
-                }
-            }
-        }
-
-        fun arr(): PyJson = nested { arrBody() }
-
-        private fun arrBody(): PyJson {
-            pos++
-            val items = ArrayList<PyJson>()
-            skipWs()
-            if (pos < s.length && s[pos] == ']') { pos++; return PyJson.Arr(items) }
-            while (true) {
-                items += value()
-                skipWs()
-                if (pos >= s.length) fail("Expecting ',' delimiter")
-                when (s[pos++]) {
-                    ']' -> return PyJson.Arr(items)
-                    ',' -> skipWs()
-                    else -> { pos--; fail("Expecting ',' delimiter") }
-                }
-            }
         }
     }
 }
