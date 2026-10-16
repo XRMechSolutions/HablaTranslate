@@ -4,10 +4,14 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <memory>
 
 #include <sched.h>
 
 #include "whisper.h"
+
+// Defined by the whisper.cpp patch (whisper_patch.cmake): encodes skipped on this state so far.
+int64_t habla_whisper_encoder_cache_hits(const struct whisper_state* state);
 
 namespace habla {
 
@@ -111,18 +115,17 @@ Engine* Engine::create(const char* model_path, const char* partial_model_path, b
 #endif
     cparams.flash_attn = flash_attn;
 
-    whisper_context* ctx = whisper_init_from_file_with_params_no_state(model_path, cparams);
-    if (ctx == nullptr) {
+    // Owned from the first allocation, so an early return or an exception (std::bad_alloc from
+    // whisper, caught at the JNI boundary) frees whatever was already acquired.
+    std::unique_ptr<Engine> engine(new Engine());
+    engine->ctxs_[kSlotFinal] = whisper_init_from_file_with_params_no_state(model_path, cparams);
+    if (engine->ctxs_[kSlotFinal] == nullptr) {
         return nullptr;
     }
-
-    auto* engine = new Engine();
-    engine->ctxs_[kSlotFinal] = ctx;
-    engine->ctxs_[kSlotPartial] = ctx;
+    engine->ctxs_[kSlotPartial] = engine->ctxs_[kSlotFinal];
     if (partial_model_path != nullptr) {
         whisper_context* partial = whisper_init_from_file_with_params_no_state(partial_model_path, cparams);
         if (partial == nullptr) {
-            delete engine;
             return nullptr;
         }
         engine->ctxs_[kSlotPartial] = partial;
@@ -130,11 +133,10 @@ Engine* Engine::create(const char* model_path, const char* partial_model_path, b
     for (int slot = 0; slot < kSlotCount; ++slot) {
         engine->states_[slot] = whisper_init_state(engine->ctxs_[slot]);
         if (engine->states_[slot] == nullptr) {
-            delete engine;  // frees the other state and the context
             return nullptr;
         }
     }
-    return engine;
+    return engine.release();
 }
 
 Engine::~Engine() {
@@ -209,7 +211,7 @@ TranscribeResult Engine::transcribe(int slot, const std::vector<float>& samples,
     const bool reuse = slot == kSlotFinal && p.audio_ctx == 0 && detect_mel_valid_ &&
                        samples.size() == detect_n_ && samples_hash(samples) == detect_hash_;
     if (slot == kSlotFinal) detect_mel_valid_ = false;
-    result.reused_detection = reuse;
+    const int64_t hits_before = habla_whisper_encoder_cache_hits(state);
 
     const PerfCoreAffinity affinity;
     wp.n_threads = affinity.threads(p.n_threads);
@@ -218,6 +220,10 @@ TranscribeResult Engine::transcribe(int slot, const std::vector<float>& samples,
                    : whisper_full_with_state(ctx, state, wp, samples.data(), static_cast<int>(samples.size()));
     result.wall_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - start).count();
+    // Counted by the patched encoder, not inferred from the request: true only if an encode was skipped.
+    // On rc -7 whisper has already freed the state, so it must not be read.
+    result.reused_detection = reuse && rc != kRcKvCacheFailed &&
+                              habla_whisper_encoder_cache_hits(state) > hits_before;
     if (rc == 0 && probe.observed) {
         rc = kRcAborted;  // stopped at a window boundary; the text is incomplete
     }
@@ -225,6 +231,8 @@ TranscribeResult Engine::transcribe(int slot, const std::vector<float>& samples,
 
     if (rc == kRcKvCacheFailed) {
         // whisper_full_with_state already freed this state; freeing it again would be a double free.
+        // Null the slot first: if re-creation throws, the slot must not keep the freed pointer.
+        states_[slot] = nullptr;
         states_[slot] = whisper_init_state(ctx);
         return result;
     }

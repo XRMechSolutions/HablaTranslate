@@ -20,6 +20,19 @@ endif()
 # The ExternalProjects build patched copies, never the submodule itself (whisper_patch.cmake, D042).
 include(${CMAKE_CURRENT_SOURCE_DIR}/whisper_patch.cmake)
 
+# The copies and their inner builds are keyed by the submodule commit: a bump starts from a clean copy
+# (no files left over from the old revision) and a fresh inner cache. Re-configure when HEAD moves.
+execute_process(COMMAND git -C ${WHISPER_DIR} rev-parse --short=8 HEAD
+    OUTPUT_VARIABLE WHISPER_REV OUTPUT_STRIP_TRAILING_WHITESPACE RESULT_VARIABLE rev_rc ERROR_QUIET)
+execute_process(COMMAND git -C ${WHISPER_DIR} rev-parse --path-format=absolute --git-path HEAD
+    OUTPUT_VARIABLE WHISPER_HEAD_FILE OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+if (NOT rev_rc EQUAL 0 OR WHISPER_REV STREQUAL "")
+    set(WHISPER_REV nogit)
+endif()
+if (EXISTS "${WHISPER_HEAD_FILE}")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${WHISPER_HEAD_FILE})
+endif()
+
 # Experimental GPU variant (D043): habla_asr_vk = the v86 CPU build plus ggml's Vulkan backend, with
 # use_gpu on. Off unless Gradle passes -Phabla.vulkan=true. Needs the LunarG Vulkan SDK (glslc,
 # headers, SPIRV-Headers) and, because ggml builds its shader generator for the host, a host C++
@@ -43,7 +56,7 @@ function(habla_whisper_variant NAME ARM_ARCH EXTRA_ARGS)
 
     # One copy per variant: whisper.cpp's configure writes into its source dir, and the variants
     # configure in parallel.
-    set(WHISPER_SRC ${CMAKE_BINARY_DIR}/whisper.cpp-patched-${NAME})
+    set(WHISPER_SRC ${CMAKE_BINARY_DIR}/whisper.cpp-${WHISPER_REV}-patched-${NAME})
     habla_patched_whisper_source(${WHISPER_DIR} ${WHISPER_SRC})
 
     set(arch_args "")
@@ -55,11 +68,23 @@ function(habla_whisper_variant NAME ARM_ARCH EXTRA_ARGS)
     set(vulkan_libs "")
     if (vulkan)
         set(sdk ${HABLA_VULKAN_SDK})
-        set(glslc ${sdk}/Bin/glslc)
+        # LunarG layout: Bin/Include/Lib on Windows, bin/include/lib (VULKAN_SDK = .../x86_64) on Linux.
         if (CMAKE_HOST_WIN32)
-            string(APPEND glslc .exe)
+            set(glslc ${sdk}/Bin/glslc.exe)
+            set(sdk_include ${sdk}/Include)
+            set(sdk_lib ${sdk}/Lib)
+        else()
+            set(glslc ${sdk}/bin/glslc)
+            set(sdk_include ${sdk}/include)
+            set(sdk_lib ${sdk}/lib)
         endif()
-        if (NOT EXISTS ${glslc} OR NOT EXISTS ${sdk}/Include/vulkan/vulkan.hpp)
+        set(spirv_dir "")
+        foreach(candidate ${sdk_lib}/cmake/SPIRV-Headers ${sdk}/share/cmake/SPIRV-Headers)
+            if (spirv_dir STREQUAL "" AND EXISTS ${candidate}/SPIRV-HeadersConfig.cmake)
+                set(spirv_dir ${candidate})
+            endif()
+        endforeach()
+        if (NOT EXISTS ${glslc} OR NOT EXISTS ${sdk_include}/vulkan/vulkan.hpp OR spirv_dir STREQUAL "")
             message(FATAL_ERROR "HABLA_VULKAN: no Vulkan SDK at '${sdk}' (set VULKAN_SDK or -Phabla.vulkanSdk)")
         endif()
         if (CMAKE_HOST_WIN32 AND NOT DEFINED ENV{VCINSTALLDIR})
@@ -74,11 +99,11 @@ function(habla_whisper_variant NAME ARM_ARCH EXTRA_ARGS)
         # newer headers work with any Android Vulkan driver.
         list(APPEND vulkan_args
             -DGGML_VULKAN=ON
-            -DVulkan_INCLUDE_DIR=${sdk}/Include
+            -DVulkan_INCLUDE_DIR=${sdk_include}
             -DVulkan_LIBRARY=${libvulkan}
             -DVulkan_GLSLC_EXECUTABLE=${glslc}
-            -DSPIRV-Headers_DIR=${sdk}/Lib/cmake/SPIRV-Headers
-            -DCMAKE_CXX_FLAGS=-isystem${sdk}/Include)
+            -DSPIRV-Headers_DIR=${spirv_dir}
+            -DCMAKE_CXX_FLAGS=-isystem${sdk_include})
         set(vulkan_libs ${libdir}/libggml-vulkan.a ${libvulkan})
     endif()
 
@@ -88,8 +113,8 @@ function(habla_whisper_variant NAME ARM_ARCH EXTRA_ARGS)
         SOURCE_DIR ${WHISPER_SRC}
         # The inner build is incremental; without this a patched or bumped source is never rebuilt.
         BUILD_ALWAYS ON
-        # Named for the patched source: a cache configured from the submodule path cannot be reused.
-        BINARY_DIR ${CMAKE_BINARY_DIR}/whisper-${NAME}-patched-build
+        # Named for the patched source: a cache configured from another source path cannot be reused.
+        BINARY_DIR ${CMAKE_BINARY_DIR}/whisper-${WHISPER_REV}-${NAME}-build
         INSTALL_DIR ${prefix}
         CMAKE_GENERATOR ${CMAKE_GENERATOR}
         CMAKE_ARGS

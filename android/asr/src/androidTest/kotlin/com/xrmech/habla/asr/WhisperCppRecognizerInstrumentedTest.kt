@@ -129,6 +129,25 @@ class WhisperCppRecognizerInstrumentedTest {
     }
 
     @Test
+    fun reuseCoversOnlyTheFirstWindowOfAudioLongerThan30Seconds() = runBlocking<Unit> {
+        val r = recognizer()
+        // > 30 s: whisper encodes a second window at a later offset, which must not hit the cache.
+        val parts = smoke.map { (clip, index) -> AsrTestFixtures.utterance(clip, index).samples }
+        var long = FloatArray(0)
+        var i = 0
+        while (long.size < 34 * 16_000) long += parts[i++ % parts.size]
+        val language = AsrTestFixtures.utterance(smoke[0].first, smoke[0].second).language
+
+        val plain = r.transcribe(long, AsrRequest(language, AsrPass.FINAL))
+        r.detectLanguage(long, candidates)
+        val reused = r.transcribe(long, AsrRequest(language, AsrPass.FINAL))
+        assertEquals(1, r.reusedDetections.get())
+        assertEquals(plain.text, reused.text)
+        assertEquals(plain.segments.map { it.startSec to it.endSec }, reused.segments.map { it.startSec to it.endSec })
+        assertTrue("expected a second window, got ${plain.segments.lastOrNull()?.endSec}", (plain.segments.lastOrNull()?.endSec ?: 0.0) > 30.0)
+    }
+
+    @Test
     fun aSeparatePartialModelServesPartialsWhileFinalsKeepTheMainOne() = runBlocking<Unit> {
         // Same tiny file twice: proves the second context and its state, not a quality difference.
         val r = WhisperCppRecognizer(model, profile, threads, partialModelFile = model).also { open += it }

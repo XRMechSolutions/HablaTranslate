@@ -61,6 +61,10 @@ class AsrParityTest {
         recognizer.use { r ->
             r.preload()
             val info = r.nativeInfo
+            if (args.getString("habla.gpu") == "true") {
+                // vk loaded and a Vulkan device registered; otherwise this would silently be a CPU run.
+                assertTrue("not a GPU run: $info", info != null && info.startsWith("vk | ") && info.contains("[Vulkan"))
+            }
             for ((clip, utts) in goldens.groupBy { it.clip }) {
                 // One voter per clip, as the server keeps one per session.
                 val pipeline = AsrPipeline(r, LanguageVoter(profile), profile, AsrTestFixtures.languages)
