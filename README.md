@@ -132,5 +132,6 @@ Porting forced a careful read of the server, and testing the phone against it tu
 
 ## License
 
-[MIT](LICENSE). Test clips are public-domain LibriVox recordings
+[MIT](LICENSE), copyright Clinton Campbell. Third-party components and their licences are listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Test clips are public-domain LibriVox recordings
 ([sources](shared/testdata/clips/sources.json)).
