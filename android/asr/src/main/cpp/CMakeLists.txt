@@ -40,8 +40,8 @@ endif()
 option(HABLA_VULKAN "Build the experimental Vulkan variant habla_asr_vk (arm64 only)" OFF)
 set(HABLA_VULKAN_SDK "$ENV{VULKAN_SDK}" CACHE PATH "LunarG Vulkan SDK root for HABLA_VULKAN")
 
-# Builds whisper.cpp for one CPU variant into ${CMAKE_BINARY_DIR}/whisper-<NAME> and defines the
-# shared JNI library habla_asr_<NAME> linked against it.
+# Builds whisper.cpp for one CPU variant and defines the shared JNI library habla_asr_<NAME> linked
+# against the static archives in its build tree.
 #   NAME        variant suffix (v86 | base)
 #   ARM_ARCH    value for GGML_CPU_ARM_ARCH, empty on x86_64
 #   EXTRA_ARGS  further cache arguments for the whisper.cpp configure (a CMake list)
@@ -51,8 +51,14 @@ function(habla_whisper_variant NAME ARM_ARCH EXTRA_ARGS)
     if (ARGC GREATER 3 AND "${ARGV3}" STREQUAL "VULKAN")
         set(vulkan ON)
     endif()
-    set(prefix ${CMAKE_BINARY_DIR}/whisper-${NAME})
-    set(libdir ${prefix}/lib)
+    # Linked straight from the build tree, with no install step: BUILD_ALWAYS re-runs the build, but
+    # ExternalProject keeps the install step's stamp, so installed archives went stale after a patch
+    # change (2026-10-16: the engine linked a 15:41 libwhisper.a after a 16:13 rebuild).
+    set(bindir ${CMAKE_BINARY_DIR}/whisper-${WHISPER_REV}-${NAME}-build)
+    set(lib_whisper ${bindir}/src/libwhisper.a)
+    set(lib_ggml ${bindir}/ggml/src/libggml.a)
+    set(lib_ggml_cpu ${bindir}/ggml/src/libggml-cpu.a)
+    set(lib_ggml_base ${bindir}/ggml/src/libggml-base.a)
 
     # One copy per variant: whisper.cpp's configure writes into its source dir, and the variants
     # configure in parallel.
@@ -105,8 +111,8 @@ function(habla_whisper_variant NAME ARM_ARCH EXTRA_ARGS)
             -DVulkan_GLSLC_EXECUTABLE=${glslc}
             -DSPIRV-Headers_DIR=${spirv_dir}
             -DCMAKE_CXX_FLAGS=-isystem${sdk_include})
-        set(vulkan_libs ${libdir}/libggml-vulkan.a ${libvulkan})
-        set(vulkan_byproducts ${libdir}/libggml-vulkan.a)
+        set(vulkan_libs ${bindir}/ggml/src/ggml-vulkan/libggml-vulkan.a ${libvulkan})
+        set(vulkan_byproducts ${bindir}/ggml/src/ggml-vulkan/libggml-vulkan.a)
     endif()
 
     # whisper.cpp is always Release: a Debug ggml is 10-50x slower and would make debug builds and
@@ -116,8 +122,8 @@ function(habla_whisper_variant NAME ARM_ARCH EXTRA_ARGS)
         # The inner build is incremental; without this a patched or bumped source is never rebuilt.
         BUILD_ALWAYS ON
         # Named for the patched source: a cache configured from another source path cannot be reused.
-        BINARY_DIR ${CMAKE_BINARY_DIR}/whisper-${WHISPER_REV}-${NAME}-build
-        INSTALL_DIR ${prefix}
+        BINARY_DIR ${bindir}
+        INSTALL_COMMAND ""
         CMAKE_GENERATOR ${CMAKE_GENERATOR}
         CMAKE_ARGS
             -DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}
@@ -125,7 +131,6 @@ function(habla_whisper_variant NAME ARM_ARCH EXTRA_ARGS)
             -DANDROID_ABI=${ANDROID_ABI}
             -DANDROID_PLATFORM=${ANDROID_PLATFORM}
             -DANDROID_STL=c++_static
-            -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
             -DCMAKE_BUILD_TYPE=Release
             -DBUILD_SHARED_LIBS=OFF
             -DWHISPER_BUILD_EXAMPLES=OFF
@@ -138,15 +143,14 @@ function(habla_whisper_variant NAME ARM_ARCH EXTRA_ARGS)
             -DGGML_VULKAN=OFF
             -DGGML_OPENCL=OFF
             -DCMAKE_POSITION_INDEPENDENT_CODE=ON
-            -DCMAKE_INSTALL_LIBDIR=lib
             ${arch_args}
             ${EXTRA_ARGS}
             ${vulkan_args}
         BUILD_BYPRODUCTS
-            ${libdir}/libwhisper.a
-            ${libdir}/libggml.a
-            ${libdir}/libggml-cpu.a
-            ${libdir}/libggml-base.a
+            ${lib_whisper}
+            ${lib_ggml}
+            ${lib_ggml_cpu}
+            ${lib_ggml_base}
             ${vulkan_byproducts}
     )
 
@@ -162,11 +166,11 @@ function(habla_whisper_variant NAME ARM_ARCH EXTRA_ARGS)
     endif()
     # libggml.a (the backend registry) references the backends, so they follow it.
     target_link_libraries(${target} PRIVATE
-        ${libdir}/libwhisper.a
-        ${libdir}/libggml.a
-        ${libdir}/libggml-cpu.a
+        ${lib_whisper}
+        ${lib_ggml}
+        ${lib_ggml_cpu}
         ${vulkan_libs}
-        ${libdir}/libggml-base.a
+        ${lib_ggml_base}
         log)
     target_link_options(${target} PRIVATE
         -Wl,--gc-sections -Wl,--exclude-libs,ALL -Wl,-z,max-page-size=16384)

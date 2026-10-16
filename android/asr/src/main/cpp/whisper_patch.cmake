@@ -11,17 +11,42 @@
 # stay in the state). Every new mel (pcm_to_mel, set_mel) and every failed or aborted encode clears
 # the cache. With it, language detection followed by whisper_full on the same mel runs the encoder
 # once instead of twice. habla_whisper_encoder_cache_hits(state) counts the skipped encodes.
+#
+# Edit (ggml-vulkan.cpp, D047): on Samsung Xclipse GPUs, scalar flash attention uses at most 4 rows
+# per block. ggml's default of 8 runs the Whisper-small encoder attention at 10 GFLOPS on the A56
+# (Xclipse 540, driver 24.0.560): 7.9 s of an 8.7 s encode; 4 rows took 0.79 s. Only the vk build
+# compiles this file.
+
+# Applies EDITS (names with <name>_anchor / <name>_patch variables set in the caller) to SRC_FILE and
+# writes OUT_FILE only on change, so an unchanged configure does not rebuild it.
+macro(habla_apply_edits SRC_FILE OUT_FILE)
+    # Re-run the configure (and so these edits) when the submodule's file changes.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${SRC_FILE})
+    file(READ ${SRC_FILE} text)
+    foreach(edit ${ARGN})
+        string(FIND "${text}" "${${edit}_anchor}" first)
+        string(FIND "${text}" "${${edit}_anchor}" last REVERSE)
+        if (first EQUAL -1 OR NOT first EQUAL last)
+            message(FATAL_ERROR "whisper.cpp patch: anchor '${edit}' not found exactly once in ${SRC_FILE}")
+        endif()
+        string(REPLACE "${${edit}_anchor}" "${${edit}_patch}" text "${text}")
+    endforeach()
+    set(old "")
+    if (EXISTS ${OUT_FILE})
+        file(READ ${OUT_FILE} old)
+    endif()
+    if (NOT old STREQUAL text)
+        file(WRITE ${OUT_FILE} "${text}")
+    endif()
+endmacro()
 
 function(habla_patched_whisper_source SRC_DIR OUT_DIR)
     file(COPY ${SRC_DIR}/CMakeLists.txt ${SRC_DIR}/LICENSE DESTINATION ${OUT_DIR})
-    file(COPY ${SRC_DIR}/cmake ${SRC_DIR}/include ${SRC_DIR}/ggml DESTINATION ${OUT_DIR})
+    file(COPY ${SRC_DIR}/cmake ${SRC_DIR}/include DESTINATION ${OUT_DIR})
+    file(COPY ${SRC_DIR}/ggml DESTINATION ${OUT_DIR} PATTERN ggml-vulkan.cpp EXCLUDE)
     # A standalone whisper.cpp configure writes bindings/javascript/package.json from this template.
     file(COPY ${SRC_DIR}/bindings/javascript/package-tmpl.json DESTINATION ${OUT_DIR}/bindings/javascript)
     file(COPY ${SRC_DIR}/src DESTINATION ${OUT_DIR} PATTERN whisper.cpp EXCLUDE)
-
-    # Re-run the configure (and so this edit) when the submodule's file changes.
-    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${SRC_DIR}/src/whisper.cpp)
-    file(READ ${SRC_DIR}/src/whisper.cpp text)
 
     set(state_anchor "    whisper_mel mel;")
     set(state_patch "    whisper_mel mel;
@@ -82,22 +107,22 @@ static bool whisper_encode_internal_impl(")
     set(setmel_patch "    state->habla_enc_offset = -1; // habla patch: new mel
 ${setmel_anchor}")
 
-    foreach(edit state encode pcm setmel)
-        string(FIND "${text}" "${${edit}_anchor}" first)
-        string(FIND "${text}" "${${edit}_anchor}" last REVERSE)
-        if (first EQUAL -1 OR NOT first EQUAL last)
-            message(FATAL_ERROR "whisper.cpp patch: anchor '${edit}' not found exactly once in ${SRC_DIR}/src/whisper.cpp")
-        endif()
-        string(REPLACE "${${edit}_anchor}" "${${edit}_patch}" text "${text}")
-    endforeach()
+    habla_apply_edits(${SRC_DIR}/src/whisper.cpp ${OUT_DIR}/src/whisper.cpp state encode pcm setmel)
 
-    # Rewrite only on change so an unchanged configure does not rebuild whisper.cpp.
-    set(out ${OUT_DIR}/src/whisper.cpp)
-    set(old "")
-    if (EXISTS ${out})
-        file(READ ${out} old)
-    endif()
-    if (NOT old STREQUAL text)
-        file(WRITE ${out} "${text}")
-    endif()
+    set(fa_anchor "static vk_fa_tuning_params get_fa_tuning_params_scalar(")
+    set(fa_patch "static vk_fa_tuning_params get_fa_tuning_params_scalar_impl(const vk_device& device, uint32_t hsk, uint32_t hsv, uint32_t n_rows, uint32_t n_kv, ggml_type k_type, ggml_type v_type, bool f32acc);
+
+// habla patch (Samsung Xclipse, D047): at most 4 rows per scalar flash-attention block. The default 8
+// collapses throughput about 10x on the Xclipse 540 (register pressure); 4 measured best of 1-16.
+static vk_fa_tuning_params get_fa_tuning_params_scalar(const vk_device& device, uint32_t hsk, uint32_t hsv, uint32_t n_rows, uint32_t n_kv, ggml_type k_type, ggml_type v_type, bool f32acc) {
+    vk_fa_tuning_params result = get_fa_tuning_params_scalar_impl(device, hsk, hsv, n_rows, n_kv, k_type, v_type, f32acc);
+    if (device->vendor_id == VK_VENDOR_ID_SAMSUNG && result.block_rows > 4) {
+        result.block_rows = 4;
+    }
+    return result;
+}
+
+static vk_fa_tuning_params get_fa_tuning_params_scalar_impl(")
+    set(vk_src ggml/src/ggml-vulkan/ggml-vulkan.cpp)
+    habla_apply_edits(${SRC_DIR}/${vk_src} ${OUT_DIR}/${vk_src} fa)
 endfunction()
