@@ -12,7 +12,9 @@ import com.xrmech.habla.app.pipeline.SessionPhase
 import com.xrmech.habla.app.state.KeyHealthTracker
 import com.xrmech.habla.app.state.KeyState
 import com.xrmech.habla.app.state.ModelDownloadController
+import com.xrmech.habla.asr.AsrBackend
 import com.xrmech.habla.asr.ModelManager
+import com.xrmech.habla.asr.ModelState
 import com.xrmech.habla.translate.CostMeter
 import com.xrmech.habla.translate.KeyTestResult
 import com.xrmech.habla.translate.LlmException
@@ -186,5 +188,26 @@ class SettingsViewModelTest {
         assertEquals(Mode.CLASSROOM, settings.current.mode)
         assertTrue(settings.current.trainingCapture)
         assertFalse(ui.sessionActive)
+    }
+
+    @Test
+    fun `should offer only partial models as the live model and write live model and GPU changes`() = runTest {
+        val vm = newVm()
+        assertEquals(listOf("", "ggml-base-q8_0", "ggml-base"), vm.ui.value.liveModels.map { it.id })
+        assertNull(vm.ui.value.liveModelState, "no live row while partials share the speech model")
+
+        vm.setLiveModel("ggml-base-q8_0")
+        assertEquals("ggml-base-q8_0", settings.current.liveModelId)
+        assertEquals("ggml-base-q8_0", vm.ui.value.selectedLiveModel?.id)
+        assertEquals(ModelState.Missing, vm.ui.value.liveModelState)
+
+        vm.setLiveModel("not-a-model")
+        assertEquals("ggml-base-q8_0", settings.current.liveModelId)
+        vm.setLiveModel("")
+        assertEquals("", settings.current.liveModelId)
+
+        vm.setAsrGpu(true)
+        assertTrue(settings.current.asrGpu)
+        assertEquals(AsrBackend.gpuBuilt, vm.ui.value.gpuBuilt)
     }
 }
