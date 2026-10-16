@@ -37,7 +37,7 @@ mic audio -> Silero VAD (speech segments + ~1 s partial snapshots)
   (`shared/testdata/clips/`, LibriVox) through the server and records segment boundaries,
   transcripts and detected languages. The Android port is tested against those files.
 
-| Part | Server | Android (planned) |
+| Part | Server | Android |
 |---|---|---|
 | VAD | Silero (PyTorch) | Silero (ONNX Runtime) |
 | ASR | WhisperX `small`, int8, CUDA | whisper.cpp `small` (q8_0), NDK |
@@ -66,27 +66,43 @@ Open `https://<your-tailscale-hostname>:8002` on a phone (Tailscale gives you HT
 browser needs for the microphone) or `http://localhost:8002` on the PC.
 [SETUP.md](SETUP.md) has the full walkthrough. A Docker setup is in `habla/docker-compose.yml`.
 
-Tests: `cd habla && .venv\Scripts\python.exe -m pytest` (about 990 tests, no GPU needed).
+Tests: `cd habla && .venv\Scripts\python.exe -m pytest` (about 1,000 tests, no GPU needed).
 
 ## Android status
 
-This is being built now. The planning is done (research, module designs, task graph). What's
-decided:
+The app is built and its tests pass on the PC and the emulator. It hasn't been run on a real
+phone yet. What it does:
 
 - Runs fully on the phone: audio capture, VAD, Whisper and history. Only translation goes to
   OpenAI.
 - **No keys ship in the app.** The user enters their own key in Settings. It's stored encrypted
-  with a key from the Android Keystore, and CI fails any build where a key string turns up inside
-  the APK.
+  with a key from the Android Keystore. CI scans the built APKs and fails if anything shaped like
+  a key turns up in a public build. A build with a random dummy key proves the scan catches it.
 - Port, don't reinvent: each Kotlin component names the server function it copies and is tested
-  against the server's reference outputs.
-- Reference device: Samsung Galaxy A56. Whisper `small` speed on that phone hasn't been measured
-  yet. If partials can't keep a ~1 s cadence, the fallback is a lighter partial pass, recorded in
-  `shared/asr_profile.json`.
+  against reference outputs the server writes.
 
-## Things I found and fixed while planning the port
+Measured so far (PC and emulator, against the server):
 
-Porting forced a careful read of the server, which turned up real bugs:
+| Check | Result |
+|---|---|
+| VAD segment boundaries vs the server | identical on all test sessions |
+| Silero ONNX vs the server's PyTorch model | max probability difference 4e-6 |
+| Final audio prep (filters + dynaudnorm port) vs ffmpeg 8.0.1 | bit-exact on 24 speech clips |
+| Translator port vs the server (279 golden cases) | all match |
+| whisper.cpp `small` q8_0 vs WhisperX, PC, 3 clips | 3.7% WER difference (q5_1: 4.4%) |
+| Tests | about 1,000 JVM tests and 34 emulator tests, all passing except one smoke run that waits on regenerated reference files |
+
+Not done yet: speed on the reference phone (Samsung Galaxy A56), a live translation run with a
+real key, and the manual checks in [android/ManualTests.md](android/ManualTests.md). If Whisper
+`small` can't keep a ~1 s partial cadence on the phone, the fallback is a lighter partial pass,
+recorded in `shared/asr_profile.json`.
+
+Build: open a shell in `android/` with JDK 21 and run `gradlew assemblePublicDebug`. The
+whisper.cpp source is a git submodule (`git submodule update --init`).
+
+## Things I found and fixed while building the port
+
+Porting forced a careful read of the server, and testing the phone against it turned up real bugs:
 
 - The VAD fed Silero raw 16-bit sample values instead of [-1, 1]. On a 30-second speech clip it
   missed 28% of speech frames (51% with background noise), which split sentences and clipped word
@@ -94,6 +110,9 @@ Porting forced a careful read of the server, which turned up real bugs:
 - WhisperX only detects language on its first call and then reuses it, so automatic direction
   never switched languages.
 - The `beam_size: 3` setting was never passed to WhisperX, which ran with its default of 5.
+- The reference-file generator recorded segment ends at the end of each audio chunk instead of
+  the exact frame, up to three frames late. The phone's segmenter got it right and the test
+  flagged the reference.
 
 ## Limitations
 
