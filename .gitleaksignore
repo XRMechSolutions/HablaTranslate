@@ -1,8 +1,8 @@
 # Gitleaks fingerprints of known fake keys in tests (reviewed 2026-10-16). Real findings are never listed here.
-5963d1b8bd6713471a1b71e23625dc37d4ee7eaf:android/translate/src/test/kotlin/com/xrmech/habla/translate/OpenAiHttpTest.kt:generic-api-key:25
-5963d1b8bd6713471a1b71e23625dc37d4ee7eaf:android/translate/src/test/kotlin/com/xrmech/habla/translate/OpenAiProviderTest.kt:generic-api-key:24
-5963d1b8bd6713471a1b71e23625dc37d4ee7eaf:android/translate/src/test/kotlin/com/xrmech/habla/translate/RedactTest.kt:generic-api-key:35
-5963d1b8bd6713471a1b71e23625dc37d4ee7eaf:android/translate/src/test/resources/openai/err_401.json:generic-api-key:3
-f5df91cfd1957964ff8c3deaefdfcd5d693462a5:habla/tests/routes/test_api.py:generic-api-key:1157
-37f4e5f7639c7e1f789f520c96c7e7f9d89f12d2:habla/tests/services/test_health.py:generic-api-key:369
-37f4e5f7639c7e1f789f520c96c7e7f9d89f12d2:habla/tests/services/test_health.py:generic-api-key:403
+2db551cdb358c30771ee0586db9ea6b0252deb6f:android/translate/src/test/kotlin/com/xrmech/habla/translate/OpenAiHttpTest.kt:generic-api-key:25
+2db551cdb358c30771ee0586db9ea6b0252deb6f:android/translate/src/test/kotlin/com/xrmech/habla/translate/OpenAiProviderTest.kt:generic-api-key:24
+2db551cdb358c30771ee0586db9ea6b0252deb6f:android/translate/src/test/kotlin/com/xrmech/habla/translate/RedactTest.kt:generic-api-key:35
+2db551cdb358c30771ee0586db9ea6b0252deb6f:android/translate/src/test/resources/openai/err_401.json:generic-api-key:3
+dcad9cf7fdf58c329c6b1f0a1b98df97c589f1bc:habla/tests/routes/test_api.py:generic-api-key:1157
+fa07f4543d92e7b14a06b595438a01db722d23c6:habla/tests/services/test_health.py:generic-api-key:369
+fa07f4543d92e7b14a06b595438a01db722d23c6:habla/tests/services/test_health.py:generic-api-key:403
