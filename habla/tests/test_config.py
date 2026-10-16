@@ -217,8 +217,11 @@ class TestEnvOverrides:
             assert c.asr.auto_language is False, f"Failed for {val}"
 
     def test_db_path(self, tmp_path):
-        c = self._load_with_env({"DB_PATH": "/custom/db.sqlite", "DATA_DIR": str(tmp_path)})
-        assert c.db_path == Path("/custom/db.sqlite")
+        # Under tmp_path: load_config creates the parent, which at "/custom" is a drive-root folder
+        # on Windows and a permission error on Linux CI.
+        db = tmp_path / "custom" / "db.sqlite"
+        c = self._load_with_env({"DB_PATH": str(db), "DATA_DIR": str(tmp_path)})
+        assert c.db_path == db
 
     def test_data_dir(self, tmp_path):
         custom = tmp_path / "custom_data"

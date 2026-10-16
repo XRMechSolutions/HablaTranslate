@@ -89,6 +89,11 @@ def test_hash_still_wrong_after_redownload_fails(tmp_path):
 
 
 def test_missing_cmake_is_a_clear_toolchain_error(tmp_path, monkeypatch):
+    # CI checks out without the whisper.cpp submodule; give the build a source dir to get past that check.
+    src = tmp_path / "whisper.cpp"
+    src.mkdir()
+    (src / "CMakeLists.txt").write_text("")
+    monkeypatch.setattr(compare_engines, "WHISPER_SRC", src)
     monkeypatch.setattr(compare_engines, "find_cmake", lambda: None)
     with pytest.raises(compare_engines.EngineCheckError) as e:
         compare_engines.build_whisper_cli(tmp_path / "build", tmp_path / "logs")
