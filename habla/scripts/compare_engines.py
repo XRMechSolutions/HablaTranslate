@@ -27,6 +27,7 @@ import argparse
 import hashlib
 import json
 import logging
+import math
 import os
 import shutil
 import subprocess
@@ -34,6 +35,7 @@ import sys
 import tempfile
 import time
 import urllib.request
+import wave
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -242,8 +244,20 @@ def score(pairs: list[tuple[str, str]]) -> dict:
     return {"errors": errors, "reference_words": words, "wer": round(errors / words, 4) if words else None}
 
 
+def scaled_audio_ctx(n_samples: int, pad: int, minimum: int) -> int:
+    """The asr module's scaled encoder context (WhisperParamsBuilder.scaledAudioCtx)."""
+    return min(1500, max(minimum, math.ceil(n_samples / 16000 * 50) + pad))
+
+
+def wav_samples(wav: Path) -> int:
+    with wave.open(str(wav), "rb") as w:
+        return w.getnframes()
+
+
 def run_model(model_id: str, cli: Path, model_dir: Path, goldens: dict[str, dict], golden_dir: Path,
-              profile: dict) -> dict:
+              profile: dict, scaled_ctx: tuple[int, int] | None = None) -> dict:
+    """``scaled_ctx`` = (pad, min) runs FINAL with the scaled encoder context instead of the full
+    30 s window: the accuracy side of the D5 question whether finals can afford it."""
     model = ensure_model(model_entry(model_id), model_dir)
     args = final_args(profile)
     threads = profile["whisper_cpp"]["threads"]
@@ -255,7 +269,10 @@ def run_model(model_id: str, cli: Path, model_dir: Path, goldens: dict[str, dict
             rows = []
             for utt, wav in golden_utterances(golden, golden_dir):
                 started = time.perf_counter()
-                text = transcribe(cli, model, wav, utt["detected_language"], args, Path(tmp))
+                utt_args = args
+                if scaled_ctx:
+                    utt_args = [*args, "-ac", str(scaled_audio_ctx(wav_samples(wav), *scaled_ctx))]
+                text = transcribe(cli, model, wav, utt["detected_language"], utt_args, Path(tmp))
                 elapsed = time.perf_counter() - started
                 detected = detect_language(cli, model, wav, threads)
                 total += 1
@@ -271,7 +288,9 @@ def run_model(model_id: str, cli: Path, model_dir: Path, goldens: dict[str, dict
             all_pairs += pairs
             clips[stem] = {**score(pairs), "utterances": rows}
     return {
-        "model": model_id, "model_sha256": model_entry(model_id)["sha256"],
+        "model": model_id + (f"+ac(pad={scaled_ctx[0]},min={scaled_ctx[1]})" if scaled_ctx else ""),
+        "audio_ctx": {"pad": scaled_ctx[0], "min": scaled_ctx[1]} if scaled_ctx else "full",
+        "model_sha256": model_entry(model_id)["sha256"],
         "overall": score(all_pairs),
         "language_agreement": {"agree": agree, "total": total,
                                "rate": round(agree / total, 4) if total else None},
@@ -297,6 +316,9 @@ def main() -> int:
     parser.add_argument("--rebuild", action="store_true", help="rebuild whisper-cli even if a build exists")
     parser.add_argument("--clip", help="golden clip stem (default: all)")
     parser.add_argument("--no-write-goldens", action="store_true", help="do not add pc_whisper_cpp to the goldens")
+    parser.add_argument("--scaled-ctx", nargs=2, type=int, metavar=("PAD", "MIN"),
+                        help="FINAL with the scaled encoder context (pad/min frames) instead of the full "
+                             "window; implies --no-write-goldens")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -319,7 +341,9 @@ def main() -> int:
         profile = shared_assets.asr_profile()
         engine = {"whisper_cpp": submodule_commit(), "params": "FINAL (asr design.md section 5)",
                   "flags": final_args(profile)}
-        results = [run_model(m, cli, cache_dir() / "whisper-cpp", goldens, golden_dir, profile) for m in models]
+        scaled = tuple(args.scaled_ctx) if args.scaled_ctx else None
+        results = [run_model(m, cli, cache_dir() / "whisper-cpp", goldens, golden_dir, profile, scaled)
+                   for m in models]
     except EngineCheckError as e:
         print(f"error: {e}", file=sys.stderr)
         return e.code
@@ -353,7 +377,7 @@ def main() -> int:
     print(f"closest to WhisperX: {report['closest_to_whisperx']}  -> {out}")
 
     default = next((r for r in results if r["model"] == default_id), None)
-    if default and not args.no_write_goldens:
+    if default and not args.no_write_goldens and not args.scaled_ctx:
         write_back(goldens, golden_dir, default, {**engine, "model": default_id})
         print(f"wrote pc_whisper_cpp ({default_id}) into {len(goldens)} golden(s)")
     return 0

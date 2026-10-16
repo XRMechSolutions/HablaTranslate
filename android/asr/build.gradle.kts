@@ -192,6 +192,71 @@ tasks.register("prepareTestModels") {
     }
 }
 
+// D5/D6 on the A56 (@DeviceOnly): verifies the app catalog's small models in the model cache and
+// adb-pushes them to /data/local/tmp/habla-models/, plus the golden set (JSON + post-FinalPrep WAVs)
+// from HABLA_GOLDEN_DIR (default shared/testdata/goldens) to /data/local/tmp/habla-golden/asr/.
+// Models must already be in the cache (D:/.cache/whisper-cpp via HABLA_MODEL_CACHE; compare_engines.py
+// downloads them). -Phabla.benchModels=<id,id> limits the models. Target one device with ANDROID_SERIAL.
+tasks.register("prepareDeviceBench") {
+    group = "verification"
+    description = "Verify and adb push the small Whisper models and the D6 golden set for the A56 suites"
+    val catalogFile = repoSharedDir.resolve("asr_models.json")
+    val goldenDir = System.getenv("HABLA_GOLDEN_DIR")?.let(::File) ?: repoSharedDir.resolve("testdata/goldens")
+    val cacheDir = testModelCacheDir
+    val only = (findProperty("habla.benchModels") as String?)?.split(',')?.map { it.trim() }?.toSet()
+    val adb = androidComponents.sdkComponents.adb
+    outputs.upToDateWhen { false }
+    doLast {
+        fun sha256(f: File): String {
+            val md = MessageDigest.getInstance("SHA-256")
+            f.inputStream().use { input ->
+                val buf = ByteArray(1 shl 20)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    md.update(buf, 0, n)
+                }
+            }
+            return md.digest().joinToString("") { "%02x".format(it) }
+        }
+        val adbExe = adb.get().asFile.absolutePath
+        fun run(vararg cmd: String) {
+            val proc = ProcessBuilder(adbExe, *cmd).redirectErrorStream(true).start()
+            val out = proc.inputStream.bufferedReader().readText()
+            if (proc.waitFor() != 0) throw GradleException("adb ${cmd.joinToString(" ")} failed: $out")
+            logger.lifecycle(out.trim())
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        val models = (groovy.json.JsonSlurper().parse(catalogFile) as Map<String, Any>)["models"] as List<Map<String, Any>>
+        run("shell", "mkdir", "-p", "/data/local/tmp/habla-models")
+        for (m in models.filter { only == null || it["id"] in only }) {
+            val f = File(cacheDir, m["file"] as String)
+            val sha = m["sha256"] as String
+            if (!f.isFile || f.length() != (m["size_bytes"] as Number).toLong() || sha256(f) != sha) {
+                throw GradleException("${f.absolutePath} missing or not sha256 $sha; download ${m["url"]} there first")
+            }
+            run("push", f.absolutePath, "/data/local/tmp/habla-models/${f.name}")
+        }
+
+        val jsons = goldenDir.listFiles { f -> f.isFile && f.name.endsWith(".json") }?.sortedBy { it.name }.orEmpty()
+        if (jsons.isEmpty() || !goldenDir.resolve("wav").isDirectory) {
+            throw GradleException("golden set not found at $goldenDir (needs *.json and wav/; run habla/scripts/make_goldens.py)")
+        }
+        val index = temporaryDir.resolve("index.txt").apply { writeText(jsons.joinToString("\n") { it.name } + "\n") }
+        run("shell", "rm", "-rf", "/data/local/tmp/habla-golden/asr")
+        run("shell", "mkdir", "-p", "/data/local/tmp/habla-golden/asr")
+        jsons.forEach { run("push", it.absolutePath, "/data/local/tmp/habla-golden/asr/${it.name}") }
+        run("push", goldenDir.resolve("wav").absolutePath, "/data/local/tmp/habla-golden/asr/")
+        run("push", index.absolutePath, "/data/local/tmp/habla-golden/asr/index.txt")
+    }
+}
+
+// Pushes must land before instrumentation starts when both are on one command line.
+tasks.matching { it.name.startsWith("connected") && it.name.endsWith("AndroidTest") }.configureEach {
+    mustRunAfter("prepareTestModels", "prepareDeviceBench")
+}
+
 // Public-domain test clips, their goldens (D033) and the shared/ JSON files, packaged only into the
 // androidTest APK. Copied at build time so no second copy lives in git.
 val hablaAndroidTestAssets = layout.buildDirectory.dir("generated/habla/androidTestAssets")

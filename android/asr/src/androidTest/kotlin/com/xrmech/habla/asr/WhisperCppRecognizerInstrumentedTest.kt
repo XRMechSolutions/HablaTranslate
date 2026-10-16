@@ -3,6 +3,8 @@ package com.xrmech.habla.asr
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import com.xrmech.habla.asr.AsrTestFixtures.SAMPLE_RATE
+import com.xrmech.habla.asr.internal.CpuVariant
+import com.xrmech.habla.asr.internal.CpuVariantSelector
 import com.xrmech.habla.shared.AsrProfile
 import java.io.File
 import kotlinx.coroutines.CoroutineStart
@@ -59,14 +61,19 @@ class WhisperCppRecognizerInstrumentedTest {
     )
 
     @Test
-    fun libraryLoadsBaseVariantAndPreloads() = runBlocking<Unit> {
+    fun libraryLoadsTheSelectedVariantAndPreloads() = runBlocking<Unit> {
         val r = recognizer()
         r.preload()
         val info = r.nativeInfo
         assertNotNull(info)
         info!!
-        assertTrue(info, info.startsWith("base | "))
-        assertTrue(info, info.length > "base | ".length)
+        // base on the x86_64 emulator, v86 on the A56 (asimddp + i8mm + asimdhp).
+        val expected = CpuVariantSelector.select(System.getProperty("os.arch").orEmpty(), File("/proc/cpuinfo").readText())
+        assertTrue(info, info.startsWith("${expected.label} | "))
+        assertTrue(info, info.length > "${expected.label} | ".length)
+        if (expected == CpuVariant.V86) {
+            assertTrue(info, info.contains("DOTPROD = 1") && info.contains("MATMUL_INT8 = 1"))
+        }
         r.preload()
     }
 

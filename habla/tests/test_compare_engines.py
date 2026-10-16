@@ -109,3 +109,12 @@ def test_golden_wav_hash_mismatch_is_rejected(tmp_path):
     wav.write_bytes(b"changed")
     with pytest.raises(compare_engines.EngineCheckError):
         compare_engines.golden_utterances(golden, tmp_path)
+
+
+def test_scaled_audio_ctx_matches_the_android_builder():
+    # WhisperParamsBuilderTest values (asr design.md section 11), pad 64 / min 128.
+    assert compare_engines.scaled_audio_ctx(0, 64, 128) == 128
+    assert compare_engines.scaled_audio_ctx(16_000, 64, 128) == 128
+    assert compare_engines.scaled_audio_ctx(32_000, 64, 128) == 164
+    assert compare_engines.scaled_audio_ctx(29 * 16_000, 64, 128) == 1500
+    assert compare_engines.scaled_audio_ctx(40 * 16_000, 64, 128) == 1500
