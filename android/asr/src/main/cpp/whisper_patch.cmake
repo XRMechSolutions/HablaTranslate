@@ -51,11 +51,11 @@ static bool whisper_encode_internal(
                    void * abort_callback_data) {
     const int n_ctx = wstate.exp_n_audio_ctx > 0 ? wstate.exp_n_audio_ctx : wctx.model.hparams.n_audio_ctx;
     if (wstate.habla_enc_offset == mel_offset && wstate.habla_enc_n_ctx == n_ctx) {
-        wstate.habla_enc_hits++;
         if (abort_callback && abort_callback(abort_callback_data)) {
             wstate.habla_enc_offset = -1;
             return false;
         }
+        wstate.habla_enc_hits++; // only a hit whose output is actually used
         return true;
     }
     wstate.habla_enc_offset = -1;

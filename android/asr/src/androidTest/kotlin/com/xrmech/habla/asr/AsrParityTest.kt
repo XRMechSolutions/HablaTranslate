@@ -24,8 +24,10 @@ import org.junit.runner.RunWith
  * [AsrPipeline.final] with its own detection).
  *
  * Prerequisite: `android\gradlew.bat -p android :asr:prepareDeviceBench`. Instrumentation args:
- * `habla.model` (default: the catalog default), `habla.threads` (default: profile `whisper_cpp.threads`).
- * The report goes to `/data/local/tmp/habla-bench/d6-parity-<date>.json`.
+ * `habla.model` (default: the catalog default), `habla.threads` (default: profile `whisper_cpp.threads`),
+ * `habla.engineWerMax` (engine fidelity gate, default 0.02; a GPU run passes 0 to prove the backend
+ * gives the CPU's words). The report goes to
+ * `/data/local/tmp/habla-bench/d6-parity-<date>-<cpu|gpu>-<HHmmss>.json`.
  */
 @DeviceOnly
 @RunWith(AndroidJUnit4::class)
@@ -45,6 +47,7 @@ class AsrParityTest {
         val entry = args.getString("habla.model")?.let { checkNotNull(catalog.byId(it)) { "unknown model $it" } } ?: catalog.default
         val profile = AsrTestFixtures.profile
         val threads = args.getString("habla.threads")?.toInt() ?: profile.whisperCpp.threads
+        val engineWerMax = args.getString("habla.engineWerMax")?.toDouble() ?: 0.02
         val model = AsrTestFixtures.installModel(entry)
 
         val recognizer = WhisperCppRecognizer(model, profile, threads)
@@ -120,7 +123,8 @@ class AsrParityTest {
             val serverWerAgg = serverErrors.toDouble() / serverWords
             val serverLang = serverLangSame.toDouble() / n
             val gates = buildJsonObject {
-                put("engine_wer_le_0_02", engineWerAgg != null && engineWerAgg <= 0.02)
+                put("engine_wer_max", engineWerMax)
+                put("engine_wer_le_max", engineWerAgg != null && engineWerAgg <= engineWerMax)
                 put("engine_language_ge_0_98", engineLang != null && engineLang >= 0.98)
                 put("server_wer_le_0_10", serverWerAgg <= 0.10)
                 put("server_clip_wer_le_0_30", clipFailures.isEmpty())
@@ -153,11 +157,18 @@ class AsrParityTest {
                 put("gates", gates)
                 putJsonArray("rows") { rows.forEach { add(it) } }
             }
-            val path = "${AsrTestFixtures.DEVICE_BENCH_DIR}/d6-parity-${LocalDate.now(ZoneOffset.UTC)}.json"
-            AsrTestFixtures.writeDeviceFile(path, PRETTY.encodeToString(JsonObject.serializer(), report))
+            val backend = if (args.getString("habla.gpu") == "true") "gpu" else "cpu"
+            val time = java.time.LocalTime.now(ZoneOffset.UTC).toString().take(8).replace(":", "")
+            val path = AsrTestFixtures.writeDeviceFile(
+                "${AsrTestFixtures.DEVICE_BENCH_DIR}/d6-parity-${LocalDate.now(ZoneOffset.UTC)}-$backend-$time.json",
+                PRETTY.encodeToString(JsonObject.serializer(), report),
+            )
             android.util.Log.i("HablaAsrParity", "report $path gates=$gates engineWer=$engineWerAgg serverWer=$serverWerAgg")
 
-            assertTrue("engine fidelity WER $engineWerAgg > 0.02 (report $path)", engineWerAgg != null && engineWerAgg <= 0.02)
+            assertTrue(
+                "engine fidelity WER $engineWerAgg > $engineWerMax (report $path)",
+                engineWerAgg != null && engineWerAgg <= engineWerMax,
+            )
             assertTrue("engine language agreement $engineLang < 0.98 (report $path)", engineLang != null && engineLang >= 0.98)
             assertTrue("server parity WER $serverWerAgg > 0.10 (report $path)", serverWerAgg <= 0.10)
             assertTrue("clips over 0.30 WER: $clipFailures (report $path)", clipFailures.isEmpty())

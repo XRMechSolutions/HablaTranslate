@@ -308,7 +308,21 @@ data class AsrModelEntry(
     @SerialName("size_bytes") val sizeBytes: Long,
     /** Lowercase 64-hex SHA-256 of the file. */
     val sha256: String,
-)
+    /**
+     * What the model may be used for: `final` (selectable as the speech model, transcribes finals) and/or
+     * `partial` (a separate PARTIAL-slot model, D045). Absent (null) = both, kept
+     * null so the file round-trips unchanged. Base models are `["partial"]`
+     * only (D044: WER 0.156 vs 0.037 for small), so the settings picker never offers them for finals.
+     */
+    val roles: List<String>? = null,
+) {
+    val usableForFinals: Boolean get() = roles == null || ROLE_FINAL in roles
+
+    companion object {
+        const val ROLE_FINAL = "final"
+        const val ROLE_PARTIAL = "partial"
+    }
+}
 
 // ---- idioms ---------------------------------------------------------------------------------
 

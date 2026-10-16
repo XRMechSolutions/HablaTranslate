@@ -1,5 +1,5 @@
 {
-  "_comment": "Whisper ggml models the Android app can download. Pinned Hugging Face revision + SHA-256 (lfs.oid) per D016/D028. Refresh hashes from https://huggingface.co/api/models/ggerganov/whisper.cpp/tree/<revision>.",
+  "_comment": "Whisper ggml models the Android app can download. Pinned Hugging Face revision + SHA-256 (lfs.oid) per D016/D028. Refresh hashes from https://huggingface.co/api/models/ggerganov/whisper.cpp/tree/<revision>. roles: final (selectable speech model) and/or partial (separate partial model, D045); absent = both.",
   "default_id": "ggml-small-q8_0",
   "models": [
     {"id": "ggml-small-q8_0", "file": "ggml-small-q8_0.bin", "base": "small", "quantization": "q8_0",
@@ -17,10 +17,12 @@
     {"id": "ggml-base-q8_0", "file": "ggml-base-q8_0.bin", "base": "base", "quantization": "q8_0",
      "revision": "5359861c739e955e79d9a303bcbc70fb988958b1",
      "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base-q8_0.bin",
-     "size_bytes": 81768585, "sha256": "c577b9a86e7e048a0b7eada054f4dd79a56bbfa911fbdacf900ac5b567cbb7d9"},
+     "size_bytes": 81768585, "sha256": "c577b9a86e7e048a0b7eada054f4dd79a56bbfa911fbdacf900ac5b567cbb7d9",
+     "roles": ["partial"]},
     {"id": "ggml-base", "file": "ggml-base.bin", "base": "base", "quantization": "f16",
      "revision": "5359861c739e955e79d9a303bcbc70fb988958b1",
      "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.bin",
-     "size_bytes": 147951465, "sha256": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe"}
+     "size_bytes": 147951465, "sha256": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+     "roles": ["partial"]}
   ]
 }

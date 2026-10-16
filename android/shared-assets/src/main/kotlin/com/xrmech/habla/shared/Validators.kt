@@ -200,6 +200,8 @@ internal object Validators {
         return v.message
     }
 
+    private val MODEL_ROLES = listOf(AsrModelEntry.ROLE_FINAL, AsrModelEntry.ROLE_PARTIAL)
+
     fun asrModels(c: ModelCatalog): String? {
         val v = FirstViolation()
         val seen = HashSet<String>()
@@ -221,9 +223,18 @@ internal object Validators {
             )
             v.rule(SHA256.matches(m.sha256), "$path.sha256", "must be 64 lowercase hex chars", m.sha256)
             v.rule(m.sizeBytes in 1..MAX_MODEL_BYTES, "$path.size_bytes", "must be in 1..$MAX_MODEL_BYTES", m.sizeBytes)
+            v.rule(
+                m.roles == null || (m.roles.isNotEmpty() && m.roles.toSet().size == m.roles.size && m.roles.all { it in MODEL_ROLES }),
+                "$path.roles",
+                "must be a non-empty list of distinct values from $MODEL_ROLES",
+                m.roles,
+            )
         }
-        if (c.byId(c.defaultId) == null) {
+        val default = c.byId(c.defaultId)
+        if (default == null) {
             v.fail("$.default_id", "'${c.defaultId}' not in models ${c.models.map { it.id }}")
+        } else if (!default.usableForFinals) {
+            v.fail("$.default_id", "'${c.defaultId}' must have the '${AsrModelEntry.ROLE_FINAL}' role, has ${default.roles}")
         }
         return v.message
     }

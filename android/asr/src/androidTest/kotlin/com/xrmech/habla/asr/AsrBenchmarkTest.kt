@@ -81,6 +81,12 @@ class AsrBenchmarkTest {
     private val candidates get() = AsrTestFixtures.languages.codes
     private val date get() = LocalDate.now(ZoneOffset.UTC).toString()
 
+    /** `gpu`/`cpu` plus a UTC time: CPU and GPU runs of the same day never overwrite each other. */
+    private val runTag: String by lazy {
+        val backend = if (args.getString("habla.gpu") == "true") "gpu" else "cpu"
+        "$backend-" + java.time.LocalTime.now(ZoneOffset.UTC).toString().take(8).replace(":", "")
+    }
+
     private fun intList(key: String, default: List<Int>) =
         args.getString(key)?.split(',')?.map { it.trim().toInt() } ?: default
 
@@ -135,7 +141,8 @@ class AsrBenchmarkTest {
     @Test
     fun loadAndFinalLatencySweep() = runBlocking<Unit> {
         val goldens = AsrTestFixtures.deviceGoldens
-        val modelIds = args.getString("habla.benchModels")?.split(',')?.map { it.trim() } ?: catalog.models.map { it.id }
+        val modelIds = args.getString("habla.benchModels")?.split(',')?.map { it.trim() }
+            ?: catalog.models.filter { it.usableForFinals }.map { it.id }
         val threadList = intList("habla.benchThreads", listOf(2, 3, 4))
         val beams = intList("habla.benchBeams", listOf(5, 3))
         val modelReports = mutableListOf<JsonObject>()
@@ -166,7 +173,8 @@ class AsrBenchmarkTest {
                         put("threads", threads)
                         put("beam", beam)
                         putJsonObject("buckets") {
-                            for ((bucket, rows) in samples.groupBy { (u, _) -> bucketOf(u.durationSec) }.toSortedMap()) {
+                            val grouped = samples.groupBy { (u, _) -> bucketOf(u.durationSec) }.toSortedMap()
+                            for ((bucket, rows) in grouped) {
                                 putJsonObject(bucket) {
                                     put("n", rows.size)
                                     put("detect_p50_ms", pct(rows.map { it.second.detectMs.toDouble() }, 50))
@@ -177,7 +185,7 @@ class AsrBenchmarkTest {
                                     put("rtf_p90", pct(rows.map { (u, t) -> t.totalMs / 1000.0 / u.durationSec }, 90))
                                 }
                             }
-                            put("20-31s", "no golden utterance in this range")
+                            if ("20-31s" !in grouped) put("20-31s", "no golden utterance in this range")
                         }
                         put("rtf_p90_ge3s", pct(samples.filter { it.first.durationSec >= 3 }.map { (u, t) -> t.totalMs / 1000.0 / u.durationSec }, 90))
                         put("total_p90_ms_lt3s", pct(samples.filter { it.first.durationSec < 3 }.map { it.second.totalMs.toDouble() }, 90))
@@ -201,7 +209,7 @@ class AsrBenchmarkTest {
             put("audio_sec", goldens.sumOf { it.durationSec })
             put("models", JsonArray(modelReports))
         }
-        write("d5-sweep-$date.json", report)
+        write("d5-sweep-$date-$runTag.json", report)
         val info = checkNotNull(anyVariant)
         val variant = if (args.getString("habla.gpu") == "true") "vk" else "v86"
         assertTrue(info, info.startsWith("$variant | ") && info.contains("DOTPROD = 1") && info.contains("MATMUL_INT8 = 1"))
@@ -248,10 +256,12 @@ class AsrBenchmarkTest {
             Triple("greedy_scaled_ctx", null, null),
             Triple("greedy_scaled_ctx", 128, 256),
         )
+        var nativeInfo: String? = null
         for ((level, pad, min) in variants) {
             val name = if (pad == null) level else "$level(pad=$pad,min=$min)"
             WhisperCppRecognizer(file, profileWith(null, level, pad, min), threads, partialModelFile()).use { r ->
                 r.preload()
+                nativeInfo = r.nativeInfo
                 repeat(3) { r.transcribe(prefixes[it].third, AsrRequest(prefixes[it].first.serverLanguage, AsrPass.PARTIAL)) }
                 val out = mutableMapOf<Pair<String, Int>, String>()
                 val bySecond = sortedMapOf<Int, MutableList<Double>>()
@@ -295,6 +305,7 @@ class AsrBenchmarkTest {
         fun scaledWer(name: String) = werAgainst("greedy_full_ctx", name)
         val report = buildJsonObject {
             putDevice()
+            put("native_info", nativeInfo)
             put("model_id", entry.id)
             put("partial_model_id", partialModelId)
             put("threads", threads)
@@ -314,7 +325,7 @@ class AsrBenchmarkTest {
                 }
             }
         }
-        write("d5-ladder${partialModelId?.let { "-p_$it" }.orEmpty()}-$date.json", report)
+        write("d5-ladder${partialModelId?.let { "-p_$it" }.orEmpty()}-$date-$runTag.json", report)
     }
 
     // ---- 3. Sustained real-time session -------------------------------------------------------------
@@ -338,6 +349,11 @@ class AsrBenchmarkTest {
         val submitted = AtomicInteger()
         val started = AtomicInteger()
         val aborted = AtomicInteger()
+        val failed = AtomicInteger() // non-ABORTED AsrException: nothing shown
+        val filtered = AtomicInteger() // bad transcript or empty: nothing shown
+        val displayedAt = mutableListOf<Pair<Int, Long>>() // (segment seq, elapsedRealtime) of shown partials
+        val segments = mutableListOf<Pair<Long, Long>>() // seq -> (speech start, speech end), elapsedRealtime
+        var nativeInfo: String? = null
         val stats = Mutex()
         val partialAge = mutableListOf<Long>() // capture to result, including time spent waiting
         val maxThermal = AtomicInteger() // written by the monitor coroutine
@@ -348,27 +364,34 @@ class AsrBenchmarkTest {
 
         WhisperCppRecognizer(file, profile, threads, partialModelFile()).use { r ->
             r.preload()
+            nativeInfo = r.nativeInfo
             val pipeline = AsrPipeline(r, LanguageVoter(profile), profile, AsrTestFixtures.languages)
             // AsrPipeline and LanguageVoter are not thread-safe: the app drives them from one serial
             // dispatcher, so the replay does too. Native work still runs on the recognizer's executor,
             // so a waiting partial does not block the final worker.
             val serial = Dispatchers.Default.limitedParallelism(1)
-            val partials = Channel<Pair<FloatArray, Long>>(Channel.CONFLATED)
+            val partials = Channel<Triple<FloatArray, Long, Int>>(Channel.CONFLATED) // (pcm, captured at, seq)
             val finals = Channel<Pair<GoldenUtterance, Long>>(Channel.UNLIMITED)
             val pendingFinals = AtomicInteger()
             coroutineScope {
                 val partialWorker = launch(serial) {
-                    for ((pcm, capturedAt) in partials) {
+                    for ((pcm, capturedAt, seq) in partials) {
                         started.incrementAndGet()
                         val t0 = SystemClock.elapsedRealtime()
                         val out = pipeline.partial(pcm, "es")
                         val t1 = SystemClock.elapsedRealtime()
+                        // Only a non-empty partial is a visible update; failed and filtered ones are
+                        // counted separately so a model that fails every call cannot look fast.
                         stats.withLock {
-                            if (out.aborted) {
-                                aborted.incrementAndGet()
-                            } else {
-                                partialLat += now() to (t1 - t0)
-                                partialAge += t1 - capturedAt
+                            when {
+                                out.aborted -> aborted.incrementAndGet()
+                                out.language == null -> failed.incrementAndGet()
+                                out.text.isEmpty() -> filtered.incrementAndGet()
+                                else -> {
+                                    partialLat += now() to (t1 - t0)
+                                    partialAge += t1 - capturedAt
+                                    displayedAt += seq to t1
+                                }
                             }
                         }
                     }
@@ -409,11 +432,12 @@ class AsrBenchmarkTest {
                 while (now() < durationMs) {
                     val u = goldens[i++ % goldens.size]
                     val segStart = SystemClock.elapsedRealtime()
+                    val seq = stats.withLock { segments += segStart to segStart + (u.durationSec * 1000).toLong(); segments.size - 1 }
                     var s = 1
                     while (s <= u.durationSec) {
                         delay(maxOf(0, segStart + s * 1000L - SystemClock.elapsedRealtime()))
                         submitted.incrementAndGet()
-                        partials.trySend(u.samples.copyOfRange(0, s * SAMPLE_RATE) to SystemClock.elapsedRealtime())
+                        partials.trySend(Triple(u.samples.copyOfRange(0, s * SAMPLE_RATE), SystemClock.elapsedRealtime(), seq))
                         s++
                     }
                     delay(maxOf(0, segStart + (u.durationSec * 1000).toLong() - SystemClock.elapsedRealtime()))
@@ -449,12 +473,23 @@ class AsrBenchmarkTest {
         // Partials that never started were replaced by a newer snapshot (latest-wins) or were still
         // waiting when the run ended; aborted ones were preempted by a final.
         val dropped = submitted.get() - started.get() + aborted.get()
-        val dropRatio = dropped.toDouble() / submitted.get()
-        val partialP90 = pct(partialLat.map { it.second.toDouble() }, 90)
+        val dropRatio = if (submitted.get() == 0) null else dropped.toDouble() / submitted.get()
+        val partialP90 = pctOrNull(partialLat.map { it.second.toDouble() }, 90)
+        val ageP90 = pctOrNull(partialAge.map { it.toDouble() }, 90)
         val finalsGe3 = finalLat.filter { it.third >= 3 }
-        val rtfP90 = pct(finalsGe3.map { it.second / 1000.0 / it.third }, 90)
-        val shortP90 = pct(finalLat.filter { it.third < 3 }.map { it.second.toDouble() }, 90)
-        val queueP95 = pct(queueDepthAtEnqueue.map { it.toDouble() }, 95)
+        val rtfP90 = pctOrNull(finalsGe3.map { it.second / 1000.0 / it.third }, 90)
+        val shortP90 = pctOrNull(finalLat.filter { it.third < 3 }.map { it.second.toDouble() }, 90)
+        val finalP99 = pctOrNull(finalLat.map { it.second.toDouble() }, 99)
+        val queueP95 = pctOrNull(queueDepthAtEnqueue.map { it.toDouble() }, 95)
+        // Longest stretch of speech without a new visible partial, per segment: from speech start through
+        // each shown update to speech end (updates after speech end do not count as during speech).
+        val shownBySeq = displayedAt.groupBy({ it.first }, { it.second })
+        val maxGaps = segments.mapIndexed { seq, (startAt, endAt) ->
+            val points = listOf(startAt) + (shownBySeq[seq].orEmpty().filter { it in startAt..endAt }.sorted()) + endAt
+            points.zipWithNext { a, b -> (b - a).toDouble() }.maxOrNull() ?: 0.0
+        }
+        val gapP95 = pctOrNull(maxGaps, 95)
+        fun rule(value: Double?, ok: (Double) -> Boolean): Boolean? = value?.let(ok)
         val report = buildJsonObject {
             putDevice()
             put("model_id", entry.id)
@@ -469,28 +504,46 @@ class AsrBenchmarkTest {
             put("partials_submitted", submitted.get())
             put("partials_started", started.get())
             put("partials_aborted_by_final", aborted.get())
+            put("partials_failed", failed.get())
+            put("partials_filtered", filtered.get())
             put("partial_drop_ratio", dropRatio)
-            put("partials_completed", partialLat.size)
+            put("partials_displayed", partialLat.size)
             put("partial_p50_ms", pctOrNull(partialLat.map { it.second.toDouble() }, 50))
-            put("partial_p90_ms", pctOrNull(partialLat.map { it.second.toDouble() }, 90))
-            put("partial_age_p90_ms", pctOrNull(partialAge.map { it.toDouble() }, 90))
+            put("partial_p90_ms", partialP90)
+            put("partial_age_p90_ms", ageP90)
+            put("partial_update_gap_p95_ms", gapP95)
+            put("partial_update_gap_max_ms", maxGaps.maxOrNull())
             put("finals", finalLat.size)
-            put("final_p50_ms", pct(finalLat.map { it.second.toDouble() }, 50))
-            put("final_p90_ms", pct(finalLat.map { it.second.toDouble() }, 90))
+            put("final_p50_ms", pctOrNull(finalLat.map { it.second.toDouble() }, 50))
+            put("final_p90_ms", pctOrNull(finalLat.map { it.second.toDouble() }, 90))
+            put("final_p99_ms", finalP99)
             put("final_rtf_p90_ge3s", rtfP90)
             put("final_total_p90_ms_lt3s", shortP90)
-            put("final_wait_max_ms", finalWait.maxOrNull() ?: 0)
+            put("final_wait_max_ms", finalWait.maxOrNull())
             put("final_queue_depth_p95", queueP95)
             put("battery_start_pct", batteryStart)
             put("battery_end_pct", batteryEnd)
             put("max_thermal_status", maxThermal.get())
             put("pss_peak_mb", pssPeakKb.get() / 1024)
+            put("native_info", nativeInfo)
+            // null = not measurable in this run (no samples), never a pass.
             putJsonObject("decision_rules") {
-                put("partial_p90_le_800ms", partialLat.isNotEmpty() && partialP90 <= 800)
-                put("partial_drop_le_0_25", dropRatio <= 0.25)
-                put("final_rtf_p90_ge3s_le_0_5", rtfP90 <= 0.5)
-                put("final_total_p90_lt3s_le_2000ms", shortP90 <= 2000)
-                put("final_queue_depth_p95_le_1", queueP95 <= 1)
+                putJsonObject("design_v1") { // design.md section 10, the original A56 rules
+                    put("partial_p90_le_800ms", rule(partialP90) { it <= 800 })
+                    put("partial_drop_le_0_25", rule(dropRatio) { it <= 0.25 })
+                    put("final_rtf_p90_ge3s_le_0_5", rule(rtfP90) { it <= 0.5 })
+                    put("final_total_p90_lt3s_le_2000ms", rule(shortP90) { it <= 2000 })
+                    put("final_queue_depth_p95_le_1", rule(queueP95) { it <= 1 })
+                }
+                putJsonObject("mobile_proposed") { // device-acceleration-plan.md section 5, until frozen
+                    put("final_total_p90_lt3s_le_4000ms", rule(shortP90) { it <= 4000 })
+                    put("final_rtf_p90_ge3s_le_1_0", rule(rtfP90) { it <= 1.0 })
+                    put("final_p99_le_10000ms", rule(finalP99) { it <= 10_000 })
+                    put("final_queue_depth_p95_le_1", rule(queueP95) { it <= 1 })
+                    put("partial_age_p90_le_1000ms", rule(ageP90) { it <= 1000 })
+                    put("partial_drop_le_0_50", rule(dropRatio) { it <= 0.5 })
+                    put("partial_update_gap_p95_le_2500ms", rule(gapP95) { it <= 2500 })
+                }
                 put("thermal_below_severe", maxThermal.get() < PowerManager.THERMAL_STATUS_SEVERE)
             }
             put("windows", JsonArray(windows))
@@ -498,7 +551,7 @@ class AsrBenchmarkTest {
         }
         val level = profile.whisperCpp.partial.level
         val partialTag = partialModelId?.let { "-p_$it" }.orEmpty()
-        write("d5-sustained-${entry.id}$partialTag-t$threads-$level-${minutes}m-$date.json", report)
+        write("d5-sustained-${entry.id}$partialTag-t$threads-$level-${minutes}m-$date-$runTag.json", report)
     }
 
     // ---- helpers -------------------------------------------------------------------------------------
@@ -523,8 +576,10 @@ class AsrBenchmarkTest {
     }
 
     private fun write(name: String, report: JsonObject) {
-        val path = "${AsrTestFixtures.DEVICE_BENCH_DIR}/$name"
-        AsrTestFixtures.writeDeviceFile(path, PRETTY.encodeToString(JsonObject.serializer(), report))
+        val path = AsrTestFixtures.writeDeviceFile(
+            "${AsrTestFixtures.DEVICE_BENCH_DIR}/$name",
+            PRETTY.encodeToString(JsonObject.serializer(), report),
+        )
         log("report $path")
     }
 

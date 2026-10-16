@@ -135,6 +135,22 @@ class SharedAssetsValidationTest {
     }
 
     @Test
+    fun `should reject an asr model role when it is unknown`() {
+        assertMessage(
+            mutate("asr_models.json", "\"roles\": [\"partial\"]", "\"roles\": [\"partial\", \"draft\"]"),
+            "shared/asr_models.json: $.models[3].roles: must be a non-empty list of distinct values from [final, partial]",
+        )
+    }
+
+    @Test
+    fun `should reject a default asr model when it cannot transcribe finals`() {
+        assertMessage(
+            mutate("asr_models.json", "\"default_id\": \"ggml-small-q8_0\"", "\"default_id\": \"ggml-base-q8_0\""),
+            "shared/asr_models.json: $.default_id: 'ggml-base-q8_0' must have the 'final' role, has [partial]",
+        )
+    }
+
+    @Test
     fun `should reject the idiom index when it lists itself`() {
         assertMessage(
             mutate("idioms/index.json", "[\"spain.json\"]", "[\"spain.json\", \"index.json\"]"),

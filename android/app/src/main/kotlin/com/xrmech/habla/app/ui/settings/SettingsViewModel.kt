@@ -98,7 +98,8 @@ class SettingsViewModel(
     private val finalOptions = assets.models.models.map { (id, info) ->
         ModelOption(id, if (info.deprecated != null) "$id (deprecated ${info.deprecated})" else id)
     }
-    private val speechOptions = assets.asrModels.models.map {
+    // Partial-only catalog entries (base, D044) are never offered as the speech model.
+    private val speechOptions = assets.asrModels.models.filter { it.usableForFinals }.map {
         SpeechModelOption(it.id, "${it.base} ${it.quantization} (${(it.sizeBytes + 500_000) / 1_000_000} MB)", it.sizeBytes)
     }
 

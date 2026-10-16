@@ -28,7 +28,8 @@ constexpr int kSlotCount = 2;
 constexpr int kRcNoState = -100;      // handle 0, bad slot, or the slot's state is gone
 constexpr int kRcBadArgument = -101;  // invalid argument from the caller (e.g. probs array too small)
 constexpr int kRcNativeFailure = -102; // a C++ exception (e.g. std::bad_alloc) was caught at the boundary
-constexpr int kRcKvCacheFailed = -7;  // whisper freed the state itself
+constexpr int kRcKvCacheFailed = -7;  // transcribe(): whisper freed the state itself; detect()
+                                      // can also return -7 (decode failure) without freeing it
 constexpr int kRcAborted = -3;        // a callback stopped the run (whisper itself returns 0 for a
                                       // stop at a window boundary, see habla_engine.cpp)
 

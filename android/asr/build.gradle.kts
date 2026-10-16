@@ -236,7 +236,9 @@ tasks.register("prepareDeviceBench") {
         @Suppress("UNCHECKED_CAST")
         val models = (groovy.json.JsonSlurper().parse(catalogFile) as Map<String, Any>)["models"] as List<Map<String, Any>>
         run("shell", "mkdir", "-p", "/data/local/tmp/habla-models")
-        for (m in models.filter { only == null || it["id"] in only }) {
+        // Default: the models that may transcribe finals; partial-only ones (base) only when named.
+        fun finalRole(m: Map<String, Any>) = (m["roles"] as List<*>?)?.contains("final") ?: true
+        for (m in models.filter { if (only == null) finalRole(it) else it["id"] in only }) {
             val f = File(cacheDir, m["file"] as String)
             val sha = m["sha256"] as String
             if (!f.isFile || f.length() != (m["size_bytes"] as Number).toLong() || sha256(f) != sha) {

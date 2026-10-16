@@ -177,7 +177,9 @@ class SettingsViewModelTest {
         assets.models.models.filterValues { it.deprecated != null }.forEach { (id, info) ->
             assertEquals("$id (deprecated ${info.deprecated})", ui.finalModels.single { it.id == id }.label)
         }
-        assertEquals(assets.asrModels.models.map { it.id }, ui.speechModels.map { it.id })
+        // Partial-only catalog entries (base, D044) are not offered as the speech model.
+        assertEquals(listOf("ggml-small-q8_0", "ggml-small-q5_1", "ggml-small"), ui.speechModels.map { it.id })
+        assertEquals(assets.asrModels.models.filter { it.usableForFinals }.map { it.id }, ui.speechModels.map { it.id })
 
         vm.setMode(Mode.CLASSROOM)
         vm.setTrainingCapture(true)

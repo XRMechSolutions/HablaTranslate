@@ -66,6 +66,7 @@ function(habla_whisper_variant NAME ARM_ARCH EXTRA_ARGS)
 
     set(vulkan_args "")
     set(vulkan_libs "")
+    set(vulkan_byproducts "") # only files the ExternalProject builds; the NDK libvulkan stub is an input
     if (vulkan)
         set(sdk ${HABLA_VULKAN_SDK})
         # LunarG layout: Bin/Include/Lib on Windows, bin/include/lib (VULKAN_SDK = .../x86_64) on Linux.
@@ -105,6 +106,7 @@ function(habla_whisper_variant NAME ARM_ARCH EXTRA_ARGS)
             -DSPIRV-Headers_DIR=${spirv_dir}
             -DCMAKE_CXX_FLAGS=-isystem${sdk_include})
         set(vulkan_libs ${libdir}/libggml-vulkan.a ${libvulkan})
+        set(vulkan_byproducts ${libdir}/libggml-vulkan.a)
     endif()
 
     # whisper.cpp is always Release: a Debug ggml is 10-50x slower and would make debug builds and
@@ -145,7 +147,7 @@ function(habla_whisper_variant NAME ARM_ARCH EXTRA_ARGS)
             ${libdir}/libggml.a
             ${libdir}/libggml-cpu.a
             ${libdir}/libggml-base.a
-            ${vulkan_libs}
+            ${vulkan_byproducts}
     )
 
     set(target habla_asr_${NAME})

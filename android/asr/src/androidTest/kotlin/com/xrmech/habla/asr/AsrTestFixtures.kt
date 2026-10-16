@@ -1,6 +1,7 @@
 package com.xrmech.habla.asr
 
 import android.content.Context
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.test.platform.app.InstrumentationRegistry
 import com.xrmech.habla.shared.AsrModelEntry
@@ -74,16 +75,32 @@ object AsrTestFixtures {
 
     /**
      * Writes [text] to [path] as the shell user, so a report survives the test APK being uninstalled
-     * after the run and can be fetched with `adb pull`.
+     * after the run and can be fetched with `adb pull`. Returns the path actually written.
+     *
+     * `executeShellCommandRw` is API 31+. `tee` echoes its input, so stdout is drained on another
+     * thread while the input is written; otherwise a report larger than the pipe buffer blocks both
+     * sides. On API 29/30 the report goes to the test app's external files dir instead (removed with
+     * the APK: pull it before uninstalling).
      */
-    fun writeDeviceFile(path: String, text: String) {
+    fun writeDeviceFile(path: String, text: String): String {
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        if (Build.VERSION.SDK_INT < 31) {
+            val dir = checkNotNull(context.getExternalFilesDir("bench")) { "no external files dir" }
+            val file = File(dir, path.substringAfterLast('/'))
+            file.writeBytes(bytes)
+            return file.absolutePath
+        }
         val dir = path.substringBeforeLast('/')
         ParcelFileDescriptor.AutoCloseInputStream(shell("mkdir -p $dir")).use { it.readBytes() }
         val (out, input) = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommandRw("tee $path")
-        ParcelFileDescriptor.AutoCloseOutputStream(input).use { it.write(text.toByteArray(Charsets.UTF_8)) }
-        ParcelFileDescriptor.AutoCloseInputStream(out).use { it.readBytes() }
+        val drain = Thread { ParcelFileDescriptor.AutoCloseInputStream(out).use { it.readBytes() } }
+        drain.start()
+        ParcelFileDescriptor.AutoCloseOutputStream(input).use { it.write(bytes) }
+        drain.join(60_000)
+        check(!drain.isAlive) { "report $path: tee did not finish within 60 s" }
         val written = readDeviceFile(path).size
-        check(written == text.toByteArray(Charsets.UTF_8).size) { "report $path: wrote $written bytes" }
+        check(written == bytes.size) { "report $path: wrote $written of ${bytes.size} bytes" }
+        return path
     }
 
     fun sha256(file: File): String {

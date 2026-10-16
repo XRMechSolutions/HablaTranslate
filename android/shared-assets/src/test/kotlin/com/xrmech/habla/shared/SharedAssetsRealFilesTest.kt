@@ -22,6 +22,11 @@ class SharedAssetsRealFilesTest {
         assertEquals(0.35, assets.asrProfile.vad.speechThreshold)
         assertEquals(1.2, assets.asrProfile.merge.gapSeconds)
         assertEquals("ggml-small-q8_0", assets.asrModels.default.id)
+        // D044: base is a partial-only model; every small quantization may transcribe finals.
+        assertEquals(
+            listOf("ggml-small-q8_0", "ggml-small-q5_1", "ggml-small"),
+            assets.asrModels.models.filter { it.usableForFinals }.map { it.id },
+        )
         assertEquals(listOf("es", "en"), assets.languages.codes)
         assertTrue(assets.models.info(assets.models.finalDefault) != null)
         assertEquals("greedy_scaled_ctx", assets.asrProfile.whisperCpp.partial.level)
