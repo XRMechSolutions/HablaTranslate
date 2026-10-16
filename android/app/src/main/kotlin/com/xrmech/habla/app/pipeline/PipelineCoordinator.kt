@@ -579,8 +579,23 @@ class PipelineCoordinator(
                     )
                 }
                 HLog.text(HLog.PIPELINE) { "final #${item.seq} [${outcome.language}]: $text" }
-                val audioPath = if (s.snapshot.trainingCapture) saveTraining(s, item, outcome, AsrStatus.ACCEPTED) else null
-                launchTranslation(s, item, text, effective, outcome.detectedLanguage, audioPath, t0)
+                // The card is on screen from here: if stop's 30 s finals drain (or abort) cancels this
+                // item before its translation job exists, persist it as stopped so the transcript is
+                // not lost and the card does not stay "Translating..." (the job does the same itself).
+                var launched = false
+                try {
+                    val audioPath = if (s.snapshot.trainingCapture) saveTraining(s, item, outcome, AsrStatus.ACCEPTED) else null
+                    launchTranslation(s, item, text, effective, outcome.detectedLanguage, audioPath, t0)
+                    launched = true
+                } catch (e: CancellationException) {
+                    if (!launched) {
+                        withContext(NonCancellable) {
+                            val row = stoppedRow(s, item, text, effective, outcome.detectedLanguage, audioPath = null, t0 = t0)
+                            markStopped(item.seq, persist(row))
+                        }
+                    }
+                    throw e
+                }
             }
         }
         publishMetrics(s)
@@ -635,12 +650,7 @@ class PipelineCoordinator(
         s.translationScope.launch {
             var written = false
             val hits = idiomScanner.scan(text)
-            fun failedRow(raw: String) = NewExchange(
-                sessionId = s.id, segmentId = item.seq, direction = effective, rawTranscript = text,
-                correctedSource = null, translation = raw, confidence = 0.0, isCorrection = false,
-                correction = null, flagged = hits, processingMs = clock() - t0,
-                detectedLanguage = detectedLanguage, translationError = true, audioPath = audioPath,
-            )
+            fun failedRow(raw: String) = stoppedRow(s, item, text, effective, detectedLanguage, audioPath, t0, raw, hits)
             try {
                 val tStart = clock()
                 val outcome = translator.translate(text, effective, s.settingsNow.mode, context.recent(), context.topicSummary)
@@ -694,18 +704,35 @@ class PipelineCoordinator(
                 }
             } catch (e: CancellationException) {
                 if (!written) {
-                    withContext(NonCancellable) {
-                        val exchangeId = persist(failedRow(text))
-                        updateCard(item.seq) {
-                            it.copy(exchangeId = exchangeId, translation = CardTranslation.Failed(LlmException.Kind.TIMEOUT, STOPPED_MESSAGE))
-                        }
-                    }
+                    withContext(NonCancellable) { markStopped(item.seq, persist(failedRow(text))) }
                 }
                 throw e
             } catch (e: Exception) {
                 HLog.e(HLog.TRANSLATE, "translation job for #${item.seq} failed", e)
             }
         }
+    }
+
+    /** A failed-translation row (translationError = true; raw text as the translation, data-models). */
+    private fun stoppedRow(
+        s: Session,
+        item: MergedSegment,
+        text: String,
+        effective: Direction,
+        detectedLanguage: String?,
+        audioPath: String?,
+        t0: Long,
+        raw: String = text,
+        hits: List<FlaggedPhrase> = idiomScanner.scan(text),
+    ) = NewExchange(
+        sessionId = s.id, segmentId = item.seq, direction = effective, rawTranscript = text,
+        correctedSource = null, translation = raw, confidence = 0.0, isCorrection = false,
+        correction = null, flagged = hits, processingMs = clock() - t0,
+        detectedLanguage = detectedLanguage, translationError = true, audioPath = audioPath,
+    )
+
+    private fun markStopped(seq: Int, exchangeId: Long?) = updateCard(seq) {
+        it.copy(exchangeId = exchangeId, translation = CardTranslation.Failed(LlmException.Kind.TIMEOUT, STOPPED_MESSAGE))
     }
 
     private suspend fun persist(exchange: NewExchange): Long? = try {

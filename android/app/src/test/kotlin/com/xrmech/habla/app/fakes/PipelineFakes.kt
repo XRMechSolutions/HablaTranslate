@@ -290,7 +290,11 @@ class FakeVocabRepository : VocabRepository {
 class FakeTrainingCapture : TrainingCapture {
     val saved = mutableListOf<SegmentCapture>()
 
+    /** When set, every save waits on it (a slow or stuck disk). */
+    var gate: CompletableDeferred<Unit>? = null
+
     override suspend fun save(capture: SegmentCapture): String {
+        gate?.await()
         saved += capture
         return "sessions/${capture.sessionId}/segment_%03d.wav".format(capture.segmentId)
     }

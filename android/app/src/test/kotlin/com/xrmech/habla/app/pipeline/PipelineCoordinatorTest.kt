@@ -349,6 +349,26 @@ class PipelineCoordinatorTest {
         assertEquals(1, h.history.ended.size)
     }
 
+    @Test
+    fun `should persist a shown final as stopped when the finals drain times out before its translation starts`() = runTest {
+        val h = Harness(this, settings = AppSettingsDefaults(TestAssets.shared).value.copy(trainingCapture = true))
+        h.training.gate = CompletableDeferred() // training save never returns: the item stays past its card
+        started(h)
+        h.utterance(1)
+        advanceUntilIdle()
+        assertEquals(CardTranslation.Pending, h.state.exchanges.single().translation)
+        h.coordinator.stop(StopReason.UserStop) // 30 s finals drain times out on the test clock
+        val failed = h.state.exchanges.single().translation as CardTranslation.Failed
+        assertEquals(LlmException.Kind.TIMEOUT, failed.kind)
+        assertEquals("Stopped before translation finished", failed.message)
+        val row = h.history.added.single()
+        assertTrue(row.translationError)
+        assertEquals(1, row.segmentId)
+        assertNull(row.audioPath)
+        assertEquals(listOf(42L), h.history.ended.map { it.id })
+        assertEquals(SessionPhase.Idle, h.state.phase)
+    }
+
     // (12)
     @Test
     fun `should fail the session and end it when the recognizer cannot load`() = runTest {
