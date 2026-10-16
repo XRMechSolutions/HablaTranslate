@@ -1,0 +1,58 @@
+{
+    "device": "SM-A566B",
+    "android_sdk": 36,
+    "date": "2026-10-16",
+    "started_utc": "2026-10-16T14:38:44.515084Z",
+    "charging": true,
+    "cpus_allowed": "0-6",
+    "native_info": "v86 | WHISPER : VITISAI = 0 | COREML = 0 | OPENVINO = 0 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | DOTPROD = 1 | REPACK = 1 | | devices: [CPU: CPU]",
+    "utterances": 32,
+    "audio_sec": 135.712,
+    "models": [
+        {
+            "model_id": "ggml-small-q8_0",
+            "quantization": "q8_0",
+            "load_ms": 462,
+            "pss_before_mb": 47,
+            "pss_after_load_mb": 475,
+            "configs": [
+                {
+                    "threads": 3,
+                    "beam": 5,
+                    "buckets": {
+                        "0-3s": {
+                            "n": 12,
+                            "detect_p50_ms": 2899.0,
+                            "transcribe_p50_ms": 289.0,
+                            "total_p50_ms": 3171.0,
+                            "total_p90_ms": 3588.0,
+                            "rtf_p50": 1.7105263157894737,
+                            "rtf_p90": 2.036764705882353
+                        },
+                        "10-20s": {
+                            "n": 3,
+                            "detect_p50_ms": 2788.0,
+                            "transcribe_p50_ms": 1999.0,
+                            "total_p50_ms": 4798.0,
+                            "total_p90_ms": 5777.0,
+                            "rtf_p50": 0.38603460451977406,
+                            "rtf_p90": 0.5372953869047619
+                        },
+                        "3-10s": {
+                            "n": 17,
+                            "detect_p50_ms": 3165.0,
+                            "transcribe_p50_ms": 738.0,
+                            "total_p50_ms": 4058.0,
+                            "total_p90_ms": 5489.0,
+                            "rtf_p50": 1.1006610576923077,
+                            "rtf_p90": 1.316645408163265
+                        },
+                        "20-31s": "no golden utterance in this range"
+                    },
+                    "rtf_p90_ge3s": 1.3011968085106382,
+                    "total_p90_ms_lt3s": 3588.0
+                }
+            ]
+        }
+    ]
+}

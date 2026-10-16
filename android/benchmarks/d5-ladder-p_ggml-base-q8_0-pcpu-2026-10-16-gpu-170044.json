@@ -1,0 +1,99 @@
+{
+    "device": "SM-A566B",
+    "android_sdk": 36,
+    "date": "2026-10-16",
+    "started_utc": "2026-10-16T17:00:43.934101Z",
+    "charging": true,
+    "cpus_allowed": "0-6",
+    "native_info": "vk | WHISPER : VITISAI = 0 | COREML = 0 | OPENVINO = 0 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | DOTPROD = 1 | REPACK = 1 | | devices: [Vulkan0: Samsung Xclipse 540] [CPU: CPU]",
+    "model_id": "ggml-small-q8_0",
+    "partial_model_id": "ggml-base-q8_0",
+    "partial_on_cpu": true,
+    "threads": 3,
+    "sources": [
+        "en_aesop_01#2",
+        "en_aesop_01#3",
+        "mixed_es_en_es#0"
+    ],
+    "levels": [
+        {
+            "level": "parity",
+            "p50_ms": 2515.0,
+            "p90_ms": 4200.0,
+            "p90_ms_by_prefix_s": {
+                "1": 1686.0,
+                "2": 2326.0,
+                "3": 2515.0,
+                "4": 2709.0,
+                "5": 2543.0,
+                "6": 3112.0,
+                "7": 3683.0,
+                "8": 3760.0,
+                "9": 4319.0,
+                "10": 4383.0
+            }
+        },
+        {
+            "level": "greedy_full_ctx",
+            "p50_ms": 1549.0,
+            "p90_ms": 1810.0,
+            "p90_ms_by_prefix_s": {
+                "1": 1396.0,
+                "2": 1804.0,
+                "3": 1697.0,
+                "4": 1672.0,
+                "5": 1810.0,
+                "6": 1777.0,
+                "7": 1670.0,
+                "8": 2036.0,
+                "9": 2200.0,
+                "10": 1835.0
+            }
+        },
+        {
+            "level": "greedy_scaled_ctx",
+            "p50_ms": 681.0,
+            "p90_ms": 2773.0,
+            "p90_ms_by_prefix_s": {
+                "1": 2673.0,
+                "2": 2773.0,
+                "3": 3484.0,
+                "4": 689.0,
+                "5": 780.0,
+                "6": 3800.0,
+                "7": 1868.0,
+                "8": 836.0,
+                "9": 2762.0,
+                "10": 4373.0
+            }
+        },
+        {
+            "level": "greedy_scaled_ctx(pad=128,min=256)",
+            "p50_ms": 691.0,
+            "p90_ms": 2383.0,
+            "p90_ms_by_prefix_s": {
+                "1": 278.0,
+                "2": 520.0,
+                "3": 1019.0,
+                "4": 871.0,
+                "5": 500.0,
+                "6": 861.0,
+                "7": 2383.0,
+                "8": 3795.0,
+                "9": 5342.0,
+                "10": 1624.0
+            }
+        }
+    ],
+    "scaled_vs_full_ctx_wer": {
+        "pad64_min128": 1.5934065934065933,
+        "pad128_min256": 0.826007326007326,
+        "gate": "<= 0.05"
+    },
+    "partial_model_vs_main_full_ctx_wer": {
+        "reference": "ggml-small-q8_0 greedy_full_ctx partials on the same prefixes",
+        "greedy_full_ctx": 0.14205607476635515,
+        "greedy_scaled_ctx": 1.6766355140186915,
+        "floor": "<= 0.35 (device-acceleration-plan.md section 5, proposed)"
+    }
+}

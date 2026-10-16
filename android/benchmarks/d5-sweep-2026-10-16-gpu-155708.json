@@ -1,0 +1,58 @@
+{
+    "device": "SM-A566B",
+    "android_sdk": 36,
+    "date": "2026-10-16",
+    "started_utc": "2026-10-16T15:57:08.232349Z",
+    "charging": true,
+    "cpus_allowed": "0-6",
+    "native_info": "vk | WHISPER : VITISAI = 0 | COREML = 0 | OPENVINO = 0 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | DOTPROD = 1 | REPACK = 1 | | devices: [Vulkan0: Samsung Xclipse 540] [CPU: CPU]",
+    "utterances": 32,
+    "audio_sec": 135.712,
+    "models": [
+        {
+            "model_id": "ggml-small-q8_0",
+            "quantization": "q8_0",
+            "load_ms": 695,
+            "pss_before_mb": 47,
+            "pss_after_load_mb": 828,
+            "configs": [
+                {
+                    "threads": 3,
+                    "beam": 5,
+                    "buckets": {
+                        "0-3s": {
+                            "n": 12,
+                            "detect_p50_ms": 1492.0,
+                            "transcribe_p50_ms": 342.0,
+                            "total_p50_ms": 1819.0,
+                            "total_p90_ms": 1867.0,
+                            "rtf_p50": 0.9147245762711865,
+                            "rtf_p90": 1.0888480392156863
+                        },
+                        "10-20s": {
+                            "n": 3,
+                            "detect_p50_ms": 1511.0,
+                            "transcribe_p50_ms": 1898.0,
+                            "total_p50_ms": 3402.0,
+                            "total_p90_ms": 3737.0,
+                            "rtf_p50": 0.2887535310734463,
+                            "rtf_p90": 0.31640625
+                        },
+                        "3-10s": {
+                            "n": 17,
+                            "detect_p50_ms": 1505.0,
+                            "transcribe_p50_ms": 530.0,
+                            "total_p50_ms": 2057.0,
+                            "total_p90_ms": 3055.0,
+                            "rtf_p50": 0.5716391509433962,
+                            "rtf_p90": 0.659438775510204
+                        },
+                        "20-31s": "no golden utterance in this range"
+                    },
+                    "rtf_p90_ge3s": 0.6366421568627451,
+                    "total_p90_ms_lt3s": 1867.0
+                }
+            ]
+        }
+    ]
+}

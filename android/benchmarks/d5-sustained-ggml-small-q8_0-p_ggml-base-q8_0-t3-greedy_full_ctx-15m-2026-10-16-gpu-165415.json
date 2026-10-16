@@ -1,0 +1,309 @@
+{
+    "device": "SM-A566B",
+    "android_sdk": 36,
+    "date": "2026-10-16",
+    "started_utc": "2026-10-16T16:54:15.942506Z",
+    "charging": true,
+    "cpus_allowed": "0-6",
+    "model_id": "ggml-small-q8_0",
+    "partial_model_id": "ggml-base-q8_0",
+    "threads": 3,
+    "beam": 5,
+    "partial_level": "greedy_full_ctx",
+    "pad": 64,
+    "min": 128,
+    "minutes": 15,
+    "speech_duty": 0.6,
+    "partials_submitted": 472,
+    "partials_started": 452,
+    "partials_aborted_by_final": 83,
+    "partials_failed": 0,
+    "partials_filtered": 0,
+    "partial_drop_ratio": 0.21822033898305085,
+    "partials_displayed": 369,
+    "partial_p50_ms": 558.0,
+    "partial_p90_ms": 932.0,
+    "partial_age_p90_ms": 946.0,
+    "partial_update_gap_p95_ms": 3242.0,
+    "partial_update_gap_max_ms": 4315.0,
+    "finals": 128,
+    "final_p50_ms": 1935.0,
+    "final_p90_ms": 3281.0,
+    "final_p99_ms": 3899.0,
+    "final_rtf_p90_ge3s": 0.6522671568627452,
+    "final_total_p90_ms_lt3s": 1922.0,
+    "final_wait_max_ms": 5,
+    "final_queue_depth_p95": 0.0,
+    "battery_start_pct": 89,
+    "battery_end_pct": 89,
+    "max_thermal_status": 2,
+    "pss_peak_mb": 1068,
+    "native_info": "vk | WHISPER : VITISAI = 0 | COREML = 0 | OPENVINO = 0 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | DOTPROD = 1 | REPACK = 1 | | devices: [Vulkan0: Samsung Xclipse 540] [CPU: CPU]",
+    "decision_rules": {
+        "design_v1": {
+            "partial_p90_le_800ms": false,
+            "partial_drop_le_0_25": true,
+            "final_rtf_p90_ge3s_le_0_5": false,
+            "final_total_p90_lt3s_le_2000ms": true,
+            "final_queue_depth_p95_le_1": true
+        },
+        "mobile_proposed": {
+            "final_total_p90_lt3s_le_4000ms": true,
+            "final_rtf_p90_ge3s_le_1_0": true,
+            "final_p99_le_10000ms": true,
+            "final_queue_depth_p95_le_1": true,
+            "partial_age_p90_le_1000ms": true,
+            "partial_drop_le_0_50": true,
+            "partial_update_gap_p95_le_2500ms": false
+        },
+        "thermal_below_severe": true
+    },
+    "windows": [
+        {
+            "window_min": "0-5",
+            "partials_n": 125,
+            "partial_p50_ms": 577.0,
+            "partial_p90_ms": 964.0,
+            "finals_n": 38,
+            "final_p50_ms": 1937.0,
+            "final_p90_ms": 3394.0
+        },
+        {
+            "window_min": "5-10",
+            "partials_n": 120,
+            "partial_p50_ms": 538.0,
+            "partial_p90_ms": 839.0,
+            "finals_n": 46,
+            "final_p50_ms": 1921.0,
+            "final_p90_ms": 2997.0
+        },
+        {
+            "window_min": "10-15",
+            "partials_n": 124,
+            "partial_p50_ms": 566.0,
+            "partial_p90_ms": 922.0,
+            "finals_n": 43,
+            "final_p50_ms": 1958.0,
+            "final_p90_ms": 3173.0
+        }
+    ],
+    "thermal": [
+        {
+            "t_s": 0,
+            "status": 2,
+            "headroom_10s": 0.8999999761581421,
+            "pss_mb": 877,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 31,
+            "status": 2,
+            "headroom_10s": 0.8733333349227905,
+            "pss_mb": 1057,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 61,
+            "status": 2,
+            "headroom_10s": 0.85999995470047,
+            "pss_mb": 1066,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 91,
+            "status": 2,
+            "headroom_10s": 0.8566666841506958,
+            "pss_mb": 1066,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 121,
+            "status": 2,
+            "headroom_10s": 0.8633334040641785,
+            "pss_mb": 1068,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 151,
+            "status": 2,
+            "headroom_10s": 0.8699999451637268,
+            "pss_mb": 1066,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 181,
+            "status": 2,
+            "headroom_10s": 0.8766666650772095,
+            "pss_mb": 1061,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 211,
+            "status": 2,
+            "headroom_10s": 0.8633334040641785,
+            "pss_mb": 1041,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 241,
+            "status": 2,
+            "headroom_10s": 0.8500000238418579,
+            "pss_mb": 1040,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 272,
+            "status": 2,
+            "headroom_10s": 0.846666693687439,
+            "pss_mb": 1044,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 302,
+            "status": 2,
+            "headroom_10s": 0.8366666436195374,
+            "pss_mb": 1050,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 332,
+            "status": 2,
+            "headroom_10s": 0.8500000238418579,
+            "pss_mb": 1020,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 362,
+            "status": 2,
+            "headroom_10s": 0.8500000238418579,
+            "pss_mb": 1021,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 392,
+            "status": 2,
+            "headroom_10s": 0.8500000238418579,
+            "pss_mb": 1022,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 422,
+            "status": 2,
+            "headroom_10s": 0.846666693687439,
+            "pss_mb": 1002,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 452,
+            "status": 2,
+            "headroom_10s": 0.846666693687439,
+            "pss_mb": 1007,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 483,
+            "status": 2,
+            "headroom_10s": 0.8433333039283752,
+            "pss_mb": 1009,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 513,
+            "status": 2,
+            "headroom_10s": 0.8433333039283752,
+            "pss_mb": 1017,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 543,
+            "status": 2,
+            "headroom_10s": 0.8400000333786011,
+            "pss_mb": 1012,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 573,
+            "status": 2,
+            "headroom_10s": 0.8433333039283752,
+            "pss_mb": 1014,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 603,
+            "status": 2,
+            "headroom_10s": 0.8433333039283752,
+            "pss_mb": 995,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 633,
+            "status": 2,
+            "headroom_10s": 0.8400000333786011,
+            "pss_mb": 1002,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 663,
+            "status": 2,
+            "headroom_10s": 0.8433333039283752,
+            "pss_mb": 998,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 694,
+            "status": 2,
+            "headroom_10s": 0.8533332943916321,
+            "pss_mb": 1003,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 724,
+            "status": 2,
+            "headroom_10s": 0.8333333134651184,
+            "pss_mb": 1008,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 754,
+            "status": 1,
+            "headroom_10s": 0.8733333349227905,
+            "pss_mb": 1010,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 784,
+            "status": 2,
+            "headroom_10s": 0.8966667056083679,
+            "pss_mb": 989,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 814,
+            "status": 2,
+            "headroom_10s": 0.8666666746139526,
+            "pss_mb": 991,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 844,
+            "status": 2,
+            "headroom_10s": 0.8566666841506958,
+            "pss_mb": 994,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 875,
+            "status": 2,
+            "headroom_10s": 0.8533332943916321,
+            "pss_mb": 997,
+            "battery_pct": 89
+        },
+        {
+            "t_s": 905,
+            "status": 2,
+            "headroom_10s": 0.846666693687439,
+            "pss_mb": 1001,
+            "battery_pct": 89
+        }
+    ]
+}
