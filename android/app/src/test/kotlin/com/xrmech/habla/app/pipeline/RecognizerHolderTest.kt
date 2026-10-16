@@ -54,6 +54,51 @@ class RecognizerHolderTest {
         assertEquals("Speech model missing - download it in Settings", e.message)
     }
 
+    /** Model files exist for [present] ids only; records what [load] received. */
+    private class LiveModelHolder(dir: File, private val present: Set<String>) : RecognizerHolder(
+        ModelManager(dir, TestAssets.shared.asrModels, object : ModelDownloader {
+            override suspend fun <T> open(url: String, rangeStart: Long, block: suspend (DownloadResponse) -> T): T =
+                throw IOException("offline")
+        }),
+        TestAssets.shared,
+        Dispatchers.Unconfined,
+        threads = 1,
+    ) {
+        private val root = dir
+        var loadedPartial: File? = null
+        var loads = 0
+
+        override fun modelFile(modelId: String): File? = if (modelId in present) File(root, "$modelId.bin") else null
+
+        override suspend fun load(file: File, partialFile: File?): SpeechRecognizer {
+            loads++
+            loadedPartial = partialFile
+            return FakeSpeechRecognizer()
+        }
+    }
+
+    @Test
+    fun `should load the live model as the partial model when it is downloaded`() = runTest {
+        val h = LiveModelHolder(dir, setOf("ggml-small-q8_0", "ggml-base-q8_0"))
+        h.acquire("ggml-small-q8_0", "ggml-base-q8_0")
+        assertEquals(File(dir, "ggml-base-q8_0.bin"), h.loadedPartial)
+    }
+
+    @Test
+    fun `should fall back to the speech model for partials when the live model is missing`() = runTest {
+        val h = LiveModelHolder(dir, setOf("ggml-small-q8_0"))
+        h.acquire("ggml-small-q8_0", "ggml-base-q8_0")
+        assertEquals(1, h.loads)
+        assertEquals(null, h.loadedPartial)
+    }
+
+    @Test
+    fun `should not load a second model when the live model is the speech model`() = runTest {
+        val h = LiveModelHolder(dir, setOf("ggml-small-q8_0"))
+        h.acquire("ggml-small-q8_0", "ggml-small-q8_0")
+        assertEquals(null, h.loadedPartial)
+    }
+
     @Test
     fun `should allow release twice with nothing loaded`() {
         val h = holder()
@@ -78,7 +123,7 @@ class RecognizerHolderTest {
         override fun modelFile(modelId: String): File = file
 
         /** Like the native load: blocking work that cancellation does not interrupt. */
-        override suspend fun load(file: File): SpeechRecognizer {
+        override suspend fun load(file: File, partialFile: File?): SpeechRecognizer {
             withContext(NonCancellable) { gate.await() }
             return loaded
         }

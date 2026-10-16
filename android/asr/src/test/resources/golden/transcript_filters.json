@@ -1,7 +1,7 @@
 {
  "python": "3.12.8",
  "sources": {
-  "asr_profile.json": "fbc69654572bddbd0197bff3fb0023653b059a2b8f7a98b315560d6bce1f1f23"
+  "asr_profile.json": "02efd9800fb5a615f8685329deb230181335ae687493030bf2497ebb2dc4c067"
  },
  "min_letters": 3,
  "min_letter_ratio": 0.5,

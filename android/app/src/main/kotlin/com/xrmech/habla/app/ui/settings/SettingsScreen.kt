@@ -72,6 +72,9 @@ data class SettingsActions(
     val cancelDownload: () -> Unit = {},
     val deleteModel: () -> Unit = {},
     val setTrainingCapture: (Boolean) -> Unit = {},
+    val setLiveModel: (String) -> Unit = {},
+    val downloadLiveModel: (Boolean) -> Unit = {},
+    val setAsrGpu: (Boolean) -> Unit = {},
 )
 
 @Composable
@@ -93,6 +96,7 @@ fun SettingsScreen(section: String?, @Suppress("UNUSED_PARAMETER") navigator: Na
             downloadModel = vm::downloadModel, dismissMeteredDownload = vm::dismissMeteredDownload,
             cancelDownload = vm::cancelDownload, deleteModel = vm::deleteModel,
             setTrainingCapture = vm::setTrainingCapture,
+            setLiveModel = vm::setLiveModel, downloadLiveModel = vm::downloadLiveModel, setAsrGpu = vm::setAsrGpu,
         ),
     )
 }
@@ -240,13 +244,7 @@ private fun SpeechModelSection(state: SettingsUiState, actions: SettingsActions)
     SectionCard("Speech model", Settings.MODEL) {
         Picker("Model", state.settings?.asrModelId, state.speechModels.map { it.id to it.label }, actions.setAsrModel, "asr_model")
         val m = state.modelState
-        val status = when (m) {
-            ModelState.Missing -> "Not downloaded"
-            is ModelState.Downloading -> "Downloading ${mb(m.bytes)} / ${mb(m.total)} MB"
-            ModelState.Verifying -> "Verifying..."
-            is ModelState.Ready -> "Ready"
-            is ModelState.Failed -> "Download failed: ${ModelFailureText.of(m.reason)}"
-        }
+        val status = modelStatusText(m)
         Text(status, color = if (m is ModelState.Failed) HablaColors.ErrorText else HablaColors.Text, modifier = Modifier.testTag("model_status"))
         if (m is ModelState.Downloading && m.total > 0) {
             LinearProgressIndicator(progress = { m.bytes.toFloat() / m.total }, modifier = Modifier.fillMaxWidth().testTag("model_progress"))
@@ -267,16 +265,49 @@ private fun SpeechModelSection(state: SettingsUiState, actions: SettingsActions)
         }
         if (state.sessionActive) Text("Delete is unavailable while listening", color = HablaColors.TextMuted)
         state.local.modelMessage?.let { Text(it, color = HablaColors.ErrorText) }
+
+        // Live preview (D045): a smaller model for partials; finals keep the speech model.
+        Picker("Live preview model", state.settings?.liveModelId, state.liveModels.map { it.id to it.label }, actions.setLiveModel, "live_model")
+        state.liveModelState?.let { lm ->
+            Text(modelStatusText(lm), color = if (lm is ModelState.Failed) HablaColors.ErrorText else HablaColors.Text, modifier = Modifier.testTag("live_model_status"))
+            if (lm is ModelState.Downloading && lm.total > 0) {
+                LinearProgressIndicator(progress = { lm.bytes.toFloat() / lm.total }, modifier = Modifier.fillMaxWidth().testTag("live_model_progress"))
+            }
+            if (lm !is ModelState.Ready && lm !is ModelState.Downloading && !state.downloadRunning) {
+                Button(onClick = { actions.downloadLiveModel(false) }, modifier = Modifier.testTag("live_model_download")) {
+                    Text(state.selectedLiveModel?.let { "Download (${mb(it.sizeBytes)} MB)" } ?: "Download")
+                }
+            }
+        }
+        if (state.gpuBuilt) {
+            ToggleRow("GPU acceleration (experimental)", state.settings?.asrGpu == true, state.settings != null, actions.setAsrGpu, "asr_gpu")
+            Text(
+                "Applies after restarting the app. Engine now: ${state.engineNow ?: "not loaded yet"}",
+                color = HablaColors.TextMuted, modifier = Modifier.testTag("asr_engine_now"),
+            )
+        }
     }
     if (state.local.confirmMeteredDownload) {
+        val live = state.local.meteredForLive
+        val size = (if (live) state.selectedLiveModel else selected)?.let { mb(it.sizeBytes) } ?: "?"
         AlertDialog(
             onDismissRequest = actions.dismissMeteredDownload,
             title = { Text("Download on mobile data?") },
-            text = { Text("The speech model is ${selected?.let { mb(it.sizeBytes) } ?: "?"} MB and this network is metered.") },
-            confirmButton = { TextButton(onClick = { actions.downloadModel(true) }) { Text("Download") } },
+            text = { Text("The ${if (live) "live preview" else "speech"} model is $size MB and this network is metered.") },
+            confirmButton = {
+                TextButton(onClick = { if (live) actions.downloadLiveModel(true) else actions.downloadModel(true) }) { Text("Download") }
+            },
             dismissButton = { TextButton(onClick = actions.dismissMeteredDownload) { Text("Cancel") } },
         )
     }
+}
+
+private fun modelStatusText(m: ModelState): String = when (m) {
+    ModelState.Missing -> "Not downloaded"
+    is ModelState.Downloading -> "Downloading ${mb(m.bytes)} / ${mb(m.total)} MB"
+    ModelState.Verifying -> "Verifying..."
+    is ModelState.Ready -> "Ready"
+    is ModelState.Failed -> "Download failed: ${ModelFailureText.of(m.reason)}"
 }
 
 @Composable

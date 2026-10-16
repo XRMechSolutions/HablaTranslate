@@ -23,12 +23,21 @@ class ModelDownloadController(
     private val _running = MutableStateFlow(false)
     val running: StateFlow<Boolean> = _running.asStateFlow()
 
+    /**
+     * The model `ModelManager.state` currently describes (the last one downloaded, refreshed or
+     * deleted here), or null before any. With a speech model and a live model (D045) the UI shows
+     * `state` only for this id and reads the other from disk.
+     */
+    private val _stateOwner = MutableStateFlow<String?>(null)
+    val stateOwner: StateFlow<String?> = _stateOwner.asStateFlow()
+
     fun isMetered(): Boolean = meteredCheck()
 
     /** Single-flight: a call while a download runs is ignored. */
     @Synchronized
     fun download(modelId: String) {
         if (job?.isActive == true) return
+        _stateOwner.value = modelId
         _running.value = true
         // Driven by ModelManager.ensure to Ready/Failed; cancelled by cancel()/delete() or the app
         // scope; ensure reports every non-cancel error in ModelManager.state, so nothing is thrown here.
@@ -51,10 +60,16 @@ class ModelDownloadController(
         val running = synchronized(this) { job }
         running?.cancel()
         running?.join()
+        _stateOwner.value = modelId
         models.delete(modelId)
         HLog.i(HLog.UI, "deleted speech model $modelId")
     }
 
     /** Sets ModelManager.state from disk (Ready/Missing) for the selected model, without network. */
-    suspend fun refresh(modelId: String) = models.refresh(modelId)
+    suspend fun refresh(modelId: String) {
+        // A running download keeps ownership: refresh leaves its state untouched.
+        if (_running.value) return
+        _stateOwner.value = modelId
+        models.refresh(modelId)
+    }
 }

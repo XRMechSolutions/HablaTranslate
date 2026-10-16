@@ -172,6 +172,24 @@ class PipelineCoordinatorTest {
         assertEquals(1, h.recognizers.releases)
     }
 
+    @Test
+    fun `should load the speech model with the live model and engine from the settings snapshot`() = runTest {
+        val base = AppSettingsDefaults(TestAssets.shared).value
+        val h = Harness(this, settings = base.copy(liveModelId = "ggml-base-q8_0", asrGpu = true))
+        started(h)
+        h.coordinator.stop(StopReason.UserStop)
+        assertEquals(listOf(Triple(base.asrModelId, "ggml-base-q8_0", true)), h.recognizers.acquired)
+    }
+
+    @Test
+    fun `should pass no live model when the setting is empty`() = runTest {
+        val h = Harness(this)
+        started(h)
+        h.coordinator.stop(StopReason.UserStop)
+        assertEquals(null, h.recognizers.acquired.single().second)
+        assertEquals(false, h.recognizers.acquired.single().third)
+    }
+
     // (3)
     @Test
     fun `should persist failed no key cards and keep context empty without a key`() = runTest {

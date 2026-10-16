@@ -29,7 +29,9 @@ class SharedAssetsRealFilesTest {
         )
         assertEquals(listOf("es", "en"), assets.languages.codes)
         assertTrue(assets.models.info(assets.models.finalDefault) != null)
-        assertEquals("greedy_scaled_ctx", assets.asrProfile.whisperCpp.partial.level)
+        // D048: full-context greedy partials on 3 threads (scaled context failed the readability gate on the A56).
+        assertEquals("greedy_full_ctx", assets.asrProfile.whisperCpp.partial.level)
+        assertEquals(3, assets.asrProfile.whisperCpp.threads)
     }
 
     @Test

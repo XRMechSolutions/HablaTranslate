@@ -9,7 +9,7 @@ interface SettingsRepository {
     /** Current settings with defaults filled in; re-emits on every distinct change. */
     val settings: Flow<AppSettings>
 
-    /** Atomically reads, applies [transform] (pure, no I/O) and writes all nine keys. */
+    /** Atomically reads, applies [transform] (pure, no I/O) and writes all eleven keys. */
     suspend fun update(transform: (AppSettings) -> AppSettings)
 }
 
@@ -23,4 +23,8 @@ data class AppSettings(
     val asrModelId: String,
     val trainingCapture: Boolean,
     val firstRunDone: Boolean,
+    /** Separate model for live partials (D045, e.g. base); "" = the speech model itself. */
+    val liveModelId: String = "",
+    /** Experimental GPU speech engine (D043/D047); applies from the next app start. */
+    val asrGpu: Boolean = false,
 )

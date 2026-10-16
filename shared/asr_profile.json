@@ -57,7 +57,7 @@
     "default_language": "es"
   },
   "whisper_cpp": {
-    "threads": 4,
+    "threads": 3,
     "final": {
       "beam_size": null,
       "temperature": 0.0,
@@ -67,7 +67,7 @@
       "no_speech_thold": 1.0
     },
     "partial": {
-      "level": "greedy_scaled_ctx",
+      "level": "greedy_full_ctx",
       "audio_ctx_pad_frames": 64,
       "audio_ctx_min_frames": 128
     },

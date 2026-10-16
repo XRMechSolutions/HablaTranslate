@@ -161,7 +161,11 @@ class FakeRecognizerHolder(
     var releases = 0
     var gate: CompletableDeferred<Unit>? = null
 
-    override suspend fun acquire(modelId: String): SpeechRecognizer {
+    /** (modelId, liveModelId, gpu) of every acquire, for the coordinator's settings snapshot. */
+    val acquired = mutableListOf<Triple<String, String?, Boolean>>()
+
+    override suspend fun acquire(modelId: String, liveModelId: String?, gpu: Boolean): SpeechRecognizer {
+        acquired += Triple(modelId, liveModelId, gpu)
         gate?.await()
         loadError?.let { throw it }
         return recognizer

@@ -143,7 +143,7 @@ class PipelineCoordinator(
     private inner class Session(
         val id: Long,
         val source: AudioSource,
-        /** trainingCapture and asrModelId apply from the next session (snapshotted here). */
+        /** trainingCapture, asrModelId, liveModelId and asrGpu apply from the next session (snapshotted here). */
         val snapshot: AppSettings,
         val scope: CoroutineScope,
         val startedAtMs: Long,
@@ -245,7 +245,9 @@ class PipelineCoordinator(
 
                 // Model load (1-3 s) runs beside calibration (2 s), so it is hidden. Driven to completion
                 // by acquire; cancelled with the session scope; a failure fails the session (watcher below).
-                s.recognizer = scope.async(dispatchers.io) { recognizers.acquire(appSettings.asrModelId) }
+                s.recognizer = scope.async(dispatchers.io) {
+                    recognizers.acquire(appSettings.asrModelId, appSettings.liveModelId.ifEmpty { null }, appSettings.asrGpu)
+                }
 
                 val vad = vadFactory()
                 if (vad == null) {

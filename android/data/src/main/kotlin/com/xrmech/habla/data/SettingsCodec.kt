@@ -37,7 +37,7 @@ internal object EnumCodec {
     }
 }
 
-/** Preferences <-> [AppSettings] over the nine data-models keys. */
+/** Preferences <-> [AppSettings] over the eleven data-models keys. */
 internal object SettingsCodec {
     val DIRECTION = stringPreferencesKey("direction")
     val MODE = stringPreferencesKey("mode")
@@ -48,6 +48,8 @@ internal object SettingsCodec {
     val ASR_MODEL_ID = stringPreferencesKey("asr_model_id")
     val TRAINING_CAPTURE = booleanPreferencesKey("training_capture")
     val FIRST_RUN_DONE = booleanPreferencesKey("first_run_done")
+    val LIVE_MODEL_ID = stringPreferencesKey("live_model_id")
+    val ASR_GPU = booleanPreferencesKey("asr_gpu")
 
     /** Missing keys take [defaults]; an unknown enum string takes that field's default with a warning. */
     fun decode(p: Preferences, defaults: AppSettings): AppSettings = AppSettings(
@@ -64,9 +66,11 @@ internal object SettingsCodec {
         asrModelId = p[ASR_MODEL_ID] ?: defaults.asrModelId,
         trainingCapture = p[TRAINING_CAPTURE] ?: defaults.trainingCapture,
         firstRunDone = p[FIRST_RUN_DONE] ?: defaults.firstRunDone,
+        liveModelId = p[LIVE_MODEL_ID] ?: defaults.liveModelId,
+        asrGpu = p[ASR_GPU] ?: defaults.asrGpu,
     )
 
-    /** Writes all nine keys, so the file is always complete. */
+    /** Writes all eleven keys, so the file is always complete. */
     fun encode(s: AppSettings, p: MutablePreferences) {
         p[DIRECTION] = EnumCodec.encode(s.direction)
         p[MODE] = EnumCodec.encode(s.mode)
@@ -77,5 +81,7 @@ internal object SettingsCodec {
         p[ASR_MODEL_ID] = s.asrModelId
         p[TRAINING_CAPTURE] = s.trainingCapture
         p[FIRST_RUN_DONE] = s.firstRunDone
+        p[LIVE_MODEL_ID] = s.liveModelId
+        p[ASR_GPU] = s.asrGpu
     }
 }

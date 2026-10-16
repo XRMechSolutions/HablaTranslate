@@ -7,12 +7,14 @@ import com.xrmech.habla.app.pipeline.LiveController
 import com.xrmech.habla.app.state.KeyHealthTracker
 import com.xrmech.habla.app.state.KeyState
 import com.xrmech.habla.app.state.ModelDownloadController
+import com.xrmech.habla.asr.AsrBackend
 import com.xrmech.habla.asr.ModelManager
 import com.xrmech.habla.asr.ModelState
 import com.xrmech.habla.data.ApiKeyStore
 import com.xrmech.habla.data.AppSettings
 import com.xrmech.habla.data.SettingsRepository
 import com.xrmech.habla.data.UsageRepository
+import com.xrmech.habla.shared.AsrModelEntry
 import com.xrmech.habla.shared.SharedAssets
 import com.xrmech.habla.translate.CostMeter
 import com.xrmech.habla.translate.KeyTestResult
@@ -54,6 +56,8 @@ data class SettingsLocal(
     val keyTestMessage: String? = null,
     val modelMessage: String? = null,
     val confirmMeteredDownload: Boolean = false,
+    /** The metered-network question is about the live model, not the speech model. */
+    val meteredForLive: Boolean = false,
 )
 
 data class SettingsUiState(
@@ -63,7 +67,16 @@ data class SettingsUiState(
     val finalModels: List<ModelOption> = emptyList(),
     val quickModels: List<ModelOption> = emptyList(),
     val speechModels: List<SpeechModelOption> = emptyList(),
+    /** State of the selected speech model. */
     val modelState: ModelState = ModelState.Missing,
+    /** "" = same as the speech model, then the partial-only catalog models (D045). */
+    val liveModels: List<SpeechModelOption> = emptyList(),
+    /** State of the selected live model; null when it is the speech model. */
+    val liveModelState: ModelState? = null,
+    /** This build packages the experimental GPU engine (D043/D047). */
+    val gpuBuilt: Boolean = false,
+    /** Library loaded in this process (`vk`, `v86`, `base`), or null before the first session. */
+    val engineNow: String? = null,
     val downloadRunning: Boolean = false,
     val sessionActive: Boolean = false,
     val costs: CostTotals = CostTotals(),
@@ -71,6 +84,7 @@ data class SettingsUiState(
     val local: SettingsLocal = SettingsLocal(),
 ) {
     val selectedSpeechModel: SpeechModelOption? get() = speechModels.firstOrNull { it.id == settings?.asrModelId }
+    val selectedLiveModel: SpeechModelOption? get() = liveModels.firstOrNull { it.id == settings?.liveModelId }
 }
 
 sealed interface SettingsEffect {
@@ -103,11 +117,23 @@ class SettingsViewModel(
         SpeechModelOption(it.id, "${it.base} ${it.quantization} (${(it.sizeBytes + 500_000) / 1_000_000} MB)", it.sizeBytes)
     }
 
-    private val base = combine(settings.settings, keyHealth.state, models.state, downloads.running) { s, k, m, d ->
+    private val liveOptions = listOf(SpeechModelOption("", "Same as speech model", 0)) +
+        assets.asrModels.models.filter { !it.usableForFinals && AsrModelEntry.ROLE_PARTIAL in it.roles.orEmpty() }.map {
+            SpeechModelOption(it.id, "${it.base} ${it.quantization} (${(it.sizeBytes + 500_000) / 1_000_000} MB, faster)", it.sizeBytes)
+        }
+
+    private val base = combine(settings.settings, keyHealth.state, models.state, downloads.running, downloads.stateOwner) { s, k, m, d, owner ->
+        // ModelManager.state describes one model (the owner); the other row reads Ready/Missing from disk.
+        fun stateOf(id: String): ModelState =
+            if (owner == null && id == s.asrModelId || owner == id) m
+            else models.fileFor(id)?.let { ModelState.Ready(it) } ?: ModelState.Missing
         SettingsUiState(
             keyStatus = keyStatusText(k), keyState = k, settings = s,
             finalModels = finalOptions, quickModels = finalOptions, speechModels = speechOptions,
-            modelState = m, downloadRunning = d,
+            modelState = stateOf(s.asrModelId), downloadRunning = d,
+            liveModels = liveOptions,
+            liveModelState = s.liveModelId.takeIf { it.isNotEmpty() && it != s.asrModelId }?.let(::stateOf),
+            gpuBuilt = AsrBackend.gpuBuilt, engineNow = AsrBackend.loadedVariant,
         )
     }
 
@@ -213,6 +239,13 @@ class SettingsViewModel(
         }
     }
 
+    fun setLiveModel(id: String) {
+        if (id.isNotEmpty() && assets.asrModels.byId(id) == null) return
+        edit { it.copy(liveModelId = id) }
+    }
+
+    fun setAsrGpu(on: Boolean) = edit { it.copy(asrGpu = on) }
+
     private fun edit(transform: (AppSettings) -> AppSettings) {
         viewModelScope.launch { settings.update(transform) }
     }
@@ -225,11 +258,24 @@ class SettingsViewModel(
             local.update { it.copy(confirmMeteredDownload = true) }
             return
         }
-        local.update { it.copy(confirmMeteredDownload = false, modelMessage = null) }
+        local.update { it.copy(confirmMeteredDownload = false, meteredForLive = false, modelMessage = null) }
         viewModelScope.launch { downloads.download(settings.settings.first().asrModelId) }
     }
 
-    fun dismissMeteredDownload() = local.update { it.copy(confirmMeteredDownload = false) }
+    /** Downloads the selected live model; same metered-network question as [downloadModel]. */
+    fun downloadLiveModel(confirmed: Boolean = false) {
+        if (!confirmed && downloads.isMetered()) {
+            local.update { it.copy(confirmMeteredDownload = true, meteredForLive = true) }
+            return
+        }
+        local.update { it.copy(confirmMeteredDownload = false, meteredForLive = false, modelMessage = null) }
+        viewModelScope.launch {
+            val id = settings.settings.first().liveModelId
+            if (id.isNotEmpty()) downloads.download(id)
+        }
+    }
+
+    fun dismissMeteredDownload() = local.update { it.copy(confirmMeteredDownload = false, meteredForLive = false) }
 
     fun cancelDownload() = downloads.cancel()
 

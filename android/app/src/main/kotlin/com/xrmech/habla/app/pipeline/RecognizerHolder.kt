@@ -1,5 +1,7 @@
 package com.xrmech.habla.app.pipeline
 
+import com.xrmech.habla.app.log.HLog
+import com.xrmech.habla.asr.AsrBackend
 import com.xrmech.habla.asr.AsrException
 import com.xrmech.habla.asr.ModelManager
 import com.xrmech.habla.asr.SpeechRecognizer
@@ -33,19 +35,27 @@ open class RecognizerHolder(
     private var generation = 0
 
     /**
+     * [liveModelId] (D045): a separate model for live partials, used when its verified file is on
+     * disk; otherwise partials use the speech model. [gpu] (experimental, D047): prefer the Vulkan
+     * library; it applies only at the first load in the process ([AsrBackend]).
+     *
      * @throws AsrException MODEL_MISSING when the verified file is absent, MODEL_LOAD_FAILED from
      *   the native load.
      * @throws CancellationException when [release] ran while the model was loading.
      */
-    open suspend fun acquire(modelId: String): SpeechRecognizer {
+    open suspend fun acquire(modelId: String, liveModelId: String? = null, gpu: Boolean = false): SpeechRecognizer {
         val (loaded, gen) = synchronized(lock) { current to generation }
         loaded?.let { return it }
         val file = modelFile(modelId) ?: throw AsrException(
             "Speech model missing - download it in Settings",
             AsrException.Kind.MODEL_MISSING,
         )
+        val liveFile = liveModelId?.takeIf { it != modelId }?.let { id ->
+            modelFile(id) ?: null.also { HLog.w(HLog.PIPELINE, "live model $id not downloaded; partials use $modelId") }
+        }
+        AsrBackend.preferGpu = gpu
         return withContext(io) {
-            val r = load(file)
+            val r = load(file, liveFile)
             // Registered before withContext returns: a caller cancelled meanwhile never receives
             // r, but release() still finds and closes it.
             val kept = synchronized(lock) {
@@ -76,9 +86,9 @@ open class RecognizerHolder(
     /** The verified model file, or null when it is not downloaded. */
     internal open fun modelFile(modelId: String): File? = models.fileFor(modelId)
 
-    /** Builds and preloads the native recognizer; runs on [io]. */
-    internal open suspend fun load(file: File): SpeechRecognizer {
-        val r = WhisperCppRecognizer(file, assets.asrProfile, threads)
+    /** Builds and preloads the native recognizer ([partialFile]: the live model, or null); runs on [io]. */
+    internal open suspend fun load(file: File, partialFile: File? = null): SpeechRecognizer {
+        val r = WhisperCppRecognizer(file, assets.asrProfile, threads, partialFile)
         try {
             r.preload()
         } catch (e: CancellationException) {

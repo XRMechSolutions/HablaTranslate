@@ -39,11 +39,12 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun `update round trips all nine keys`() = runTest {
+    fun `update round trips all eleven keys`() = runTest {
         val store = store()
         val repo = DataStoreSettingsRepository(store, defaults)
         val changed = AppSettings(
             Direction.EN_TO_ES, Mode.CLASSROOM, false, false, "final-x", "quick-y", "asr-z", true, true,
+            liveModelId = "live-w", asrGpu = true,
         )
         repo.update { changed }
         assertEquals(changed, repo.settings.first())
@@ -57,7 +58,9 @@ class SettingsRepositoryTest {
         assertEquals("asr-z", p[SettingsCodec.ASR_MODEL_ID])
         assertEquals(true, p[SettingsCodec.TRAINING_CAPTURE])
         assertEquals(true, p[SettingsCodec.FIRST_RUN_DONE])
-        assertEquals(9, p.asMap().size)
+        assertEquals("live-w", p[SettingsCodec.LIVE_MODEL_ID])
+        assertEquals(true, p[SettingsCodec.ASR_GPU])
+        assertEquals(11, p.asMap().size)
     }
 
     @Test
@@ -84,6 +87,19 @@ class SettingsRepositoryTest {
         assertEquals(Direction.AUTO, s.direction)
         assertEquals(Mode.CONVERSATION, s.mode)
         assertEquals("kept-model", s.finalModel)
+    }
+
+    @Test
+    fun `a file from before the live model and GPU keys reads them as defaults`() = runTest {
+        val store = store()
+        store.edit {
+            it[SettingsCodec.ASR_MODEL_ID] = "ggml-small-q5_1"
+            it[SettingsCodec.FIRST_RUN_DONE] = true
+        }
+        val s = DataStoreSettingsRepository(store, defaults).settings.first()
+        assertEquals("ggml-small-q5_1", s.asrModelId)
+        assertEquals("", s.liveModelId)
+        assertEquals(false, s.asrGpu)
     }
 
     @Test
