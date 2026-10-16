@@ -2,7 +2,10 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <limits>
+
+#include <sched.h>
 
 #include "whisper.h"
 
@@ -33,6 +36,56 @@ bool encoder_may_begin(whisper_context*, whisper_state*, void* user_data) {
     if (stop) probe->observed = true;
     return !stop;
 }
+
+// ggml (GGML_OPENMP=OFF) creates its workers with pthread_create from the calling thread, and a new
+// thread inherits the caller's CPU affinity. Each compute call pins the caller to the performance
+// cores of its allowed set: ggml splits every op evenly across threads and waits for the slowest, so
+// one worker on an efficiency core holds the whole pass back. On the A56 an app outside top-app is
+// allowed cpus 0-6 (four A520 + three A720); unpinned, 4 threads ran no faster than 2. threads() caps
+// the requested count at the pinned cores, since a second thread on a core stalls the same way.
+long max_freq_khz(int cpu) {
+    char path[96];
+    std::snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", cpu);
+    FILE* f = std::fopen(path, "r");
+    if (f == nullptr) return -1;
+    long khz = -1;
+    if (std::fscanf(f, "%ld", &khz) != 1) khz = -1;
+    std::fclose(f);
+    return khz;
+}
+
+class PerfCoreAffinity {
+public:
+    PerfCoreAffinity() {
+        if (sched_getaffinity(0, sizeof(saved_), &saved_) != 0) return;
+        long freq[CPU_SETSIZE];
+        long lowest = -1;
+        for (int cpu = 0; cpu < CPU_SETSIZE; ++cpu) {
+            freq[cpu] = CPU_ISSET(cpu, &saved_) ? max_freq_khz(cpu) : -1;
+            if (freq[cpu] > 0 && (lowest < 0 || freq[cpu] < lowest)) lowest = freq[cpu];
+        }
+        cpu_set_t perf;
+        CPU_ZERO(&perf);
+        for (int cpu = 0; cpu < CPU_SETSIZE; ++cpu) {
+            if (freq[cpu] > lowest) CPU_SET(cpu, &perf);
+        }
+        // Single cluster (or unreadable cpufreq): leave the mask alone.
+        if (CPU_COUNT(&perf) == 0) return;
+        pinned_ = sched_setaffinity(0, sizeof(perf), &perf) == 0;
+        if (pinned_) cores_ = CPU_COUNT(&perf);
+    }
+    int threads(int requested) const { return pinned_ && requested > cores_ ? cores_ : requested; }
+    ~PerfCoreAffinity() {
+        if (pinned_) sched_setaffinity(0, sizeof(saved_), &saved_);
+    }
+    PerfCoreAffinity(const PerfCoreAffinity&) = delete;
+    PerfCoreAffinity& operator=(const PerfCoreAffinity&) = delete;
+
+private:
+    cpu_set_t saved_{};
+    bool pinned_ = false;
+    int cores_ = 0;
+};
 
 }  // namespace
 
@@ -121,6 +174,8 @@ TranscribeResult Engine::transcribe(int slot, const std::vector<float>& samples,
     wp.encoder_begin_callback = encoder_may_begin;
     wp.encoder_begin_callback_user_data = &probe;
 
+    const PerfCoreAffinity affinity;
+    wp.n_threads = affinity.threads(p.n_threads);
     const auto start = std::chrono::steady_clock::now();
     int rc = whisper_full_with_state(ctx_, state, wp, samples.data(), static_cast<int>(samples.size()));
     result.wall_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -176,6 +231,8 @@ int Engine::detect(const std::vector<float>& samples, int n_threads, float* prob
     if (probs == nullptr || n_probs < whisper_lang_max_id() + 1) {
         return kRcBadArgument;
     }
+    const PerfCoreAffinity affinity;
+    n_threads = affinity.threads(n_threads);
     const int mel_rc = whisper_pcm_to_mel_with_state(
         ctx_, state, samples.data(), static_cast<int>(samples.size()), n_threads);
     if (mel_rc != 0) {

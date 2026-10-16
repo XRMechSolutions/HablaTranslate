@@ -1,0 +1,185 @@
+{
+  "device": "SM-A566B",
+  "android_sdk": 36,
+  "date": "2026-10-16",
+  "started_utc": "2026-10-16T11:46:22.156853Z",
+  "charging": true,
+  "cpus_allowed": "0-6",
+  "native_info": "v86 | WHISPER : VITISAI = 0 | COREML = 0 | OPENVINO = 0 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | DOTPROD = 1 | REPACK = 1 | ",
+  "utterances": 32,
+  "audio_sec": 135.712,
+  "models": [
+    {
+      "model_id": "ggml-small-q8_0",
+      "quantization": "q8_0",
+      "load_ms": 504,
+      "pss_before_mb": 45,
+      "pss_after_load_mb": 475,
+      "configs": [
+        {
+          "threads": 3,
+          "beam": 5,
+          "buckets": {
+            "0-3s": {
+              "n": 12,
+              "detect_p50_ms": 2891.0,
+              "transcribe_p50_ms": 3366.0,
+              "total_p50_ms": 6310.0,
+              "total_p90_ms": 6863.0,
+              "rtf_p50": 3.39978448275862,
+              "rtf_p90": 3.90375
+            },
+            "10-20s": {
+              "n": 3,
+              "detect_p50_ms": 2919.0,
+              "transcribe_p50_ms": 6708.0,
+              "total_p50_ms": 9627.0,
+              "total_p90_ms": 9808.0,
+              "rtf_p50": 0.8498411016949153,
+              "rtf_p90": 0.8698846726190476
+            },
+            "3-10s": {
+              "n": 17,
+              "detect_p50_ms": 2917.0,
+              "transcribe_p50_ms": 3787.0,
+              "total_p50_ms": 6687.0,
+              "total_p90_ms": 8208.0,
+              "rtf_p50": 1.8997159090909093,
+              "rtf_p90": 2.0876913265306123
+            },
+            "20-31s": "no golden utterance in this range"
+          },
+          "rtf_p90_ge3s": 2.0341981132075473,
+          "total_p90_ms_lt3s": 6863.0
+        },
+        {
+          "threads": 4,
+          "beam": 5,
+          "buckets": {
+            "0-3s": {
+              "n": 12,
+              "detect_p50_ms": 2872.0,
+              "transcribe_p50_ms": 3259.0,
+              "total_p50_ms": 6060.0,
+              "total_p90_ms": 7063.0,
+              "rtf_p50": 3.2182112068965516,
+              "rtf_p90": 3.6685049019607847
+            },
+            "10-20s": {
+              "n": 3,
+              "detect_p50_ms": 3070.0,
+              "transcribe_p50_ms": 5539.0,
+              "total_p50_ms": 8538.0,
+              "total_p90_ms": 10437.0,
+              "rtf_p50": 0.7515120967741935,
+              "rtf_p90": 0.7940848214285714
+            },
+            "3-10s": {
+              "n": 17,
+              "detect_p50_ms": 2932.0,
+              "transcribe_p50_ms": 3716.0,
+              "total_p50_ms": 6661.0,
+              "total_p90_ms": 8217.0,
+              "rtf_p50": 1.904126213592233,
+              "rtf_p90": 2.1984080188679247
+            },
+            "20-31s": "no golden utterance in this range"
+          },
+          "rtf_p90_ge3s": 2.1968085106382977,
+          "total_p90_ms_lt3s": 7063.0
+        }
+      ],
+      "source": "logcat lines (HablaAsrBench) of a run on the same build stopped by an adb server restart before it wrote its report; log .dev/.task-state/logs/a56-d5-sweep-capped-logcat.log"
+    },
+    {
+      "model_id": "ggml-small-q5_1",
+      "quantization": "q5_1",
+      "load_ms": 316,
+      "pss_before_mb": 46,
+      "pss_after_load_mb": 405,
+      "configs": [
+        {
+          "threads": 3,
+          "beam": 5,
+          "buckets": {
+            "0-3s": {
+              "n": 12,
+              "detect_p50_ms": 8490.0,
+              "transcribe_p50_ms": 8856.0,
+              "total_p50_ms": 17445.0,
+              "total_p90_ms": 17838.0,
+              "rtf_p50": 9.009004237288137,
+              "rtf_p90": 10.693014705882353
+            },
+            "10-20s": {
+              "n": 3,
+              "detect_p50_ms": 8436.0,
+              "transcribe_p50_ms": 12730.0,
+              "total_p50_ms": 21095.0,
+              "total_p90_ms": 21370.0,
+              "rtf_p50": 1.794050141242938,
+              "rtf_p90": 1.9619605654761902
+            },
+            "3-10s": {
+              "n": 17,
+              "detect_p50_ms": 8561.0,
+              "transcribe_p50_ms": 9450.0,
+              "total_p50_ms": 18177.0,
+              "total_p90_ms": 19589.0,
+              "rtf_p50": 5.1198918269230775,
+              "rtf_p90": 5.758609693877551
+            },
+            "20-31s": "no golden utterance in this range"
+          },
+          "rtf_p90_ge3s": 5.736438679245283,
+          "total_p90_ms_lt3s": 17838.0
+        }
+      ]
+    },
+    {
+      "model_id": "ggml-small",
+      "quantization": "f16",
+      "load_ms": 573,
+      "pss_before_mb": 188,
+      "pss_after_load_mb": 779,
+      "configs": [
+        {
+          "threads": 3,
+          "beam": 5,
+          "buckets": {
+            "0-3s": {
+              "n": 12,
+              "detect_p50_ms": 6343.0,
+              "transcribe_p50_ms": 6803.0,
+              "total_p50_ms": 12981.0,
+              "total_p90_ms": 13677.0,
+              "rtf_p50": 6.486228813559323,
+              "rtf_p90": 8.091249999999999
+            },
+            "10-20s": {
+              "n": 3,
+              "detect_p50_ms": 6144.0,
+              "transcribe_p50_ms": 9952.0,
+              "total_p50_ms": 16096.0,
+              "total_p90_ms": 18162.0,
+              "rtf_p50": 1.42090395480226,
+              "rtf_p90": 1.4929315476190474
+            },
+            "3-10s": {
+              "n": 17,
+              "detect_p50_ms": 6089.0,
+              "transcribe_p50_ms": 7136.0,
+              "total_p50_ms": 13203.0,
+              "total_p90_ms": 14485.0,
+              "rtf_p50": 3.7703419811320753,
+              "rtf_p90": 4.209109042553191
+            },
+            "20-31s": "no golden utterance in this range"
+          },
+          "rtf_p90_ge3s": 4.207524271844661,
+          "total_p90_ms_lt3s": 13677.0
+        }
+      ]
+    }
+  ]
+}
