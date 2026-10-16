@@ -61,6 +61,13 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class AsrBenchmarkTest {
     private val args get() = InstrumentationRegistry.getArguments()
+
+    // `habla.gpu=true` (experimental, D043) loads habla_asr_vk when the APK has it. The loader is
+    // process-wide, so CPU and GPU are compared across separate `am instrument` runs.
+    @org.junit.Before
+    fun selectBackend() {
+        com.xrmech.habla.asr.internal.NativeLibraryLoader.preferGpu = args.getString("habla.gpu") == "true"
+    }
     private val context: Context get() = AsrTestFixtures.context
     private val baseProfile: AsrProfile get() = AsrTestFixtures.profile
     private val catalog get() = AsrTestFixtures.appCatalog
@@ -189,7 +196,8 @@ class AsrBenchmarkTest {
         }
         write("d5-sweep-$date.json", report)
         val info = checkNotNull(anyVariant)
-        assertTrue(info, info.startsWith("v86 | ") && info.contains("DOTPROD = 1") && info.contains("MATMUL_INT8 = 1"))
+        val variant = if (args.getString("habla.gpu") == "true") "vk" else "v86"
+        assertTrue(info, info.startsWith("$variant | ") && info.contains("DOTPROD = 1") && info.contains("MATMUL_INT8 = 1"))
     }
 
     private data class FinalTiming(val detectMs: Long, val transcribeMs: Long, val totalMs: Long)

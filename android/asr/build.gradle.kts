@@ -30,6 +30,12 @@ android {
         externalNativeBuild {
             cmake {
                 arguments += listOf("-DANDROID_STL=c++_static", "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON")
+                // Experimental GPU variant habla_asr_vk (D043): -Phabla.vulkan=true, SDK from
+                // -Phabla.vulkanSdk or VULKAN_SDK. See src/main/cpp/CMakeLists.txt for the host needs.
+                if (providers.gradleProperty("habla.vulkan").orNull == "true") {
+                    arguments += "-DHABLA_VULKAN=ON"
+                    providers.gradleProperty("habla.vulkanSdk").orNull?.let { arguments += "-DHABLA_VULKAN_SDK=$it" }
+                }
             }
         }
     }

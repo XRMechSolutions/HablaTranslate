@@ -9,6 +9,13 @@ import java.io.IOException
  * failure so every later call rethrows the same link error.
  */
 internal object NativeLibraryLoader {
+    /**
+     * Experimental (D043): try [CpuVariant.VK] before V86. Read once, at the first [load]; a missing
+     * or unloadable vk library falls back to V86 as if this were false.
+     */
+    @Volatile
+    var preferGpu: Boolean = false
+
     private var loaded: CpuVariant? = null
     private var failure: UnsatisfiedLinkError? = null
 
@@ -19,6 +26,16 @@ internal object NativeLibraryLoader {
         failure?.let { throw it }
 
         val chosen = CpuVariantSelector.select(System.getProperty("os.arch").orEmpty(), readCpuinfo())
+        if (preferGpu && chosen == CpuVariant.V86) {
+            try {
+                System.loadLibrary(CpuVariant.VK.libName)
+                loaded = CpuVariant.VK
+                AsrLog.i("native library ${CpuVariant.VK.libName} loaded: ${WhisperNative.systemInfo()}")
+                return CpuVariant.VK
+            } catch (e: UnsatisfiedLinkError) {
+                AsrLog.w("loading ${CpuVariant.VK.libName} failed, using ${chosen.libName}", e)
+            }
+        }
         val variant = try {
             System.loadLibrary(chosen.libName)
             chosen

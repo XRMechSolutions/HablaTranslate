@@ -32,6 +32,12 @@ import org.junit.runner.RunWith
 class AsrParityTest {
     private val args get() = InstrumentationRegistry.getArguments()
 
+    // `habla.gpu=true` (experimental, D043): run the parity check on habla_asr_vk.
+    @org.junit.Before
+    fun selectBackend() {
+        com.xrmech.habla.asr.internal.NativeLibraryLoader.preferGpu = args.getString("habla.gpu") == "true"
+    }
+
     @Test
     fun phoneMatchesPcWhisperCppAndServerWhisperX() = runBlocking<Unit> {
         val goldens = AsrTestFixtures.deviceGoldens

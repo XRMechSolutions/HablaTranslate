@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "ggml-backend.h"
 #include "habla_engine.h"
 #include "whisper.h"
 
@@ -200,8 +201,22 @@ Java_com_xrmech_habla_asr_internal_WhisperNative_langMaxId(JNIEnv*, jclass) {
 
 JNIEXPORT jstring JNICALL
 Java_com_xrmech_habla_asr_internal_WhisperNative_systemInfo(JNIEnv* env, jclass) {
-    // ASCII-only feature flags, safe for NewStringUTF.
-    return env->NewStringUTF(whisper_print_system_info());
+    // Feature flags plus the ggml devices (shows whether a GPU backend is present), reduced to
+    // printable ASCII so NewStringUTF never sees invalid modified UTF-8.
+    std::string info = whisper_print_system_info();
+    info += "| devices:";
+    for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+        ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+        info += " [";
+        info += ggml_backend_dev_name(dev);
+        info += ": ";
+        info += ggml_backend_dev_description(dev);
+        info += "]";
+    }
+    for (char& c : info) {
+        if (static_cast<unsigned char>(c) < 0x20 || static_cast<unsigned char>(c) > 0x7e) c = '?';
+    }
+    return env->NewStringUTF(info.c_str());
 }
 
 JNIEXPORT jint JNICALL

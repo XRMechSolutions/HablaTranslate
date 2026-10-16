@@ -103,7 +103,12 @@ uint64_t samples_hash(const std::vector<float>& samples) {
 
 Engine* Engine::create(const char* model_path, bool flash_attn) {
     whisper_context_params cparams = whisper_context_default_params();
+#ifdef HABLA_USE_GPU
+    // habla_asr_vk (D043): ggml picks the first Vulkan device and falls back to the CPU without one.
+    cparams.use_gpu = true;
+#else
     cparams.use_gpu = false;
+#endif
     cparams.flash_attn = flash_attn;
 
     whisper_context* ctx = whisper_init_from_file_with_params_no_state(model_path, cparams);

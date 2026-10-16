@@ -20,12 +20,24 @@ endif()
 # The ExternalProjects build patched copies, never the submodule itself (whisper_patch.cmake, D042).
 include(${CMAKE_CURRENT_SOURCE_DIR}/whisper_patch.cmake)
 
+# Experimental GPU variant (D043): habla_asr_vk = the v86 CPU build plus ggml's Vulkan backend, with
+# use_gpu on. Off unless Gradle passes -Phabla.vulkan=true. Needs the LunarG Vulkan SDK (glslc,
+# headers, SPIRV-Headers) and, because ggml builds its shader generator for the host, a host C++
+# compiler: on Windows run Gradle from an MSVC x64 environment (vcvars64.bat, `gradlew --no-daemon`).
+option(HABLA_VULKAN "Build the experimental Vulkan variant habla_asr_vk (arm64 only)" OFF)
+set(HABLA_VULKAN_SDK "$ENV{VULKAN_SDK}" CACHE PATH "LunarG Vulkan SDK root for HABLA_VULKAN")
+
 # Builds whisper.cpp for one CPU variant into ${CMAKE_BINARY_DIR}/whisper-<NAME> and defines the
 # shared JNI library habla_asr_<NAME> linked against it.
 #   NAME        variant suffix (v86 | base)
 #   ARM_ARCH    value for GGML_CPU_ARM_ARCH, empty on x86_64
 #   EXTRA_ARGS  further cache arguments for the whisper.cpp configure (a CMake list)
+#   ARGV3       optional: VULKAN to add ggml's Vulkan backend and build the JNI glue with use_gpu
 function(habla_whisper_variant NAME ARM_ARCH EXTRA_ARGS)
+    set(vulkan OFF)
+    if (ARGC GREATER 3 AND "${ARGV3}" STREQUAL "VULKAN")
+        set(vulkan ON)
+    endif()
     set(prefix ${CMAKE_BINARY_DIR}/whisper-${NAME})
     set(libdir ${prefix}/lib)
 
@@ -37,6 +49,37 @@ function(habla_whisper_variant NAME ARM_ARCH EXTRA_ARGS)
     set(arch_args "")
     if (NOT "${ARM_ARCH}" STREQUAL "")
         list(APPEND arch_args -DGGML_CPU_ARM_ARCH=${ARM_ARCH})
+    endif()
+
+    set(vulkan_args "")
+    set(vulkan_libs "")
+    if (vulkan)
+        set(sdk ${HABLA_VULKAN_SDK})
+        set(glslc ${sdk}/Bin/glslc)
+        if (CMAKE_HOST_WIN32)
+            string(APPEND glslc .exe)
+        endif()
+        if (NOT EXISTS ${glslc} OR NOT EXISTS ${sdk}/Include/vulkan/vulkan.hpp)
+            message(FATAL_ERROR "HABLA_VULKAN: no Vulkan SDK at '${sdk}' (set VULKAN_SDK or -Phabla.vulkanSdk)")
+        endif()
+        if (CMAKE_HOST_WIN32 AND NOT DEFINED ENV{VCINSTALLDIR})
+            message(FATAL_ERROR "HABLA_VULKAN on Windows: run Gradle from an MSVC x64 environment "
+                "(vcvars64.bat, then gradlew --no-daemon); ggml builds its shader generator with the host compiler")
+        endif()
+        set(libvulkan ${CMAKE_SYSROOT}/usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}/${ANDROID_PLATFORM_LEVEL}/libvulkan.so)
+        if (NOT EXISTS ${libvulkan})
+            message(FATAL_ERROR "HABLA_VULKAN: NDK stub ${libvulkan} not found")
+        endif()
+        # Only vkGetInstanceProcAddr comes from the loader (vulkan.hpp dynamic dispatch), so the SDK's
+        # newer headers work with any Android Vulkan driver.
+        list(APPEND vulkan_args
+            -DGGML_VULKAN=ON
+            -DVulkan_INCLUDE_DIR=${sdk}/Include
+            -DVulkan_LIBRARY=${libvulkan}
+            -DVulkan_GLSLC_EXECUTABLE=${glslc}
+            -DSPIRV-Headers_DIR=${sdk}/Lib/cmake/SPIRV-Headers
+            -DCMAKE_CXX_FLAGS=-isystem${sdk}/Include)
+        set(vulkan_libs ${libdir}/libggml-vulkan.a ${libvulkan})
     endif()
 
     # whisper.cpp is always Release: a Debug ggml is 10-50x slower and would make debug builds and
@@ -71,11 +114,13 @@ function(habla_whisper_variant NAME ARM_ARCH EXTRA_ARGS)
             -DCMAKE_INSTALL_LIBDIR=lib
             ${arch_args}
             ${EXTRA_ARGS}
+            ${vulkan_args}
         BUILD_BYPRODUCTS
             ${libdir}/libwhisper.a
             ${libdir}/libggml.a
             ${libdir}/libggml-cpu.a
             ${libdir}/libggml-base.a
+            ${vulkan_libs}
     )
 
     set(target habla_asr_${NAME})
@@ -85,10 +130,15 @@ function(habla_whisper_variant NAME ARM_ARCH EXTRA_ARGS)
     target_include_directories(${target} PRIVATE ${WHISPER_DIR}/include ${WHISPER_DIR}/ggml/include)
     target_compile_options(${target} PRIVATE
         -fvisibility=hidden -fvisibility-inlines-hidden -ffunction-sections -fdata-sections)
+    if (vulkan)
+        target_compile_definitions(${target} PRIVATE HABLA_USE_GPU=1)
+    endif()
+    # libggml.a (the backend registry) references the backends, so they follow it.
     target_link_libraries(${target} PRIVATE
         ${libdir}/libwhisper.a
         ${libdir}/libggml.a
         ${libdir}/libggml-cpu.a
+        ${vulkan_libs}
         ${libdir}/libggml-base.a
         log)
     target_link_options(${target} PRIVATE
@@ -98,6 +148,9 @@ endfunction()
 if (ANDROID_ABI STREQUAL "arm64-v8a")
     # android_armv8.6_1 feature set: int8 matmul paths of q8_0/q5_x on Cortex-A720/A520.
     habla_whisper_variant(v86 "armv8.6-a+dotprod+i8mm+fp16" "")
+    if (HABLA_VULKAN)
+        habla_whisper_variant(vk "armv8.6-a+dotprod+i8mm+fp16" "" VULKAN)
+    endif()
     # Any minSdk-29 arm64 phone; no SIGILL risk.
     habla_whisper_variant(base "armv8-a" "")
 elseif (ANDROID_ABI STREQUAL "x86_64")

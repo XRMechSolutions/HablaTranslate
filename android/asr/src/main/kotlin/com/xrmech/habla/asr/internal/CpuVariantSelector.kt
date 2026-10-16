@@ -7,9 +7,15 @@ internal enum class CpuVariant(val libName: String) {
 
     /** armv8-a (arm64) or SSE4.2 (x86_64 emulator): runs anywhere. */
     BASE("habla_asr_base"),
+
+    /**
+     * Experimental (D043): V86 plus ggml's Vulkan backend with use_gpu on. Only in APKs built with
+     * `-Phabla.vulkan=true`, and only loaded when [NativeLibraryLoader.preferGpu] is set.
+     */
+    VK("habla_asr_vk"),
     ;
 
-    /** `"v86"` / `"base"`, as shown in `nativeInfo`. */
+    /** `"v86"` / `"base"` / `"vk"`, as shown in `nativeInfo`. */
     val label: String get() = libName.removePrefix("habla_asr_")
 }
 
