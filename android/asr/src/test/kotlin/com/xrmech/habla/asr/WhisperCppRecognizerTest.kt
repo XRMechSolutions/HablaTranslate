@@ -466,6 +466,33 @@ class WhisperCppRecognizerTest {
         r.close()
     }
 
+    @Test
+    fun `detection runs on the final slot by default and on the partial slot for a partial`() = runBlocking {
+        val r = recognizer()
+        fake.detectProbs[0] = 0.9f // en
+        assertEquals("en", r.detectLanguage(audio, listOf("es", "en")).language)
+        assertEquals("en", r.detectLanguage(audio, listOf("es", "en"), AsrPass.PARTIAL).language)
+        assertEquals(listOf(0, 1), fake.detectSlots)
+        r.close()
+    }
+
+    @Test
+    fun `partial detection that gets the lock while a final is pending returns ABORTED without running`() = runBlocking {
+        val r = recognizer()
+        fake.script(slowToAbort(slot = 0, text = "first"))
+        val f1 = start { r.transcribe(audio, es) }
+        fake.awaitTranscribeCalls(1)
+        val detect = start { r.detectLanguage(audio, listOf("es", "en"), AsrPass.PARTIAL) } // queued first
+        val f2 = start { r.transcribe(audio, es) } // queued second, pendingFinals > 0
+        fake.release()
+
+        assertEquals("first", f1.await().getOrThrow().text)
+        assertEquals(AsrException.Kind.ABORTED, (detect.await().exceptionOrNull() as AsrException).kind)
+        assertEquals("hello", f2.await().getOrThrow().text)
+        assertTrue(fake.detectSlots.isEmpty())
+        r.close()
+    }
+
     // ---- argument validation ------------------------------------------------------------------
 
     @Test

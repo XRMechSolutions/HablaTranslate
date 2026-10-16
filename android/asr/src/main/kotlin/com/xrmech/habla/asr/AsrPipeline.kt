@@ -25,7 +25,7 @@ data class FinalAsrOutcome(
 data class PartialAsrOutcome(
     /** `""` for a bad transcript or any [AsrException]. */
     val text: String,
-    /** Language forced for this partial; null on [AsrException]. */
+    /** Language this partial was transcribed in (voted, detected or source); null on [AsrException]. */
     val language: String?,
     /** True when the [AsrException] kind was ABORTED (preempted by a final). */
     val aborted: Boolean,
@@ -91,13 +91,19 @@ class AsrPipeline(
     }
 
     /**
-     * Partials use the voted language, or [sourceLanguage] before the first vote (D035). They never
-     * detect, never vote and never throw [AsrException]; cancellation is rethrown.
+     * Partials use the voted language, or [sourceLanguage] before the first vote (D035), except in an
+     * [autoDirection] session with auto_language on: there no language is known yet, so they detect
+     * their own among the candidates on the partial model (D049); the "es" default had turned English
+     * speech into Spanish-looking text until the first final voted. A failed detection falls back to
+     * [sourceLanguage]. Partials never vote and never throw [AsrException]; cancellation is rethrown.
      */
-    suspend fun partial(samples: FloatArray, sourceLanguage: String): PartialAsrOutcome {
-        val language = voter.current ?: sourceLanguage
-        val result = try {
-            recognizer.transcribe(samples, AsrRequest(language, AsrPass.PARTIAL))
+    suspend fun partial(samples: FloatArray, sourceLanguage: String, autoDirection: Boolean = false): PartialAsrOutcome {
+        val result: AsrResult
+        val language: String
+        try {
+            language = voter.current
+                ?: if (autoDirection && profile.whisper.autoLanguage) detectPartial(samples, sourceLanguage) else sourceLanguage
+            result = recognizer.transcribe(samples, AsrRequest(language, AsrPass.PARTIAL))
         } catch (e: CancellationException) {
             throw e
         } catch (e: AsrException) {
@@ -105,5 +111,13 @@ class AsrPipeline(
         }
         val text = if (TranscriptFilters.isBadTranscript(result.text, profile)) "" else result.text
         return PartialAsrOutcome(text, language, aborted = false, elapsedMs = result.elapsedMs)
+    }
+
+    /** No vote. A native detection failure falls back to [sourceLanguage]; ABORTED propagates. */
+    private suspend fun detectPartial(samples: FloatArray, sourceLanguage: String): String = try {
+        recognizer.detectLanguage(samples, candidates, AsrPass.PARTIAL).language
+    } catch (e: AsrException) {
+        if (e.kind != AsrException.Kind.NATIVE_ERROR) throw e
+        sourceLanguage
     }
 }

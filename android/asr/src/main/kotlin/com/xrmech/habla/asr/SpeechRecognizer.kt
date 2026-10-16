@@ -11,9 +11,11 @@ package com.xrmech.habla.asr
 interface SpeechRecognizer : AutoCloseable {
     /**
      * Picks the most probable language among [candidates] (non-empty, in preference order; the first
-     * wins ties) and returns its raw probability over all Whisper languages.
+     * wins ties) and returns its raw probability over all Whisper languages. [pass] PARTIAL runs on the
+     * partial model at partial priority (a pending final preempts it with ABORTED), for partials before
+     * the first language vote (D049); FINAL is the finals' detection.
      */
-    suspend fun detectLanguage(samples: FloatArray, candidates: List<String>): LanguageGuess
+    suspend fun detectLanguage(samples: FloatArray, candidates: List<String>, pass: AsrPass = AsrPass.FINAL): LanguageGuess
 
     /** Transcribes [samples] in [AsrRequest.language] with the decoder settings of [AsrRequest.pass]. */
     suspend fun transcribe(samples: FloatArray, request: AsrRequest): AsrResult

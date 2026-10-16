@@ -116,13 +116,50 @@ class AsrPipelineTest {
     }
 
     @Test
-    fun `partial before the first vote uses the source language without detection`() = runTest {
+    fun `partial before the first vote with a fixed direction uses the source language without detection`() = runTest {
         val (p, _) = pipeline()
         rec.transcribes("Hola amigos", elapsedMs = 321)
         val out = p.partial(audio, "es")
         assertTrue(rec.detectCalls.isEmpty())
         assertEquals(AsrRequest("es", AsrPass.PARTIAL), rec.transcribeCalls.single())
         assertEquals(PartialAsrOutcome("Hola amigos", "es", false, 321), out)
+    }
+
+    @Test
+    fun `partial before the first vote in auto direction detects its own language on the partial pass and never votes`() = runTest {
+        val (p, voter) = pipeline()
+        rec.detects("en").transcribes("Hello there", elapsedMs = 321)
+        val out = p.partial(audio, "es", autoDirection = true)
+        assertEquals(listOf(listOf("es", "en")), rec.detectCalls)
+        assertEquals(listOf(AsrPass.PARTIAL), rec.detectPasses)
+        assertEquals(AsrRequest("en", AsrPass.PARTIAL), rec.transcribeCalls.single())
+        assertEquals(PartialAsrOutcome("Hello there", "en", false, 321), out)
+        assertNull(voter.current)
+    }
+
+    @Test
+    fun `partial detection NATIVE_ERROR falls back to the source language`() = runTest {
+        val (p, _) = pipeline()
+        rec.detectFails(AsrException("language detection failed rc=-6", AsrException.Kind.NATIVE_ERROR)).transcribes("Hola amigos")
+        assertEquals("es", p.partial(audio, "es", autoDirection = true).language)
+        assertEquals("es", rec.transcribeCalls.single().language)
+    }
+
+    @Test
+    fun `partial detection preempted by a final is an aborted outcome without transcription`() = runTest {
+        val (p, _) = pipeline()
+        rec.detectFails(AsrException("partial preempted by a pending final", AsrException.Kind.ABORTED))
+        assertEquals(PartialAsrOutcome("", null, true, 0), p.partial(audio, "es", autoDirection = true))
+        assertTrue(rec.transcribeCalls.isEmpty())
+    }
+
+    @Test
+    fun `partial with auto_language off uses the source language without detection`() = runTest {
+        val (p, _) = pipeline(TestAssets.profileWith(autoLanguage = false))
+        rec.transcribes("Hola amigos")
+        p.partial(audio, "es", autoDirection = true)
+        assertTrue(rec.detectCalls.isEmpty())
+        assertEquals("es", rec.transcribeCalls.single().language)
     }
 
     @Test
@@ -139,7 +176,8 @@ class AsrPipelineTest {
 
     @Test
     fun `partial errors become empty outcomes with the aborted flag`() = runTest {
-        val (p, _) = pipeline()
+        val (p, voter) = pipeline()
+        voter.vote("es")
         rec.transcribeFails(AsrException("preempted", AsrException.Kind.ABORTED))
             .transcribeFails(AsrException("rc=-6", AsrException.Kind.NATIVE_ERROR))
         assertEquals(PartialAsrOutcome("", null, true, 0), p.partial(audio, "es"))
@@ -148,14 +186,16 @@ class AsrPipelineTest {
 
     @Test
     fun `partial bad transcript becomes empty text but keeps the language`() = runTest {
-        val (p, _) = pipeline()
+        val (p, voter) = pipeline()
+        voter.vote("es")
         rec.transcribes("ok", elapsedMs = 50)
         assertEquals(PartialAsrOutcome("", "es", false, 50), p.partial(audio, "es"))
     }
 
     @Test
     fun `cancellation propagates from partial and final`() = runTest {
-        val (p, _) = pipeline()
+        val (p, voter) = pipeline()
+        voter.vote("es")
         rec.transcribeRuns { awaitCancellation() }
         val job = launch { p.partial(audio, "es") }
         yield()

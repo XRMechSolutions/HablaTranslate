@@ -544,13 +544,14 @@ class PipelineCoordinatorTest {
 
     // (9)
     @Test
-    fun `should run partials in the session source language without voting or detecting`() = runTest {
-        val h = Harness(this)
+    fun `should run partials in the fixed direction's source language without voting or detecting`() = runTest {
+        val h = Harness(this, AppSettingsDefaults(TestAssets.shared).value.copy(direction = Direction.ES_TO_EN))
         started(h)
         h.segmenter.emitPartial(1)
         advanceUntilIdle()
         assertEquals("es", h.rec.requests.single { it.pass == AsrPass.PARTIAL }.language)
         assertEquals(0, h.rec.detectCalls)
+        assertEquals(0, h.rec.partialDetectCalls)
         assertNull(h.voter.current)
         h.settingsRepo.update { it.copy(direction = Direction.EN_TO_ES) }
         advanceUntilIdle()
@@ -559,6 +560,23 @@ class PipelineCoordinatorTest {
         advanceUntilIdle()
         assertEquals("en", h.rec.requests.last { it.pass == AsrPass.PARTIAL }.language)
         assertEquals(Direction.EN_TO_ES, h.state.partial?.direction)
+        h.coordinator.stop(StopReason.UserStop)
+    }
+
+    @Test
+    fun `should detect the language of partials in auto direction before the first vote without voting`() = runTest {
+        // Owner report 2026-10-16: English speech at session start showed Spanish-looking previews (D049).
+        val h = Harness(this)
+        started(h)
+        h.rec.partialDetectLanguage = "en"
+        h.rec.partials += Step("hello my friend")
+        h.segmenter.emitPartial(1)
+        advanceUntilIdle()
+        assertEquals(1, h.rec.partialDetectCalls)
+        assertEquals("en", h.rec.requests.single { it.pass == AsrPass.PARTIAL }.language)
+        assertEquals(Direction.EN_TO_ES, h.state.partial?.direction)
+        assertNull(h.voter.current)
+        assertEquals(0, h.rec.detectCalls)
         h.coordinator.stop(StopReason.UserStop)
     }
 

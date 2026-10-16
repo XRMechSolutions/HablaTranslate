@@ -52,8 +52,8 @@ internal object WhisperNative {
     /** `whisper_print_system_info()`. */
     @JvmStatic external fun systemInfo(): String
 
-    /** Fills [probsOut] (size `langMaxId() + 1`); returns the argmax language id or a negative rc. */
-    @JvmStatic external fun detectLanguage(handle: Long, samples: FloatArray, nThreads: Int, probsOut: FloatArray): Int
+    /** On [slot]: fills [probsOut] (size `langMaxId() + 1`); returns the argmax language id or a negative rc. */
+    @JvmStatic external fun detectLanguage(handle: Long, slot: Int, samples: FloatArray, nThreads: Int, probsOut: FloatArray): Int
 
     @JvmStatic external fun transcribe(
         handle: Long,

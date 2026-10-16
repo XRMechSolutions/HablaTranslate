@@ -122,13 +122,21 @@ class FakeSpeechRecognizer : SpeechRecognizer {
     )
 
     val detectLanguages = ArrayDeque<String>()
+
+    /** Answer to every PARTIAL detection (before the first vote); never consumes [detectLanguages]. */
+    var partialDetectLanguage = "es"
+    var partialDetectCalls = 0
     val finals = ArrayDeque<Step>()
     val partials = ArrayDeque<Step>()
     val requests = mutableListOf<AsrRequest>()
     var detectCalls = 0
     var closed = false
 
-    override suspend fun detectLanguage(samples: FloatArray, candidates: List<String>): LanguageGuess {
+    override suspend fun detectLanguage(samples: FloatArray, candidates: List<String>, pass: AsrPass): LanguageGuess {
+        if (pass == AsrPass.PARTIAL) {
+            partialDetectCalls++
+            return LanguageGuess(partialDetectLanguage, 0.9f)
+        }
         detectCalls++
         return LanguageGuess(detectLanguages.removeFirstOrNull() ?: "es", 0.9f)
     }

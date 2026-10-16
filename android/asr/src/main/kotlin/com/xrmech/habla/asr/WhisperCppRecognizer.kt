@@ -87,7 +87,7 @@ class WhisperCppRecognizer internal constructor(
 
     private val leakWatch: LeakWatch.Watch? = LeakWatch.register(this, handle)
 
-    /** FINAL runs that reused the preceding detection's mel and encoder output (D042); for tests. */
+    /** Runs that reused the same slot's preceding detection mel and encoder output (D042, D049); for tests. */
     internal val reusedDetections = AtomicInteger()
 
     /** `"<variant> | <whisper_print_system_info()>"`; null before the native library is loaded. */
@@ -111,13 +111,19 @@ class WhisperCppRecognizer internal constructor(
         }
     }
 
-    override suspend fun detectLanguage(samples: FloatArray, candidates: List<String>): LanguageGuess {
+    override suspend fun detectLanguage(samples: FloatArray, candidates: List<String>, pass: AsrPass): LanguageGuess {
         checkOpen()
         require(candidates.isNotEmpty()) { "candidates must not be empty" }
         candidates.forEach { requireUsableCode(it) }
         val padded = if (samples.size < MIN_DETECT_SAMPLES) samples.copyOf(MIN_DETECT_SAMPLES) else samples
-        return asFinal {
-            runJob(WhisperNative.SLOT_FINAL) { detectJob(padded, candidates) }
+        return when (pass) {
+            AsrPass.FINAL -> asFinal {
+                runJob(WhisperNative.SLOT_FINAL) { detectJob(WhisperNative.SLOT_FINAL, padded, candidates) }
+            }
+            AsrPass.PARTIAL -> mutex.withLock {
+                if (closed.get()) throw closedAborted()
+                runJob(WhisperNative.SLOT_PARTIAL) { detectJob(WhisperNative.SLOT_PARTIAL, padded, candidates) }
+            }
         }
     }
 
@@ -225,17 +231,22 @@ class WhisperCppRecognizer internal constructor(
         return mapResult(result, slot, request.pass, params)
     }
 
-    private fun detectJob(samples: FloatArray, candidates: List<String>): LanguageGuess {
+    private fun detectJob(slot: Int, samples: FloatArray, candidates: List<String>): LanguageGuess {
         ensureLibrary()
         val ids = candidates.map { requireKnownLanguage(it) }
         var h = ensureEngine()
         if (closed.get()) throw closedAborted()
+        if (slot == WhisperNative.SLOT_PARTIAL) {
+            // Detection has no abort callback, so a partial checks for a pending final before starting.
+            clearSlot(h, slot)
+            if (pendingFinals.get() > 0) throw AsrException("partial preempted by a pending final", AsrException.Kind.ABORTED)
+        }
         val probs = FloatArray(binding.langMaxId() + 1)
-        var rc = binding.detectLanguage(h, samples, threads, probs)
+        var rc = binding.detectLanguage(h, slot, samples, threads, probs)
         if (rc == WhisperNative.RC_NO_STATE && !closed.get()) {
-            AsrLog.w("detection slot has no state; reloading the model")
+            AsrLog.w("detection slot $slot has no state; reloading the model")
             h = reloadEngine(h)
-            rc = binding.detectLanguage(h, samples, threads, probs)
+            rc = binding.detectLanguage(h, slot, samples, threads, probs)
         }
         if (closed.get()) throw closedAborted()
         if (rc < 0) throw AsrException("language detection failed rc=$rc", AsrException.Kind.NATIVE_ERROR)

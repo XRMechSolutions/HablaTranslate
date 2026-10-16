@@ -158,6 +158,13 @@ class TestDirectionMode:
         orchestrator.audio_processor._last_detected_language = "en"
         assert orchestrator.audio_processor._source_language == orchestrator._source_language
 
+    def test_audio_processor_sees_auto_direction(self, orchestrator):
+        # Partials before the first vote detect their language only in auto direction (D049).
+        orchestrator.context_manager.direction = "auto"
+        assert orchestrator.audio_processor._auto_direction_getter() is True
+        orchestrator.context_manager.direction = "en_to_es"
+        assert orchestrator.audio_processor._auto_direction_getter() is False
+
 
 # ---------------------------------------------------------------------------
 # TestCallbacks

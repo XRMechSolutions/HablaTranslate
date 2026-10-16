@@ -97,7 +97,7 @@ internal class PartialWorker(
         if (snapshot.segmentId <= lastFinalizedRawId) return
 
         val samples = withContext(compute) { PartialPrep.process(snapshot.pcm, profile).toFloatSamples() }
-        val outcome = pipeline.partial(samples, sourceLanguage(s.direction))
+        val outcome = pipeline.partial(samples, sourceLanguage(s.direction), autoDirection = s.direction == Direction.AUTO)
         if (outcome.aborted) {
             metrics.partialsAborted.incrementAndGet()
             return

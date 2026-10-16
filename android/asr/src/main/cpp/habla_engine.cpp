@@ -216,9 +216,9 @@ TranscribeResult Engine::transcribe(int slot, const std::vector<float>& samples,
 
     // Same samples as the preceding detect(): n_samples = 0 keeps its mel in the state, and the
     // patched encoder then skips the window it already encoded (same offset 0, same audio_ctx 0).
-    const bool reuse = slot == kSlotFinal && p.audio_ctx == 0 && detect_mel_valid_ &&
-                       samples.size() == detect_n_ && samples_hash(samples) == detect_hash_;
-    if (slot == kSlotFinal) detect_mel_valid_ = false;
+    const bool reuse = p.audio_ctx == 0 && detect_mel_valid_[slot] &&
+                       samples.size() == detect_n_[slot] && samples_hash(samples) == detect_hash_[slot];
+    detect_mel_valid_[slot] = false;
     const int64_t hits_before = habla_whisper_encoder_cache_hits(state);
 
     const PerfCoreAffinity affinity;
@@ -277,27 +277,28 @@ TranscribeResult Engine::transcribe(int slot, const std::vector<float>& samples,
     return result;
 }
 
-int Engine::detect(const std::vector<float>& samples, int n_threads, float* probs, int n_probs) {
-    whisper_state* state = states_[kSlotFinal];
-    if (state == nullptr) {
+int Engine::detect(int slot, const std::vector<float>& samples, int n_threads, float* probs, int n_probs) {
+    if (!valid_slot(slot) || states_[slot] == nullptr) {
         return kRcNoState;
     }
+    whisper_state* state = states_[slot];
+    whisper_context* ctx = ctxs_[slot];
     if (probs == nullptr || n_probs < whisper_lang_max_id() + 1) {
         return kRcBadArgument;
     }
-    detect_mel_valid_ = false;
+    detect_mel_valid_[slot] = false;
     const PerfCoreAffinity affinity;
     n_threads = affinity.threads(n_threads);
     const int mel_rc = whisper_pcm_to_mel_with_state(
-        ctxs_[kSlotFinal], state, samples.data(), static_cast<int>(samples.size()), n_threads);
+        ctx, state, samples.data(), static_cast<int>(samples.size()), n_threads);
     if (mel_rc != 0) {
         return mel_rc < 0 ? mel_rc : -1;
     }
-    const int lang = whisper_lang_auto_detect_with_state(ctxs_[kSlotFinal], state, 0, n_threads, probs);
+    const int lang = whisper_lang_auto_detect_with_state(ctx, state, 0, n_threads, probs);
     if (lang >= 0) {
-        detect_mel_valid_ = true;
-        detect_n_ = samples.size();
-        detect_hash_ = samples_hash(samples);
+        detect_mel_valid_[slot] = true;
+        detect_n_[slot] = samples.size();
+        detect_hash_[slot] = samples_hash(samples);
     }
     return lang;
 }

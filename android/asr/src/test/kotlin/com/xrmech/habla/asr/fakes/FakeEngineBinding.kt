@@ -20,6 +20,7 @@ internal class FakeEngineBinding : EngineBinding {
     val frees = CopyOnWriteArrayList<Long>()
     val transcribeCalls = CopyOnWriteArrayList<Call>()
     val detectCalls = CopyOnWriteArrayList<FloatArray>()
+    val detectSlots = CopyOnWriteArrayList<Int>()
     val abortRequests = CopyOnWriteArrayList<Pair<Long, Int>>()
     val threadNames = CopyOnWriteArrayList<String>()
 
@@ -132,8 +133,9 @@ internal class FakeEngineBinding : EngineBinding {
 
     override fun langMaxId(): Int = LANG_MAX_ID
 
-    override fun detectLanguage(handle: Long, samples: FloatArray, threads: Int, probsOut: FloatArray): Int {
+    override fun detectLanguage(handle: Long, slot: Int, samples: FloatArray, threads: Int, probsOut: FloatArray): Int {
         detectCalls += samples
+        detectSlots += slot
         val rc = detectRcs.removeFirstOrNull() ?: 0
         if (rc < 0) return rc
         detectProbs.copyInto(probsOut)

@@ -1,5 +1,6 @@
 package com.xrmech.habla.asr.fakes
 
+import com.xrmech.habla.asr.AsrPass
 import com.xrmech.habla.asr.AsrRequest
 import com.xrmech.habla.asr.AsrResult
 import com.xrmech.habla.asr.AsrSegment
@@ -9,6 +10,7 @@ import com.xrmech.habla.asr.SpeechRecognizer
 /** Scripted recognizer: each call pops the next scripted answer (or throwable) and records the request. */
 class FakeSpeechRecognizer : SpeechRecognizer {
     val detectCalls = mutableListOf<List<String>>()
+    val detectPasses = mutableListOf<AsrPass>()
     val transcribeCalls = mutableListOf<AsrRequest>()
 
     private val detections = ArrayDeque<() -> LanguageGuess>()
@@ -22,8 +24,9 @@ class FakeSpeechRecognizer : SpeechRecognizer {
     fun transcribeFails(t: Throwable) = apply { transcriptions += { throw t } }
     fun transcribeRuns(block: suspend () -> AsrResult) = apply { transcriptions += block }
 
-    override suspend fun detectLanguage(samples: FloatArray, candidates: List<String>): LanguageGuess {
+    override suspend fun detectLanguage(samples: FloatArray, candidates: List<String>, pass: AsrPass): LanguageGuess {
         detectCalls += candidates
+        detectPasses += pass
         return checkNotNull(detections.removeFirstOrNull()) { "unexpected detectLanguage call" }()
     }
 

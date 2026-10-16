@@ -129,6 +129,26 @@ class WhisperCppRecognizerInstrumentedTest {
     }
 
     @Test
+    fun partialDetectionRunsOnThePartialSlotAndItsPartialReusesTheEncoderPass() = runBlocking<Unit> {
+        // D049: partials before the first vote in auto direction detect on the partial slot. With a
+        // full-context partial level (audio_ctx 0) the partial then skips its encoder pass.
+        val r = WhisperCppRecognizer(model, profile, threads, partialModelFile = model).also { open += it }
+        val u = AsrTestFixtures.utterance(smoke[0].first, smoke[0].second)
+        val plain = r.transcribe(u.samples, AsrRequest(u.language, AsrPass.PARTIAL))
+
+        assertEquals(u.language, r.detectLanguage(u.samples, candidates, AsrPass.PARTIAL).language)
+        assertEquals(u.language, r.detectLanguage(u.samples, candidates).language)
+        val partial = r.transcribe(u.samples, AsrRequest(u.language, AsrPass.PARTIAL))
+        assertEquals(plain.text, partial.text)
+        if (profile.whisperCpp.partial.level.contains("full_ctx")) {
+            assertEquals("the partial after a partial detection reuses its encoder pass", 1, r.reusedDetections.get())
+        }
+        // The final slot's own detection is still there for the final.
+        r.transcribe(u.samples, AsrRequest(u.language, AsrPass.FINAL))
+        assertTrue(r.reusedDetections.get() >= 1)
+    }
+
+    @Test
     fun reuseCoversOnlyTheFirstWindowOfAudioLongerThan30Seconds() = runBlocking<Unit> {
         val r = recognizer()
         // > 30 s: whisper encodes a second window at a later offset, which must not hit the cache.

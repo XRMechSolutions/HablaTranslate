@@ -76,6 +76,7 @@ class PipelineOrchestrator:
         self.audio_processor = AudioProcessor(
             config,
             source_language_getter=lambda: self._source_language,
+            auto_direction_getter=lambda: self.context_manager.direction == "auto",
         )
 
         # Submodule: DB operations and session lifecycle

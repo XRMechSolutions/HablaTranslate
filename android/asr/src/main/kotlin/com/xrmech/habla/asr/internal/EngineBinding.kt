@@ -13,8 +13,8 @@ internal interface EngineBinding {
     /** -1 if unknown. */
     fun langId(code: String): Int
     fun langMaxId(): Int
-    /** >= 0 argmax id, < 0 rc. */
-    fun detectLanguage(handle: Long, samples: FloatArray, threads: Int, probsOut: FloatArray): Int
+    /** On [slot]'s state and model: >= 0 argmax id, < 0 rc. */
+    fun detectLanguage(handle: Long, slot: Int, samples: FloatArray, threads: Int, probsOut: FloatArray): Int
     fun transcribe(handle: Long, slot: Int, samples: FloatArray, p: DecodeParams): NativeResult
     /** Any thread. */
     fun requestAbort(handle: Long, slot: Int)
@@ -56,9 +56,9 @@ internal class NativeEngineBinding : EngineBinding {
         return WhisperNative.langMaxId()
     }
 
-    override fun detectLanguage(handle: Long, samples: FloatArray, threads: Int, probsOut: FloatArray): Int {
+    override fun detectLanguage(handle: Long, slot: Int, samples: FloatArray, threads: Int, probsOut: FloatArray): Int {
         NativeLibraryLoader.load()
-        return WhisperNative.detectLanguage(handle, samples, threads, probsOut)
+        return WhisperNative.detectLanguage(handle, slot, samples, threads, probsOut)
     }
 
     override fun transcribe(handle: Long, slot: Int, samples: FloatArray, p: DecodeParams): NativeResult {

@@ -117,9 +117,16 @@ class AudioProcessor:
 
     _norm_counter = 0  # class-level counter for unique debug filenames
 
-    def __init__(self, config: AppConfig, source_language_getter: Callable[[], str]):
+    def __init__(
+        self,
+        config: AppConfig,
+        source_language_getter: Callable[[], str],
+        auto_direction_getter: Callable[[], bool] = lambda: False,
+    ):
         self.config = config
         self._source_language_getter = source_language_getter
+        # True while the session direction is "auto": no language is known until the first vote.
+        self._auto_direction_getter = auto_direction_getter
 
         # ASR/diarization models (set during startup)
         self._whisperx_model = None
@@ -310,20 +317,26 @@ class AudioProcessor:
         Returns (transcript, detected_language).
         """
         try:
-            # Before the first final there is no vote yet; use the session source
-            # language rather than whatever WhisperX cached from an earlier call.
-            lang_arg = (
-                (self._last_detected_language or self._source_language)
-                if self.config.asr.auto_language else self._source_language
-            )
             with self._asr_lock:
+                asr_input = wav_path
+                if not self.config.asr.auto_language:
+                    lang_arg = self._source_language
+                elif self._last_detected_language:
+                    lang_arg = self._last_detected_language
+                elif self._auto_direction_getter():
+                    # Auto direction, no vote yet (session start): detect this partial's language
+                    # among the supported ones. The "es" default turned English speech into
+                    # Spanish-looking text until the first final voted (D049). It does not vote.
+                    asr_input, lang_arg = self._detect_partial_language(wav_path)
+                else:
+                    lang_arg = self._source_language  # fixed direction: the user named the language
                 result = self._whisperx_model.transcribe(
-                    wav_path,
+                    asr_input,
                     batch_size=_PROFILE["whisper"]["partial_batch_size"],  # smaller batch for speed
                     language=lang_arg,
                     task="transcribe",
                 )
-                # Partials don't vote: the language here is the one we forced.
+                # Partials don't vote: the language here is the one we passed in.
                 detected = result.get("language")
             segments = result.get("segments", [])
             text = " ".join(seg.get("text", "").strip() for seg in segments).strip()
@@ -331,6 +344,16 @@ class AudioProcessor:
         except Exception as e:
             logger.debug(f"Quick ASR error: {e}")
             return "", None
+
+    def _detect_partial_language(self, wav_path: str) -> tuple:
+        """(asr_input, language) for a partial before the first vote; the source language on failure."""
+        try:
+            import whisperx
+            audio = whisperx.load_audio(wav_path)
+            return audio, self._detect_segment_language(audio)
+        except Exception as e:
+            logger.debug(f"Partial language detection failed: {e}")
+            return wav_path, self._source_language
 
     async def _normalize_wav(self, wav_path: str) -> str:
         """Apply bandpass filter + dynamic loudness normalization to a WAV file for ASR.

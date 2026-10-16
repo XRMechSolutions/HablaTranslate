@@ -549,10 +549,47 @@ class TestQuickAsrDoesNotVote:
 
 
 class TestQuickAsrLanguageBeforeFirstFinal:
-    def test_partial_before_any_vote_uses_source_language(self, audio_processor, mock_whisperx_model):
+    def test_partial_before_any_vote_with_fixed_direction_uses_source_language(
+        self, audio_processor, mock_whisperx_model,
+    ):
+        audio_processor._whisperx_model = mock_whisperx_model
+        with patch("whisperx.load_audio") as load:
+            audio_processor._run_quick_asr("/fake/partial.wav")
+        load.assert_not_called()
+        assert mock_whisperx_model.transcribe.call_args.kwargs["language"] == "es"
+
+    def test_partial_before_any_vote_in_auto_direction_detects_its_language(self, audio_processor, mock_whisperx_model):
+        # English speech at session start must not be forced into the Spanish default.
+        audio_processor._auto_direction_getter = lambda: True
         audio_processor._whisperx_model = mock_whisperx_model
         assert audio_processor._last_detected_language is None
-        audio_processor._run_quick_asr("/fake/partial.wav")
+        audio = object()
+        with patch("whisperx.load_audio", return_value=audio), \
+                patch.object(audio_processor, "_detect_segment_language", return_value="en") as detect:
+            audio_processor._run_quick_asr("/fake/partial.wav")
+        detect.assert_called_once_with(audio)
+        assert mock_whisperx_model.transcribe.call_args.args[0] is audio
+        assert mock_whisperx_model.transcribe.call_args.kwargs["language"] == "en"
+        assert len(audio_processor._language_votes) == 0, "partial detection must not vote"
+        assert audio_processor._last_detected_language is None
+
+    def test_partial_before_any_vote_falls_back_to_source_when_detection_fails(
+        self, audio_processor, mock_whisperx_model,
+    ):
+        audio_processor._auto_direction_getter = lambda: True
+        audio_processor._whisperx_model = mock_whisperx_model
+        with patch("whisperx.load_audio", side_effect=RuntimeError("ffmpeg missing")):
+            audio_processor._run_quick_asr("/fake/partial.wav")
+        assert mock_whisperx_model.transcribe.call_args.args[0] == "/fake/partial.wav"
+        assert mock_whisperx_model.transcribe.call_args.kwargs["language"] == "es"
+
+    def test_partial_uses_source_language_when_auto_language_is_off(self, audio_processor, mock_whisperx_model):
+        audio_processor._auto_direction_getter = lambda: True
+        audio_processor._whisperx_model = mock_whisperx_model
+        audio_processor.config.asr.auto_language = False
+        with patch("whisperx.load_audio") as load:
+            audio_processor._run_quick_asr("/fake/partial.wav")
+        load.assert_not_called()
         assert mock_whisperx_model.transcribe.call_args.kwargs["language"] == "es"
 
     def test_partial_uses_voted_language_once_known(self, audio_processor, mock_whisperx_model):

@@ -2,13 +2,14 @@
 
 // Plain C++ whisper.cpp engine for :asr (design.md sections 3-5, 7). No JNI types here.
 //
-// One read-only whisper_context plus two whisper_state slots: slot 0 = FINAL (also used for language
-// detection, whose encoder pass relies on the state's audio_ctx staying 0), slot 1 = PARTIAL. All
-// calls except request_abort() must come from the single ASR thread.
+// One read-only whisper_context plus two whisper_state slots: slot 0 = FINAL, slot 1 = PARTIAL. Both
+// can detect the language; detection's encoder pass uses the slot state's audio_ctx (0 unless the
+// slot last ran a scaled partial). All calls except request_abort() must come from the single ASR
+// thread.
 //
-// A FINAL transcribe of exactly the samples the preceding detect() saw reuses that detection's mel
-// and, through the patched whisper.cpp (whisper_patch.cmake), its encoder output: one encoder pass
-// per final instead of two (D042).
+// A transcribe of exactly the samples the preceding detect() on the same slot saw (with audio_ctx 0)
+// reuses that detection's mel and, through the patched whisper.cpp (whisper_patch.cmake), its encoder
+// output: one encoder pass instead of two (D042 for finals, D049 for partials before the first vote).
 
 #include <atomic>
 #include <cstdint>
@@ -81,9 +82,10 @@ public:
 
     TranscribeResult transcribe(int slot, const std::vector<float>& samples, const DecodeParams& params);
 
-    // Restricted detection input: log-mel + one decoder step on the FINAL state. Fills probs (size
-    // must be >= whisper_lang_max_id() + 1). Returns the argmax language id (>= 0) or a negative rc.
-    int detect(const std::vector<float>& samples, int n_threads, float* probs, int n_probs);
+    // Restricted detection input: log-mel + one decoder step on the slot's state and context. Fills
+    // probs (size must be >= whisper_lang_max_id() + 1). Returns the argmax language id (>= 0) or a
+    // negative rc.
+    int detect(int slot, const std::vector<float>& samples, int n_threads, float* probs, int n_probs);
 
     void request_abort(int slot);  // any thread
     void clear_abort(int slot);    // ASR thread only
@@ -98,10 +100,10 @@ private:
     whisper_state* states_[kSlotCount] = {nullptr, nullptr};
     std::atomic<bool> abort_[kSlotCount] = {false, false};
 
-    // Samples of the last successful detect() whose mel is still in the FINAL state.
-    bool detect_mel_valid_ = false;
-    size_t detect_n_ = 0;
-    uint64_t detect_hash_ = 0;
+    // Per slot: samples of the last successful detect() whose mel is still in that slot's state.
+    bool detect_mel_valid_[kSlotCount] = {false, false};
+    size_t detect_n_[kSlotCount] = {0, 0};
+    uint64_t detect_hash_[kSlotCount] = {0, 0};
 };
 
 }  // namespace habla

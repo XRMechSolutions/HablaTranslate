@@ -232,7 +232,7 @@ Java_com_xrmech_habla_asr_internal_WhisperNative_systemInfo(JNIEnv* env, jclass)
 
 JNIEXPORT jint JNICALL
 Java_com_xrmech_habla_asr_internal_WhisperNative_detectLanguage(
-        JNIEnv* env, jclass, jlong handle, jfloatArray samples, jint n_threads, jfloatArray probs_out) {
+        JNIEnv* env, jclass, jlong handle, jint slot, jfloatArray samples, jint n_threads, jfloatArray probs_out) {
     habla::Engine* engine = engine_of(handle);
     if (engine == nullptr) {
         return habla::kRcNoState;
@@ -247,7 +247,7 @@ Java_com_xrmech_habla_asr_internal_WhisperNative_detectLanguage(
         }
         const jsize n_probs = env->GetArrayLength(probs_out);
         std::vector<float> probs(static_cast<size_t>(n_probs), 0.0f);
-        const int rc = engine->detect(pcm, n_threads, probs.data(), n_probs);
+        const int rc = engine->detect(slot, pcm, n_threads, probs.data(), n_probs);
         if (rc >= 0) {
             env->SetFloatArrayRegion(probs_out, 0, n_probs, probs.data());
         }
