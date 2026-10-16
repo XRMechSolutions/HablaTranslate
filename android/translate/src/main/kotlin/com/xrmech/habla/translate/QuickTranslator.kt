@@ -21,6 +21,8 @@ class QuickTranslator(
     assets: SharedAssets,
     private val settings: () -> TranslateSettings,
     private val costs: CostMeter,
+    /** Used when [TranslateSettings.previewEngine] is ON_DEVICE (D050). */
+    private val onDevice: OnDeviceTranslator? = null,
 ) {
     private val log = Log()
     private val models = assets.models
@@ -39,6 +41,7 @@ class QuickTranslator(
         val s = settings()
         if (!s.partialTranslation || text.isBlank()) return null
         val effective = if (direction == Direction.AUTO) Direction.ES_TO_EN else direction
+        if (s.previewEngine == TranslateEngine.ON_DEVICE) return translateOnDevice(text, effective)
         val model = fallback.resolveModel(s.quickModel, models.quickDefault)
         val prompt = try {
             prompts.quick(text, effective)
@@ -69,6 +72,22 @@ class QuickTranslator(
             } finally {
                 // Only clear our own job; a newer call may already own the slot.
                 inFlight.compareAndSet(job, null)
+            }
+        }
+    }
+
+    /**
+     * Free and fast (tens of ms), so there is no latest-wins slot: the caller's own cancellation of
+     * the previous preview job is enough. A pack that is not ready just means no preview.
+     */
+    private suspend fun translateOnDevice(text: String, direction: Direction): String? {
+        val engine = onDevice ?: return null
+        return when (val r = engine.translate(text, direction)) {
+            is OnDeviceResult.Ok -> PyText.strip(r.text).ifEmpty { null }
+            OnDeviceResult.NotReady -> null
+            is OnDeviceResult.Failed -> {
+                log.debug("On-device preview failed: ${r.message}")
+                null
             }
         }
     }

@@ -16,6 +16,8 @@ on the open-source components below; each remains under its own licence and copy
 | [OkHttp](https://github.com/square/okhttp) and [Okio](https://github.com/square/okio) | HTTP transport | Apache-2.0, © Square, Inc. |
 | [SQLDelight](https://github.com/cashapp/sqldelight) | Local history database | Apache-2.0, © Square, Inc. |
 | [Koin](https://github.com/InsertKoinIO/koin) | Dependency injection | Apache-2.0, © the Koin authors |
+| [ML Kit Translation](https://developers.google.com/ml-kit/language/translation) (`com.google.mlkit:translate`) | Free on-device Spanish <-> English translation | Proprietary Google SDK under the [ML Kit Terms of Service](https://developers.google.com/ml-kit/terms); results follow the [Cloud Translation attribution requirements](https://cloud.google.com/translate/attribution) |
+| "powered by Google Translate" badge (`android/app/src/main/res/drawable-*/powered_by_google_translate.png`) | Required attribution beside on-device translations | Google brand feature, unaltered from Google's attribution kit; used under Google's brand guidelines, not covered by this repository's MIT licence |
 
 The Apache-2.0 licence text is at <https://www.apache.org/licenses/LICENSE-2.0>. Where a component
 ships a NOTICE file, it applies to the distributed app as well.
@@ -24,6 +26,7 @@ ships a NOTICE file, it applies to the distributed app as well.
 
 | Component | Licence |
 |-----------|---------|
+| ML Kit Spanish and English translation models (~30 MB each), downloaded from Google when the user taps Download in Settings | ML Kit Terms of Service |
 | Whisper model weights in ggml format (`shared/asr_models.json`, from the [whisper.cpp model repository](https://huggingface.co/ggerganov/whisper.cpp) at a pinned revision) | MIT, © OpenAI (Whisper) |
 
 ## Test data

@@ -1,6 +1,5 @@
 package com.xrmech.habla.app.pipeline
 
-import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -23,7 +22,6 @@ import com.xrmech.habla.asr.ModelDownloader
 import com.xrmech.habla.asr.ModelManager
 import com.xrmech.habla.audio.Segmenter
 import com.xrmech.habla.audio.SileroVad
-import com.xrmech.habla.shared.AsrModelEntry
 import com.xrmech.habla.translate.ConversationContext
 import com.xrmech.habla.translate.CostMeter
 import com.xrmech.habla.translate.IdiomScanner
@@ -35,7 +33,6 @@ import com.xrmech.habla.translate.TopicTracker
 import com.xrmech.habla.translate.Translator
 import com.xrmech.habla.translate.model.Direction
 import java.io.BufferedInputStream
-import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -72,31 +69,13 @@ class LiveOpenAiPipelineTest {
         scope.cancel()
     }
 
-    /** Copies a catalog model pushed under /data/local/tmp (shell-readable only) into the app's models dir. */
-    private fun installModel(entry: AsrModelEntry): Boolean {
-        val dir = File(TestFixtures.context.noBackupFilesDir, "models").apply { mkdirs() }
-        val dst = File(dir, entry.file)
-        if (dst.length() != entry.sizeBytes || TestFixtures.sha256(dst) != entry.sha256) {
-            val shell = InstrumentationRegistry.getInstrumentation().uiAutomation
-                .executeShellCommand("cat ${TestFixtures.DEVICE_MODEL_DIR}/${entry.file}")
-            ParcelFileDescriptor.AutoCloseInputStream(shell).use { i -> dst.outputStream().use { i.copyTo(it, 1 shl 20) } }
-            if (dst.length() != entry.sizeBytes || TestFixtures.sha256(dst) != entry.sha256) {
-                dst.delete()
-                return false
-            }
-        }
-        // ModelManager's marker, so fileFor() reports the file Ready without hashing.
-        File(dir, entry.file + ".verified").writeText("${entry.sha256} ${entry.sizeBytes} ${dst.lastModified()}\n")
-        return true
-    }
-
     @Test
     fun mixedClipTranslatesThroughOpenAiOnTheA56Profile() = runBlocking {
         val key = BuildSeed.key
         assumeTrue("no seeded key (android/.env)", key != null)
         val speech = checkNotNull(assets.asrModels.byId("ggml-small-q8_0"))
         val live = checkNotNull(assets.asrModels.byId("ggml-base-q8_0"))
-        assumeTrue("models not pushed to ${TestFixtures.DEVICE_MODEL_DIR}", installModel(speech) && installModel(live))
+        assumeTrue("models not pushed to ${TestFixtures.DEVICE_MODEL_DIR}", TestFixtures.installPushedModel(speech) && TestFixtures.installPushedModel(live))
         val gpu = args.getString("habla.gpu") != "false"
 
         val offline = object : ModelDownloader {

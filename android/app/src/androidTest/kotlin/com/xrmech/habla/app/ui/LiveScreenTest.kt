@@ -20,11 +20,14 @@ import com.xrmech.habla.app.ui.live.LiveContent
 import com.xrmech.habla.app.ui.live.LiveUiState
 import com.xrmech.habla.app.ui.nav.HablaNavHost
 import com.xrmech.habla.app.ui.theme.HablaTheme
+import com.xrmech.habla.data.EngineChoice
 import com.xrmech.habla.translate.LlmException
+import com.xrmech.habla.translate.OnDeviceTranslator
 import com.xrmech.habla.translate.model.CorrectionDetail
 import com.xrmech.habla.translate.model.Direction
 import com.xrmech.habla.translate.model.FlaggedPhrase
 import com.xrmech.habla.translate.model.TranslationResult
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -106,6 +109,8 @@ class LiveScreenTest {
 
     @Test
     fun noKeyBannerAddKeyOpensSettings() {
+        // Only the OpenAI engine needs a key; Automatic with no key translates on the phone (D050).
+        runBlocking { koin.settings.update { it.copy(finalEngine = EngineChoice.CLOUD) } }
         compose.setContent { HablaTheme { HablaNavHost() } }
         compose.waitUntil(5_000) { compose.onAllNodes(androidx.compose.ui.test.hasTestTag("banner_NO_KEY")).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Translation off - add your OpenAI key").assertIsDisplayed()
@@ -113,6 +118,22 @@ class LiveScreenTest {
         compose.waitForIdle()
         compose.onNodeWithTag("section_key").assertIsDisplayed()
         compose.onNodeWithTag("nav_settings").assertIsDisplayedSelected()
+    }
+
+    @Test
+    fun onDeviceCardShowsGoogleAttributionAndNoConfidence() {
+        val onDevice = state.copy(
+            live = state.live.copy(
+                exchanges = listOf(
+                    card(5, CardTranslation.Done(TranslationResult("hola", "hello", confidence = 1.0), emptyList(), OnDeviceTranslator.MODEL_ID, 40)),
+                ),
+                partial = null,
+            ),
+        )
+        compose.setContent { HablaTheme { LiveContent(onDevice, LiveActions(), nowMs = { 65_000 }) } }
+        compose.onNodeWithTag("card_5_translation").assertTextContains("hello")
+        compose.onNodeWithTag("google_attribution").assertIsDisplayed()
+        compose.onNodeWithTag("card_5_confidence").assertDoesNotExist()
     }
 }
 

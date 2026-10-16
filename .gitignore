@@ -133,3 +133,6 @@ habla/tools/last_test_output.txt
 *.tmp
 temp/
 tmp/
+
+# Firebase client config for Habla Pro (D051): supplied locally like android/.env, never committed
+google-services.json

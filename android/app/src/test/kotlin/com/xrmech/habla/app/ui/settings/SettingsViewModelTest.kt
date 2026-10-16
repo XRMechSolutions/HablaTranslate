@@ -1,6 +1,7 @@
 package com.xrmech.habla.app.ui.settings
 
 import com.xrmech.habla.app.fakes.FakeApiKeyStore
+import com.xrmech.habla.app.fakes.FakeLanguagePack
 import com.xrmech.habla.app.fakes.FakeLiveController
 import com.xrmech.habla.app.fakes.FakeSettingsRepository
 import com.xrmech.habla.app.fakes.FakeUsageRepository
@@ -12,9 +13,11 @@ import com.xrmech.habla.app.pipeline.SessionPhase
 import com.xrmech.habla.app.state.KeyHealthTracker
 import com.xrmech.habla.app.state.KeyState
 import com.xrmech.habla.app.state.ModelDownloadController
+import com.xrmech.habla.app.translate.PackState
 import com.xrmech.habla.asr.AsrBackend
 import com.xrmech.habla.asr.ModelManager
 import com.xrmech.habla.asr.ModelState
+import com.xrmech.habla.data.EngineChoice
 import com.xrmech.habla.translate.CostMeter
 import com.xrmech.habla.translate.KeyTestResult
 import com.xrmech.habla.translate.LlmException
@@ -55,6 +58,8 @@ class SettingsViewModelTest {
     private val costMeter = CostMeter(assets.models)
     private val keyHealth = KeyHealthTracker(keyStore.hasKey, appScope)
     private val live = FakeLiveController()
+    private val pack = FakeLanguagePack()
+    private var metered = false
     private val testedWith = mutableListOf<String?>()
     private var nextResult: KeyTestResult = KeyTestResult.Valid(TokenUsage(20, 0, 5, 0, assets.models.quickDefault))
     private val tester = KeyTester { candidate ->
@@ -71,7 +76,7 @@ class SettingsViewModelTest {
         val models = ModelManager(dir, assets.asrModels, NoNetworkDownloader)
         val vm = SettingsViewModel(
             settings, keyStore, tester, costMeter, usage, keyHealth, models,
-            ModelDownloadController(models, appScope), assets, live,
+            ModelDownloadController(models, appScope) { metered }, assets, live, pack,
         )
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.ui.collect {} }
         return vm
@@ -209,5 +214,46 @@ class SettingsViewModelTest {
         vm.setAsrGpu(true)
         assertTrue(settings.current.asrGpu)
         assertEquals(AsrBackend.gpuBuilt, vm.ui.value.gpuBuilt)
+    }
+
+    @Test
+    fun `should write the engine choice and on-device previews`() = runTest {
+        val vm = newVm()
+        assertEquals(EngineChoice.AUTO, vm.ui.value.settings?.finalEngine)
+        vm.setFinalEngine(EngineChoice.ON_DEVICE)
+        vm.setOnDevicePreviews(false)
+        assertEquals(EngineChoice.ON_DEVICE, settings.current.finalEngine)
+        assertFalse(settings.current.onDevicePreviews)
+    }
+
+    @Test
+    fun `should ask before downloading the language pack on a metered network`() = runTest {
+        metered = true
+        val vm = newVm()
+        assertEquals(PackState.Missing, vm.ui.value.packState)
+
+        vm.downloadPack()
+        assertTrue(vm.ui.value.local.confirmMeteredPack)
+        assertEquals(0, pack.downloads)
+
+        vm.downloadPack(confirmed = true)
+        assertFalse(vm.ui.value.local.confirmMeteredPack)
+        assertEquals(1, pack.downloads)
+        assertEquals(PackState.Ready, vm.ui.value.packState)
+    }
+
+    @Test
+    fun `should refuse to delete the language pack while a session runs`() = runTest {
+        pack.download()
+        live.state.value = LiveState(phase = SessionPhase.Listening, sessionId = 7)
+        val vm = newVm()
+        vm.deletePack()
+        assertEquals(SettingsViewModel.DELETE_PACK_WHILE_LISTENING, vm.ui.value.local.packMessage)
+        assertEquals(0, pack.deletes)
+
+        live.state.value = LiveState()
+        vm.deletePack()
+        assertEquals(1, pack.deletes)
+        assertEquals(PackState.Missing, vm.ui.value.packState)
     }
 }

@@ -11,7 +11,14 @@ sealed interface TranslationOutcome {
     data class Failed(val raw: String, val error: LlmException) : TranslationOutcome
 }
 
-data class TranslateSettings(val finalModel: String, val quickModel: String, val partialTranslation: Boolean)
+/** [finalEngine] / [previewEngine]: who translates finals and partials (D050); CLOUD keeps the LLM path. */
+data class TranslateSettings(
+    val finalModel: String,
+    val quickModel: String,
+    val partialTranslation: Boolean,
+    val finalEngine: TranslateEngine = TranslateEngine.CLOUD,
+    val previewEngine: TranslateEngine = TranslateEngine.CLOUD,
+)
 
 /** One prior exchange for the prompt context. [source] is `TranslationResult.corrected`. */
 data class ContextExchange(val source: String, val translated: String)

@@ -54,6 +54,13 @@ val keystoreProps: Properties? = keystorePropsFile.takeIf { it.isFile }?.let { f
 
 val emulatorOnly: Boolean = providers.gradleProperty("habla.emulatorOnly").map { it.toBoolean() }.getOrElse(false)
 
+// llm-gateway base URL for Pro (D051): -Phabla.gatewayUrl or HABLA_GATEWAY_URL. Empty = no Pro engine
+// in this build (the picker hides it). Not a secret: the gateway authenticates users, not builds.
+val gatewayUrl: String = (providers.gradleProperty("habla.gatewayUrl").orNull ?: System.getenv("HABLA_GATEWAY_URL") ?: "").trim()
+require(gatewayUrl.isEmpty() || Regex("^https?://[A-Za-z0-9.-]+(:[0-9]+)?/?$").matches(gatewayUrl)) {
+    "habla.gatewayUrl must be a bare http(s) origin, got '$gatewayUrl'"
+}
+
 android {
     namespace = "com.xrmech.habla.app"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -70,6 +77,7 @@ android {
         // -Phabla.emulatorOnly=true packs only x86_64 (a 125 MB two-ABI debug APK does not fit a
         // nearly full emulator /data); never set it for a phone or release build.
         ndk { abiFilters += if (emulatorOnly) "x86_64" else "arm64-v8a" }
+        buildConfigField("String", "GATEWAY_URL", "\"$gatewayUrl\"")
     }
 
     buildFeatures {
@@ -388,6 +396,7 @@ dependencies {
     implementation(libs.coroutines.android)
     implementation(libs.serialization.json)
     implementation(libs.onnxruntime.android)
+    implementation(libs.mlkit.translate)
     // :asr pins OkHttp strictly (5.5.0's AAR needs compileSdk 37, D034); :translate's Ktor asks for
     // 5.5.0 without the pin, so the app graph must state the same strict version to resolve.
     implementation(libs.okhttp) { version { strictly(libs.versions.okhttp.get()) } }

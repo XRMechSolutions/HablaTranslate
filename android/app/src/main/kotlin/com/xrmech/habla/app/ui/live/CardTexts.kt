@@ -9,6 +9,7 @@ object CardTexts {
         LlmException.Kind.INVALID_KEY -> "Not translated - key rejected"
         LlmException.Kind.QUOTA -> "Not translated - no credit"
         LlmException.Kind.NETWORK, LlmException.Kind.TIMEOUT -> "Not translated - network: $message"
+        LlmException.Kind.MODEL_UNAVAILABLE -> "Not translated - $message"
         else -> "Not translated - $kind: $message"
     }
 

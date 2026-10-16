@@ -35,9 +35,24 @@ internal object EnumCodec {
         "classroom" -> Mode.CLASSROOM
         else -> null
     }
+
+    fun encode(engine: EngineChoice): String = when (engine) {
+        EngineChoice.AUTO -> "auto"
+        EngineChoice.CLOUD -> "cloud"
+        EngineChoice.ON_DEVICE -> "on_device"
+        EngineChoice.PRO -> "pro"
+    }
+
+    fun decodeEngine(value: String): EngineChoice? = when (value) {
+        "auto" -> EngineChoice.AUTO
+        "cloud" -> EngineChoice.CLOUD
+        "on_device" -> EngineChoice.ON_DEVICE
+        "pro" -> EngineChoice.PRO
+        else -> null
+    }
 }
 
-/** Preferences <-> [AppSettings] over the eleven data-models keys. */
+/** Preferences <-> [AppSettings] over the thirteen data-models keys. */
 internal object SettingsCodec {
     val DIRECTION = stringPreferencesKey("direction")
     val MODE = stringPreferencesKey("mode")
@@ -50,6 +65,8 @@ internal object SettingsCodec {
     val FIRST_RUN_DONE = booleanPreferencesKey("first_run_done")
     val LIVE_MODEL_ID = stringPreferencesKey("live_model_id")
     val ASR_GPU = booleanPreferencesKey("asr_gpu")
+    val FINAL_ENGINE = stringPreferencesKey("final_engine")
+    val ON_DEVICE_PREVIEWS = booleanPreferencesKey("on_device_previews")
 
     /** Missing keys take [defaults]; an unknown enum string takes that field's default with a warning. */
     fun decode(p: Preferences, defaults: AppSettings): AppSettings = AppSettings(
@@ -68,9 +85,13 @@ internal object SettingsCodec {
         firstRunDone = p[FIRST_RUN_DONE] ?: defaults.firstRunDone,
         liveModelId = p[LIVE_MODEL_ID] ?: defaults.liveModelId,
         asrGpu = p[ASR_GPU] ?: defaults.asrGpu,
+        finalEngine = p[FINAL_ENGINE]?.let { raw ->
+            EnumCodec.decodeEngine(raw) ?: defaults.finalEngine.also { DataLog.w("unknown stored final engine; using default") }
+        } ?: defaults.finalEngine,
+        onDevicePreviews = p[ON_DEVICE_PREVIEWS] ?: defaults.onDevicePreviews,
     )
 
-    /** Writes all eleven keys, so the file is always complete. */
+    /** Writes all thirteen keys, so the file is always complete. */
     fun encode(s: AppSettings, p: MutablePreferences) {
         p[DIRECTION] = EnumCodec.encode(s.direction)
         p[MODE] = EnumCodec.encode(s.mode)
@@ -83,5 +104,7 @@ internal object SettingsCodec {
         p[FIRST_RUN_DONE] = s.firstRunDone
         p[LIVE_MODEL_ID] = s.liveModelId
         p[ASR_GPU] = s.asrGpu
+        p[FINAL_ENGINE] = EnumCodec.encode(s.finalEngine)
+        p[ON_DEVICE_PREVIEWS] = s.onDevicePreviews
     }
 }

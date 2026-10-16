@@ -1,6 +1,7 @@
 package com.xrmech.habla.app.ui.live
 
 import com.xrmech.habla.app.fakes.FakeApiKeyStore
+import com.xrmech.habla.app.fakes.FakeLanguagePack
 import com.xrmech.habla.app.fakes.FakeLiveController
 import com.xrmech.habla.app.fakes.FakeSessionControl
 import com.xrmech.habla.app.fakes.FakeSettingsRepository
@@ -59,6 +60,7 @@ class LiveViewModelTest {
     private val service = FakeSessionControl()
     private val online = MutableStateFlow(true)
     private val vocab = FakeVocabRepository()
+    private val pack = FakeLanguagePack()
 
     @AfterEach
     fun tearDown() {
@@ -69,7 +71,7 @@ class LiveViewModelTest {
         if (modelReady) installVerifiedModel(dir, assets.asrModels.byId(settings.current.asrModelId)!!)
         val models = ModelManager(dir, assets.asrModels, NoNetworkDownloader)
         val vm = LiveViewModel(
-            live, service, settings, models, ModelDownloadController(models, appScope), keyHealth, online, vocab, assets,
+            live, service, settings, models, ModelDownloadController(models, appScope), keyHealth, online, vocab, assets, pack,
             startTimeoutMs = 10_000,
         )
         val effects = mutableListOf<LiveEffect>()
@@ -226,5 +228,19 @@ class LiveViewModelTest {
         assertFalse(settings.current.firstRunDone)
         vm.dismissSetup()
         assertTrue(settings.current.firstRunDone)
+    }
+
+    @Test
+    fun `should ask for the language pack instead of a key when the phone translates`() = runTest {
+        keyStore.clear()
+        val (vm, _) = newVm()
+        assertTrue(vm.ui.value.allBanners.any { it.kind == BannerKind.PACK_MISSING })
+        assertTrue(vm.ui.value.allBanners.none { it.kind == BannerKind.NO_KEY })
+
+        pack.download()
+        assertTrue(vm.ui.value.allBanners.none { it.kind == BannerKind.PACK_MISSING })
+
+        settings.update { it.copy(finalEngine = com.xrmech.habla.data.EngineChoice.CLOUD) }
+        assertTrue(vm.ui.value.allBanners.any { it.kind == BannerKind.NO_KEY })
     }
 }

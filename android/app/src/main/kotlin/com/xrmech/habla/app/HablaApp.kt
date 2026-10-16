@@ -8,6 +8,7 @@ import com.xrmech.habla.app.di.appModules
 import com.xrmech.habla.app.log.AndroidLogSink
 import com.xrmech.habla.app.log.HLog
 import com.xrmech.habla.app.service.ListeningNotification
+import com.xrmech.habla.app.translate.LanguagePack
 import com.xrmech.habla.translate.TranslateLog
 import com.xrmech.habla.translate.TranslateLogging
 import org.koin.android.ext.koin.androidContext
@@ -45,6 +46,7 @@ open class HablaApp : Application() {
             usage = { koin.get() },
             cacheDir = cacheDir,
             scope = koin.get(APP_SCOPE),
+            languagePack = { koin.get<LanguagePack>().refresh() },
         )
         startup.run()
     }

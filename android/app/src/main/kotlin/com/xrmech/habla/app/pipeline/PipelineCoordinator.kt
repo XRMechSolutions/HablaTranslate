@@ -37,8 +37,10 @@ import com.xrmech.habla.translate.DirectionResolver
 import com.xrmech.habla.translate.IdiomMerge
 import com.xrmech.habla.translate.IdiomScanner
 import com.xrmech.habla.translate.LlmException
+import com.xrmech.habla.translate.OnDeviceTranslator
 import com.xrmech.habla.translate.QuickTranslator
 import com.xrmech.habla.translate.TopicTracker
+import com.xrmech.habla.translate.TranslateEngine
 import com.xrmech.habla.translate.TranslationOutcome
 import com.xrmech.habla.translate.Translator
 import com.xrmech.habla.translate.ContextExchange
@@ -316,7 +318,9 @@ class PipelineCoordinator(
         scope = s.scope,
         settings = { s.settingsNow },
         asr = { s.asr },
-        hasKey = { s.hasKey },
+        previewEngine = {
+            settings.translateSettings(assets.models).previewEngine.takeIf { it == TranslateEngine.ON_DEVICE || s.hasKey }
+        },
         sourceLanguage = ::sourceLanguage,
         state = _state,
     )
@@ -655,15 +659,19 @@ class PipelineCoordinator(
             fun failedRow(raw: String) = stoppedRow(s, item, text, effective, detectedLanguage, audioPath, t0, raw, hits)
             try {
                 val tStart = clock()
+                // Only the user's own OpenAI key has a health to track; Pro and on-device errors say nothing about it.
+                val keyEngine = settings.translateSettings(assets.models).finalEngine == TranslateEngine.CLOUD
                 val outcome = translator.translate(text, effective, s.settingsNow.mode, context.recent(), context.topicSummary)
                 s.metrics.recordTranslate(clock() - tStart)
                 when (outcome) {
                     is TranslationOutcome.Ok -> {
                         val r = outcome.result
+                        // On-device results have no confidence and say nothing about the key (D050).
+                        val onDevice = outcome.model == OnDeviceTranslator.MODEL_ID
                         val flagged: List<FlaggedPhrase> = IdiomMerge.merge(hits, r.flaggedPhrases)
                         s.metrics.idiomPatternDbHits.addAndGet(flagged.count { it.source == "pattern_db" })
                         s.metrics.idiomLlmHits.addAndGet(flagged.count { it.source == "llm" })
-                        if (r.confidence < LOW_CONFIDENCE) {
+                        if (!onDevice && r.confidence < LOW_CONFIDENCE) {
                             s.metrics.lowConfidenceCount.incrementAndGet()
                             HLog.w(HLog.TRANSLATE, "segment #${item.seq} low confidence ${r.confidence}")
                         }
@@ -674,7 +682,7 @@ class PipelineCoordinator(
                         val exchangeId = persist(
                             NewExchange(
                                 sessionId = s.id, segmentId = item.seq, direction = effective, rawTranscript = text,
-                                correctedSource = r.corrected, translation = r.translated, confidence = r.confidence,
+                                correctedSource = r.corrected, translation = r.translated, confidence = r.confidence.takeUnless { onDevice },
                                 isCorrection = r.isCorrection, correction = r.correctionDetail, flagged = flagged,
                                 processingMs = processingMs, detectedLanguage = detectedLanguage,
                                 translationError = false, audioPath = audioPath,
@@ -686,7 +694,7 @@ class PipelineCoordinator(
                         _state.update { it.copy(lastTranslationError = null) }
                         s.metrics.translationsCompleted.incrementAndGet()
                         s.metrics.recordSpeechEndToTranslation(clock() - (s.startedAtMs + item.endSample / 16))
-                        keyHealth.report(null)
+                        if (keyEngine) keyHealth.report(null)
                         HLog.text(HLog.TRANSLATE) { "translation #${item.seq}: ${r.translated}" }
                         // Topic update: same lifetime as translations, so stop's drain waits for it.
                         s.translationScope.launch { topicTracker.update(r.corrected, r.translated) }
@@ -700,7 +708,7 @@ class PipelineCoordinator(
                         }
                         _state.update { it.copy(lastTranslationError = error) }
                         s.metrics.translationErrors.incrementAndGet()
-                        keyHealth.report(error.kind)
+                        if (keyEngine) keyHealth.report(error.kind)
                         HLog.w(HLog.TRANSLATE, "segment #${item.seq} translation failed: ${error.kind}")
                     }
                 }

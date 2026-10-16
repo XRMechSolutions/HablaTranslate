@@ -69,6 +69,26 @@ object TestFixtures {
 
     const val DEVICE_MODEL_DIR = "/data/local/tmp/habla-models"
 
+    /**
+     * Copies a catalog model pushed under [DEVICE_MODEL_DIR] (shell-readable only) into the app's
+     * models dir with the ModelManager marker. False when it is not pushed or its hash differs.
+     */
+    fun installPushedModel(entry: AsrModelEntry): Boolean {
+        val dir = File(context.noBackupFilesDir, "models").apply { mkdirs() }
+        val dst = File(dir, entry.file)
+        if (dst.length() != entry.sizeBytes || sha256(dst) != entry.sha256) {
+            val shell = InstrumentationRegistry.getInstrumentation().uiAutomation
+                .executeShellCommand("cat $DEVICE_MODEL_DIR/${entry.file}")
+            ParcelFileDescriptor.AutoCloseInputStream(shell).use { i -> dst.outputStream().use { i.copyTo(it, 1 shl 20) } }
+            if (dst.length() != entry.sizeBytes || sha256(dst) != entry.sha256) {
+                dst.delete()
+                return false
+            }
+        }
+        File(dir, entry.file + ".verified").writeText("${entry.sha256} ${entry.sizeBytes} ${dst.lastModified()}\n")
+        return true
+    }
+
     fun sha256(file: File): String {
         val md = MessageDigest.getInstance("SHA-256")
         file.inputStream().use { input ->

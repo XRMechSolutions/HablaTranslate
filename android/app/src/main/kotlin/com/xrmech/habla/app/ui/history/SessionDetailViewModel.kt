@@ -12,6 +12,7 @@ import com.xrmech.habla.data.HistoryRepository
 import com.xrmech.habla.data.SessionRow
 import com.xrmech.habla.data.VocabRepository
 import com.xrmech.habla.translate.LlmException
+import com.xrmech.habla.translate.OnDeviceTranslator
 import com.xrmech.habla.translate.model.FlaggedPhrase
 import com.xrmech.habla.translate.model.TranslationResult
 import kotlinx.coroutines.CancellationException
@@ -156,7 +157,11 @@ class SessionDetailViewModel(
     }
 }
 
-/** Stored exchange as the Live card shape; a failed translation keeps the raw transcript. */
+/**
+ * Stored exchange as the Live card shape; a failed translation keeps the raw transcript. A
+ * successful row without a confidence is an on-device translation (D050: cloud results always
+ * carry one), so it gets the on-device model id and its attribution.
+ */
 internal fun ExchangeRow.toCard(): ExchangeCard = ExchangeCard(
     seq = segmentId,
     exchangeId = id,
@@ -177,7 +182,7 @@ internal fun ExchangeRow.toCard(): ExchangeCard = ExchangeCard(
                 correctionDetail = correction,
             ),
             flagged,
-            model = "",
+            model = if (confidence == null) OnDeviceTranslator.MODEL_ID else "",
             processingMs = processingMs ?: 0,
         )
     },

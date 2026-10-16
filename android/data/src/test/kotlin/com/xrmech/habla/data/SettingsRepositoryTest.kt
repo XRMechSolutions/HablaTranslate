@@ -39,12 +39,12 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun `update round trips all eleven keys`() = runTest {
+    fun `update round trips all thirteen keys`() = runTest {
         val store = store()
         val repo = DataStoreSettingsRepository(store, defaults)
         val changed = AppSettings(
             Direction.EN_TO_ES, Mode.CLASSROOM, false, false, "final-x", "quick-y", "asr-z", true, true,
-            liveModelId = "live-w", asrGpu = true,
+            liveModelId = "live-w", asrGpu = true, finalEngine = EngineChoice.ON_DEVICE, onDevicePreviews = false,
         )
         repo.update { changed }
         assertEquals(changed, repo.settings.first())
@@ -60,7 +60,9 @@ class SettingsRepositoryTest {
         assertEquals(true, p[SettingsCodec.FIRST_RUN_DONE])
         assertEquals("live-w", p[SettingsCodec.LIVE_MODEL_ID])
         assertEquals(true, p[SettingsCodec.ASR_GPU])
-        assertEquals(11, p.asMap().size)
+        assertEquals("on_device", p[SettingsCodec.FINAL_ENGINE])
+        assertEquals(false, p[SettingsCodec.ON_DEVICE_PREVIEWS])
+        assertEquals(13, p.asMap().size)
     }
 
     @Test
@@ -82,11 +84,13 @@ class SettingsRepositoryTest {
             it[SettingsCodec.DIRECTION] = "classroom_v2"
             it[SettingsCodec.MODE] = "lecture"
             it[SettingsCodec.FINAL_MODEL] = "kept-model"
+            it[SettingsCodec.FINAL_ENGINE] = "gateway_v9"
         }
         val s = DataStoreSettingsRepository(store, defaults).settings.first()
         assertEquals(Direction.AUTO, s.direction)
         assertEquals(Mode.CONVERSATION, s.mode)
         assertEquals("kept-model", s.finalModel)
+        assertEquals(EngineChoice.AUTO, s.finalEngine)
     }
 
     @Test

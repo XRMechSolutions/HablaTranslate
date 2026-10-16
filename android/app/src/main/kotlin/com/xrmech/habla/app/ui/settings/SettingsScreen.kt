@@ -45,11 +45,14 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xrmech.habla.app.BuildConfig
+import com.xrmech.habla.app.translate.PackState
+import com.xrmech.habla.app.ui.live.GoogleAttribution
 import com.xrmech.habla.app.ui.live.ModelFailureText
 import com.xrmech.habla.app.ui.nav.Navigator
 import com.xrmech.habla.app.ui.nav.Settings
 import com.xrmech.habla.app.ui.theme.HablaColors
 import com.xrmech.habla.asr.ModelState
+import com.xrmech.habla.data.EngineChoice
 import com.xrmech.habla.translate.model.Direction
 import com.xrmech.habla.translate.model.Mode
 import java.util.Locale
@@ -75,6 +78,11 @@ data class SettingsActions(
     val setLiveModel: (String) -> Unit = {},
     val downloadLiveModel: (Boolean) -> Unit = {},
     val setAsrGpu: (Boolean) -> Unit = {},
+    val setFinalEngine: (EngineChoice) -> Unit = {},
+    val setOnDevicePreviews: (Boolean) -> Unit = {},
+    val downloadPack: (Boolean) -> Unit = {},
+    val dismissMeteredPack: () -> Unit = {},
+    val deletePack: () -> Unit = {},
 )
 
 @Composable
@@ -97,6 +105,8 @@ fun SettingsScreen(section: String?, @Suppress("UNUSED_PARAMETER") navigator: Na
             cancelDownload = vm::cancelDownload, deleteModel = vm::deleteModel,
             setTrainingCapture = vm::setTrainingCapture,
             setLiveModel = vm::setLiveModel, downloadLiveModel = vm::downloadLiveModel, setAsrGpu = vm::setAsrGpu,
+            setFinalEngine = vm::setFinalEngine, setOnDevicePreviews = vm::setOnDevicePreviews,
+            downloadPack = vm::downloadPack, dismissMeteredPack = vm::dismissMeteredPack, deletePack = vm::deletePack,
         ),
     )
 }
@@ -214,11 +224,69 @@ private fun KeySection(state: SettingsUiState, keySavedTick: Int, actions: Setti
 private fun TranslationSection(state: SettingsUiState, actions: SettingsActions) {
     val s = state.settings
     SectionCard("Translation", Settings.TRANSLATION) {
+        Picker(
+            "Translate with", s?.finalEngine?.name,
+            // Pro only in builds that name a gateway (D051).
+            EngineChoice.entries.filter { it != EngineChoice.PRO || BuildConfig.GATEWAY_URL.isNotEmpty() }.map { it.name to engineLabel(it) },
+            { name -> actions.setFinalEngine(EngineChoice.valueOf(name)) }, "final_engine",
+        )
         Picker("Final model", s?.finalModel, state.finalModels.map { it.id to it.label }, actions.setFinalModel, "final_model")
         Picker("Quick model", s?.quickModel, state.quickModels.map { it.id to it.label }, actions.setQuickModel, "quick_model")
         ToggleRow("Translate live partials", s?.partialTranslation == true, s != null, actions.setPartialTranslation, "partial_translation")
+        ToggleRow("Live partials on this phone when the pack is ready", s?.onDevicePreviews == true, s != null, actions.setOnDevicePreviews, "on_device_previews")
+        LanguagePackRow(state, actions)
+    }
+    if (state.local.confirmMeteredPack) {
+        AlertDialog(
+            onDismissRequest = actions.dismissMeteredPack,
+            title = { Text("Download on mobile data?") },
+            text = { Text("The Spanish language pack is about $PACK_MB MB and this network is metered.") },
+            confirmButton = { TextButton(onClick = { actions.downloadPack(true) }) { Text("Download") } },
+            dismissButton = { TextButton(onClick = actions.dismissMeteredPack) { Text("Cancel") } },
+        )
     }
 }
+
+/** On-device translation pack (D050): status, download and delete. */
+@Composable
+private fun LanguagePackRow(state: SettingsUiState, actions: SettingsActions) {
+    val p = state.packState
+    Text("On-device language pack", style = MaterialTheme.typography.labelLarge)
+    Text(
+        packStatusText(p),
+        color = if (p is PackState.Failed) HablaColors.ErrorText else HablaColors.Text,
+        modifier = Modifier.testTag("pack_status"),
+    )
+    if (p == PackState.Downloading) LinearProgressIndicator(modifier = Modifier.fillMaxWidth().testTag("pack_progress"))
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (p == PackState.Missing || p is PackState.Failed) {
+            Button(onClick = { actions.downloadPack(false) }, modifier = Modifier.testTag("pack_download")) { Text("Download (~$PACK_MB MB)") }
+        }
+        if (p == PackState.Ready) {
+            OutlinedButton(onClick = actions.deletePack, enabled = !state.sessionActive, modifier = Modifier.testTag("pack_delete")) { Text("Delete") }
+        }
+    }
+    state.local.packMessage?.let { Text(it, color = HablaColors.ErrorText) }
+    GoogleAttribution()
+}
+
+internal fun engineLabel(e: EngineChoice): String = when (e) {
+    EngineChoice.AUTO -> "Automatic (Pro, else OpenAI key if saved, else this phone)"
+    EngineChoice.CLOUD -> "OpenAI (your key)"
+    EngineChoice.ON_DEVICE -> "This phone (Google Translate, free)"
+    EngineChoice.PRO -> "Habla Pro (subscription)"
+}
+
+internal fun packStatusText(p: PackState): String = when (p) {
+    PackState.Unknown -> "Checking..."
+    PackState.Missing -> "Not downloaded"
+    PackState.Downloading -> "Downloading..."
+    PackState.Ready -> "Ready - Spanish and English translate offline"
+    is PackState.Failed -> "Failed: ${p.message}"
+}
+
+/** Google's figure for one ML Kit language model. */
+private const val PACK_MB = 30
 
 @Composable
 private fun ListeningSection(state: SettingsUiState, actions: SettingsActions) {
@@ -369,6 +437,8 @@ private fun AboutSection() {
         Text("whisper.cpp - MIT License", color = HablaColors.TextMuted)
         Text("Silero VAD - MIT License", color = HablaColors.TextMuted)
         Text("ONNX Runtime - MIT License", color = HablaColors.TextMuted)
+        Text("On-device translation: ML Kit, powered by Google Translate", color = HablaColors.TextMuted)
+        Text(GOOGLE_DISCLAIMER, style = MaterialTheme.typography.bodySmall, color = HablaColors.TextMuted, modifier = Modifier.testTag("google_disclaimer"))
     }
 }
 
@@ -413,3 +483,8 @@ internal fun directionLabel(d: Direction): String = when (d) {
 private fun mb(bytes: Long): Long = (bytes + 500_000) / 1_000_000
 
 internal fun usd(v: Double): String = "$" + String.format(Locale.US, "%.3f", v)
+
+/** Required wherever unmodified Google Translate results are shown (cloud.google.com/translate/attribution). */
+internal const val GOOGLE_DISCLAIMER = "THIS SERVICE MAY CONTAIN TRANSLATIONS POWERED BY GOOGLE. GOOGLE DISCLAIMS ALL WARRANTIES " +
+    "RELATED TO THE TRANSLATIONS, EXPRESS OR IMPLIED, INCLUDING ANY WARRANTIES OF ACCURACY, RELIABILITY, AND ANY IMPLIED " +
+    "WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT."

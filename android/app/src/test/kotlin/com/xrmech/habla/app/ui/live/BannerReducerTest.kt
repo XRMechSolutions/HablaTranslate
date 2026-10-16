@@ -7,6 +7,7 @@ import com.xrmech.habla.app.pipeline.SessionError
 import com.xrmech.habla.app.pipeline.SessionNotice
 import com.xrmech.habla.app.pipeline.SessionPhase
 import com.xrmech.habla.app.state.KeyState
+import com.xrmech.habla.app.translate.PackState
 import com.xrmech.habla.asr.ModelState
 import com.xrmech.habla.translate.LlmException
 import java.io.File
@@ -155,7 +156,26 @@ class BannerReducerTest {
         assertEquals(1, all.size)
         assertNull(all.firstOrNull { it.kind == BannerKind.TRANSLATE_ERROR })
     }
+
+
+    @Test
+    fun `should drop the no-key banner and warn about a missing pack when translating on the phone`() {
+        val noKey = quiet.copy(keyState = KeyState.ABSENT, translateOnDevice = true, keyNeeded = false, packState = PackState.Missing)
+        val b = single(noKey)
+        assertEquals(BannerKind.PACK_MISSING, b.kind)
+        assertEquals(BannerAction.GET_PACK, b.action)
+        assertTrue(BannerReducer.reduce(noKey.copy(packState = PackState.Ready)).isEmpty())
+        assertEquals(BannerKind.PACK_MISSING, single(noKey.copy(packState = PackState.Failed("x"))).kind)
+        assertEquals(BannerKind.NO_KEY, single(noKey.copy(translateOnDevice = false, keyNeeded = true)).kind)
+    }
+
+    @Test
+    fun `should not warn offline when the phone translates`() {
+        assertTrue(BannerReducer.reduce(quiet.copy(online = false, translateOnDevice = true)).isEmpty())
+        assertEquals(BannerKind.OFFLINE, single(quiet.copy(online = false)).kind)
+    }
 }
+
 
 class CardTextsTest {
     @Test
@@ -167,7 +187,7 @@ class CardTextsTest {
             LlmException.Kind.NETWORK to "Not translated - network: m",
             LlmException.Kind.TIMEOUT to "Not translated - network: m",
             LlmException.Kind.RATE_LIMITED to "Not translated - RATE_LIMITED: m",
-            LlmException.Kind.MODEL_UNAVAILABLE to "Not translated - MODEL_UNAVAILABLE: m",
+            LlmException.Kind.MODEL_UNAVAILABLE to "Not translated - m",
             LlmException.Kind.BAD_REQUEST to "Not translated - BAD_REQUEST: m",
             LlmException.Kind.SERVER to "Not translated - SERVER: m",
             LlmException.Kind.MALFORMED to "Not translated - MALFORMED: m",

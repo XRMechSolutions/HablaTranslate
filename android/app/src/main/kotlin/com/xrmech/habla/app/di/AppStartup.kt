@@ -36,6 +36,8 @@ class AppStartup(
     private val usage: () -> UsageRepository,
     private val cacheDir: File,
     private val scope: CoroutineScope,
+    /** Reads the on-device language pack state from disk (D050), so the first preview can use it. */
+    private val languagePack: suspend () -> Unit = {},
 ) {
     private val _state = MutableStateFlow<StartupState>(StartupState.Loading)
     val state: StateFlow<StartupState> = _state.asStateFlow()
@@ -60,6 +62,7 @@ class AppStartup(
             step("training sweep") { HLog.i(HLog.UI, "swept ${training().sweepOrphans()} orphan training files") }
             step("cost seed") { costMeter().seedTotal(usage().totalCostUsd().first()) }
             step("export cleanup") { ExportController.cleanCache(cacheDir) }
+            step("language pack check") { languagePack() }
         }
     }
 

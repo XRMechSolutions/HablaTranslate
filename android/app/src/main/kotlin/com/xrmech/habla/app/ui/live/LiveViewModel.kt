@@ -8,15 +8,21 @@ import com.xrmech.habla.app.pipeline.LiveController
 import com.xrmech.habla.app.pipeline.LiveState
 import com.xrmech.habla.app.pipeline.SessionPhase
 import com.xrmech.habla.app.service.SessionControl
+import com.xrmech.habla.app.state.Engines
 import com.xrmech.habla.app.state.KeyHealthTracker
 import com.xrmech.habla.app.state.KeyState
 import com.xrmech.habla.app.state.ModelDownloadController
+import com.xrmech.habla.app.state.NoProAccess
+import com.xrmech.habla.app.state.ProAccess
+import com.xrmech.habla.app.translate.LanguagePack
+import com.xrmech.habla.app.translate.PackState
 import com.xrmech.habla.asr.ModelManager
 import com.xrmech.habla.asr.ModelState
 import com.xrmech.habla.data.AppSettings
 import com.xrmech.habla.data.SettingsRepository
 import com.xrmech.habla.data.VocabRepository
 import com.xrmech.habla.shared.SharedAssets
+import com.xrmech.habla.translate.TranslateEngine
 import com.xrmech.habla.translate.model.Direction
 import com.xrmech.habla.translate.model.FlaggedPhrase
 import com.xrmech.habla.translate.model.Mode
@@ -110,6 +116,10 @@ class LiveViewModel(
     private val online: StateFlow<Boolean>,
     private val vocab: VocabRepository,
     private val assets: SharedAssets,
+    /** On-device translation pack (D050): drives the pack banner and whether a key is needed. */
+    private val pack: LanguagePack,
+    /** Pro entitlement (D051): AUTO prefers the gateway, which needs no key. */
+    private val pro: ProAccess = NoProAccess,
     /** How long a Listen tap blocks a second one if the service never reports back. */
     private val startTimeoutMs: Long = 10_000,
 ) : ViewModel() {
@@ -118,9 +128,11 @@ class LiveViewModel(
     val effects: Flow<LiveEffect> = _effects.receiveAsFlow()
     private var startGuard: Job? = null
 
-    private val inputs = combine(live.state, models.state, keyHealth.state, online, settings.settings) { l, m, k, o, s ->
-        Inputs(l, m, k, o, s)
-    }
+    private val inputs = combine(
+        combine(live.state, models.state, keyHealth.state, online, settings.settings) { l, m, k, o, s -> Inputs(l, m, k, o, s) },
+        pack.state,
+        pro.active,
+    ) { i, p, a -> i.copy(pack = p, proActive = a) }
 
     val ui: StateFlow<LiveUiState> = combine(inputs, local) { i, loc -> build(i, loc) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LiveUiState())
@@ -144,12 +156,23 @@ class LiveViewModel(
         val key: KeyState,
         val online: Boolean,
         val settings: AppSettings,
+        val pack: PackState = PackState.Unknown,
+        val proActive: Boolean = false,
     )
 
     private fun build(i: Inputs, loc: LiveLocal): LiveUiState {
         val entry = assets.asrModels.byId(i.settings.asrModelId) ?: assets.asrModels.default
+        val final = Engines.resolve(
+            i.settings.finalEngine, i.settings.onDevicePreviews,
+            hasKey = i.key != KeyState.ABSENT, packReady = i.pack == PackState.Ready, proActive = i.proActive,
+        ).first
         val all = BannerReducer.reduce(
-            LiveUiInputs(i.live, i.model, entry.sizeBytes, i.key, i.online, loc.micPermission, i.settings.finalModel),
+            LiveUiInputs(
+                i.live, i.model, entry.sizeBytes, i.key, i.online, loc.micPermission, i.settings.finalModel,
+                translateOnDevice = final == TranslateEngine.ON_DEVICE,
+                keyNeeded = final == TranslateEngine.CLOUD,
+                packState = i.pack,
+            ),
         )
         val status = PipelineStatus(
             listening = i.live.phase == SessionPhase.Listening,

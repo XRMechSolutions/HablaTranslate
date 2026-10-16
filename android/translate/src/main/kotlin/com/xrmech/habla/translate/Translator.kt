@@ -16,6 +16,10 @@ class Translator(
     assets: SharedAssets,
     private val settings: () -> TranslateSettings,
     private val costs: CostMeter,
+    /** Used when [TranslateSettings.finalEngine] is ON_DEVICE; null means only the cloud path exists. */
+    private val onDevice: OnDeviceTranslator? = null,
+    /** Used when [TranslateSettings.finalEngine] is GATEWAY (Pro, D051); null when no gateway is configured. */
+    private val gateway: GatewayTranslator? = null,
 ) {
     private val log = Log()
     private val models = assets.models
@@ -33,6 +37,11 @@ class Translator(
         context: List<ContextExchange>,
         topicSummary: String,
     ): TranslationOutcome {
+        when (settings().finalEngine) {
+            TranslateEngine.ON_DEVICE -> return translateOnDevice(transcript, direction)
+            TranslateEngine.GATEWAY -> return translateViaGateway(transcript, direction, mode, context, topicSummary)
+            TranslateEngine.CLOUD -> Unit
+        }
         val model = fallback.resolveModel(settings().finalModel, models.finalDefault)
         val system: String
         val user: String
@@ -70,6 +79,56 @@ class Translator(
         } catch (e: LlmException) {
             log.warn("Translation failed: ${e.message}")
             TranslationOutcome.Failed(transcript, e)
+        }
+    }
+
+    /**
+     * The on-device path (D050): the transcript is kept as the corrected source, the phone's
+     * translation is the result, and there are no LLM phrases or corrections. The engine gives no
+     * confidence, so it is 1.0 and callers check [OnDeviceTranslator.MODEL_ID] before showing it.
+     */
+    private suspend fun translateOnDevice(transcript: String, direction: Direction): TranslationOutcome {
+        val engine = onDevice
+            ?: return TranslationOutcome.Failed(transcript, LlmException(NO_ON_DEVICE, Kind.MODEL_UNAVAILABLE))
+        return when (val r = engine.translate(transcript, direction)) {
+            is OnDeviceResult.Ok -> TranslationOutcome.Ok(
+                TranslationResult(corrected = transcript, translated = PyText.strip(r.text), confidence = 1.0),
+                OnDeviceTranslator.MODEL_ID,
+            )
+            OnDeviceResult.NotReady -> TranslationOutcome.Failed(transcript, LlmException(PACK_MISSING, Kind.MODEL_UNAVAILABLE))
+            is OnDeviceResult.Failed -> {
+                log.warn("On-device translation failed: ${r.message}")
+                TranslationOutcome.Failed(transcript, LlmException("On-device translation failed: ${r.message}", Kind.SERVER))
+            }
+        }
+    }
+
+    /**
+     * Pro (D051): the gateway's result as it is (it already parsed, re-asked and retried). When the
+     * gateway is unavailable for any reason, the phone translates instead, so a Pro user never gets
+     * an untranslated card because of the network, the allowance or the subscription.
+     */
+    private suspend fun translateViaGateway(
+        transcript: String,
+        direction: Direction,
+        mode: Mode,
+        context: List<ContextExchange>,
+        topicSummary: String,
+    ): TranslationOutcome {
+        val g = gateway ?: return translateOnDevice(transcript, direction)
+        return when (val r = g.translate(transcript, direction, mode, context, topicSummary)) {
+            is GatewayResult.Ok -> TranslationOutcome.Ok(r.result, r.model)
+            is GatewayResult.Unavailable -> {
+                log.info("Pro translation unavailable (${r.error.code}); translating on the phone")
+                when (val local = translateOnDevice(transcript, direction)) {
+                    is TranslationOutcome.Ok -> local
+                    // No pack either: the gateway's reason is the one worth showing, unless it is
+                    // only "signed out", where the missing pack is the actionable part.
+                    is TranslationOutcome.Failed ->
+                        if (r.error.code == GatewayException.SIGNED_OUT) local
+                        else TranslationOutcome.Failed(transcript, LlmException(r.error.message ?: r.error.code, r.error.kind, r.error.httpStatus, r.error))
+                }
+            }
         }
     }
 
@@ -126,6 +185,12 @@ class Translator(
      * `CancellationException`.
      */
     suspend fun updateTopicSummary(previous: String, latestSource: String, latestTranslation: String): String {
+        when (settings().finalEngine) {
+            // The summary only feeds the LLM prompt, which on-device finals do not use.
+            TranslateEngine.ON_DEVICE -> return previous
+            TranslateEngine.GATEWAY -> return gateway?.topic(previous, latestSource, latestTranslation) ?: previous
+            TranslateEngine.CLOUD -> Unit
+        }
         val model = fallback.resolveModel(settings().finalModel, models.finalDefault)
         return try {
             val prompt = prompts.topic(previous, latestSource, latestTranslation)
@@ -151,5 +216,9 @@ class Translator(
         private const val INCOMPLETE_MAX_TOKENS = 2048
         private const val RETRY_MAX_TOKENS = 512
         private const val TOPIC_MAX_TOKENS = 200
+
+        /** Failure message when the pack is missing; `CardTexts` shows MODEL_UNAVAILABLE messages as they are. */
+        const val PACK_MISSING = "Spanish language pack not downloaded"
+        private const val NO_ON_DEVICE = "On-device translation is not available"
     }
 }

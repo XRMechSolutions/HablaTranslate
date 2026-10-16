@@ -26,7 +26,13 @@ import com.xrmech.habla.app.state.AppSettingsState
 import com.xrmech.habla.app.state.ConnectivityMonitor
 import com.xrmech.habla.app.state.KeyHealthTracker
 import com.xrmech.habla.app.state.ModelDownloadController
+import com.xrmech.habla.app.state.KeyState
+import com.xrmech.habla.app.state.NoProAccess
+import com.xrmech.habla.app.state.ProAccess
 import com.xrmech.habla.app.state.ThermalMonitor
+import com.xrmech.habla.app.translate.LanguagePack
+import com.xrmech.habla.app.translate.MlKitTranslator
+import com.xrmech.habla.app.translate.PackState
 import com.xrmech.habla.app.ui.history.ExportController
 import com.xrmech.habla.app.ui.history.ExportPort
 import com.xrmech.habla.app.ui.history.HistoryViewModel
@@ -57,7 +63,11 @@ import com.xrmech.habla.shared.AssetSource
 import com.xrmech.habla.shared.SharedAssets
 import com.xrmech.habla.translate.ConversationContext
 import com.xrmech.habla.translate.CostMeter
+import com.xrmech.habla.translate.GatewayClient
+import com.xrmech.habla.translate.GatewayTranslator
+import com.xrmech.habla.translate.IdTokenSource
 import com.xrmech.habla.translate.IdiomScanner
+import com.xrmech.habla.translate.OnDeviceTranslator
 import com.xrmech.habla.translate.OpenAiHttp
 import com.xrmech.habla.translate.OpenAiProvider
 import com.xrmech.habla.translate.QuickTranslator
@@ -103,8 +113,28 @@ val translateModule = module {
     single<TranslationProvider> { ResilientProvider(get<OpenAiProvider>()) }
     single<KeyTester> { KeyTester.of(get()) }
     single { CostMeter(get<SharedAssets>().models) }
-    single { Translator(get(), get(), { get<AppSettingsState>().translateSettings(get<SharedAssets>().models) }, get()) }
-    single { QuickTranslator(get(), get(), { get<AppSettingsState>().translateSettings(get<SharedAssets>().models) }, get()) }
+    single { MlKitTranslator() } binds arrayOf(OnDeviceTranslator::class, LanguagePack::class)
+    // Pro (D051): Firebase sign-in is not wired yet, so the token source is signed out and the
+    // gateway path falls back to the phone without a network call.
+    single<IdTokenSource> { IdTokenSource { null } }
+    single<ProAccess> { NoProAccess }
+    if (BuildConfig.GATEWAY_URL.isNotEmpty()) {
+        // Its own pinned HttpClient, built inline so it never resolves the OpenAI client.
+        single {
+            GatewayClient(
+                GatewayClient.http(GatewayClient.okHttpEngine(BuildConfig.GATEWAY_URL), BuildConfig.DEBUG),
+                BuildConfig.GATEWAY_URL, BuildConfig.VERSION_NAME, get(),
+            )
+        }
+        single { GatewayTranslator(get(), get<SharedAssets>().asrProfile.context.maxContextExchanges) }
+    }
+    single {
+        Translator(
+            get(), get(), { get<AppSettingsState>().translateSettings(get<SharedAssets>().models) }, get(), get(),
+            getOrNull<GatewayTranslator>(),
+        )
+    }
+    single { QuickTranslator(get(), get(), { get<AppSettingsState>().translateSettings(get<SharedAssets>().models) }, get(), get()) }
     single { ConversationContext(get<SharedAssets>().asrProfile) }
     single { TopicTracker(get(), get()) }
     single { IdiomScanner(get<SharedAssets>().idioms) }
@@ -128,7 +158,14 @@ val appModule = module {
     single { androidContext().getSystemService(Context.POWER_SERVICE) as PowerManager }
     single { androidContext().getSystemService(Context.AUDIO_SERVICE) as AudioManager }
 
-    single { AppSettingsState(get(), get(APP_SCOPE)) }
+    single {
+        AppSettingsState(
+            get(), get(APP_SCOPE),
+            hasKey = { get<KeyHealthTracker>().state.value != KeyState.ABSENT },
+            packReady = { get<LanguagePack>().state.value == PackState.Ready },
+            proActive = { get<ProAccess>().active.value },
+        )
+    }
     single { KeyHealthTracker(get<ApiKeyStore>().hasKey, get(APP_SCOPE)) }
     single { ConnectivityMonitor(get(), get(APP_SCOPE)) }
     single { ThermalMonitor(get<PowerManager>(), get(APP_SCOPE)) }
@@ -172,7 +209,7 @@ val appModule = module {
     viewModel {
         LiveViewModel(
             live = get(), service = get(), settings = get(), models = get(), downloads = get(), keyHealth = get(),
-            online = get<ConnectivityMonitor>().online, vocab = get(), assets = get(),
+            online = get<ConnectivityMonitor>().online, vocab = get(), assets = get(), pack = get(), pro = get(),
         )
     }
     viewModel { HistoryViewModel(get(), get()) }
@@ -181,7 +218,7 @@ val appModule = module {
     viewModel {
         SettingsViewModel(
             settings = get(), keyStore = get(), tester = get(), costMeter = get(), usage = get(), keyHealth = get(),
-            models = get(), downloads = get(), assets = get(), live = get(),
+            models = get(), downloads = get(), assets = get(), live = get(), pack = get(),
         )
     }
 }

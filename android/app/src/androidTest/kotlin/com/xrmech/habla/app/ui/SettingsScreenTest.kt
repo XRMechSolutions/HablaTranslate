@@ -13,6 +13,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.xrmech.habla.app.state.KeyState
 import com.xrmech.habla.app.testing.TestFixtures
+import com.xrmech.habla.app.translate.PackState
 import com.xrmech.habla.app.ui.settings.KeyTestMessages
 import com.xrmech.habla.app.ui.settings.SettingsActions
 import com.xrmech.habla.app.ui.settings.SettingsContent
@@ -93,5 +94,21 @@ class SettingsScreenTest {
         state.value = base.copy(modelState = ModelState.Failed("checksum_mismatch", retryable = false))
         compose.onNodeWithTag("model_status").assertTextContains("Download failed: checksum mismatch")
         compose.onNodeWithTag("model_download").assertIsDisplayed()
+    }
+
+    @Test
+    fun languagePackRowOffersDownloadThenDeleteWithAttribution() {
+        var downloads = 0
+        val state = mutableStateOf(base.copy(packState = PackState.Missing))
+        compose.setContent { HablaTheme { SettingsContent(state.value, null, 0, SettingsActions(downloadPack = { downloads++ })) } }
+        compose.onNodeWithTag("settings_list").performScrollToNode(hasTestTag("pack_status"))
+        compose.onNodeWithTag("pack_status").assertTextContains("Not downloaded")
+        compose.onNodeWithTag("pack_download").performClick()
+        assertEquals(1, downloads)
+
+        state.value = base.copy(packState = PackState.Ready)
+        compose.onNodeWithTag("pack_status").assertTextContains("Ready", substring = true)
+        compose.onNodeWithTag("pack_delete").assertIsDisplayed()
+        compose.onNodeWithTag("google_attribution").assertIsDisplayed()
     }
 }

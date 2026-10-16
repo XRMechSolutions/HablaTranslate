@@ -11,6 +11,7 @@ import com.xrmech.habla.shared.AsrProfile
 import com.xrmech.habla.shared.LanguageRegistry
 import com.xrmech.habla.translate.DirectionResolver
 import com.xrmech.habla.translate.QuickTranslator
+import com.xrmech.habla.translate.TranslateEngine
 import com.xrmech.habla.translate.model.Direction
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -41,7 +42,8 @@ internal class PartialWorker(
     private val scope: CoroutineScope,
     private val settings: () -> AppSettings,
     private val asr: () -> AsrPipeline?,
-    private val hasKey: () -> Boolean,
+    /** Who translates the preview, or null when none can (no key and not on the phone; D050). */
+    private val previewEngine: () -> TranslateEngine?,
     private val sourceLanguage: (Direction) -> String,
     private val state: MutableStateFlow<LiveState>,
 ) {
@@ -109,8 +111,13 @@ internal class PartialWorker(
         lastPartialText = text
         val direction = DirectionResolver.resolve(s.direction, language, voter.current, languages)
         state.update { st ->
-            val previous = st.partial?.takeIf { it.segmentId == snapshot.segmentId }?.translation
-            st.copy(partial = PartialLine(snapshot.segmentId, text, previous, language, direction, finalizing = false))
+            val previous = st.partial?.takeIf { it.segmentId == snapshot.segmentId }
+            st.copy(
+                partial = PartialLine(
+                    snapshot.segmentId, text, previous?.translation, language, direction, finalizing = false,
+                    translatedOnDevice = previous?.translatedOnDevice ?: false,
+                ),
+            )
         }
         metrics.partialsShown.incrementAndGet()
         val now = clock()
@@ -119,7 +126,8 @@ internal class PartialWorker(
         cadenceAtMs = now
         HLog.text(HLog.PARTIAL) { "partial #${snapshot.segmentId}: $text" }
 
-        if (s.partialTranslation && hasKey()) launchTranslation(snapshot.segmentId, text, direction)
+        val engine = previewEngine()
+        if (s.partialTranslation && engine != null) launchTranslation(snapshot.segmentId, text, direction, engine == TranslateEngine.ON_DEVICE)
     }
 
     /**
@@ -127,14 +135,14 @@ internal class PartialWorker(
      * Driven by QuickTranslator (latest wins itself); cancelled by the next partial, by a raw
      * final ([onRawSegment]) or with the session scope; QuickTranslator returns null on any error.
      */
-    private fun launchTranslation(segmentId: Int, text: String, direction: Direction) {
+    private fun launchTranslation(segmentId: Int, text: String, direction: Direction, onDevice: Boolean) {
         translationJob?.cancel()
         translationJob = scope.launch {
             val translated = quickTranslator.translate(text, direction) ?: return@launch
             state.update { st ->
                 val line = st.partial
                 if (line != null && line.segmentId == segmentId && line.text == text && !line.finalizing) {
-                    st.copy(partial = line.copy(translation = translated))
+                    st.copy(partial = line.copy(translation = translated, translatedOnDevice = onDevice))
                 } else {
                     st
                 }

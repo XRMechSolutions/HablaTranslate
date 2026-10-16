@@ -134,6 +134,7 @@ fun LiveScreen(navigator: Navigator, vm: LiveViewModel = koinViewModel()) {
                 BannerAction.CANCEL_DOWNLOAD -> vm.cancelDownload()
                 BannerAction.OPEN_SETTINGS -> navigator.navigate(Settings(Settings.KEY))
                 BannerAction.ADD_KEY -> navigator.navigate(Settings(Settings.KEY))
+                BannerAction.GET_PACK -> navigator.navigate(Settings(Settings.TRANSLATION))
             }
         },
         setup = SetupActions(

@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.xrmech.habla.app.pipeline.CardTranslation
 import com.xrmech.habla.app.pipeline.ExchangeCard
 import com.xrmech.habla.app.ui.theme.HablaColors
+import com.xrmech.habla.translate.OnDeviceTranslator
 import com.xrmech.habla.translate.model.FlaggedPhrase
 import java.time.Instant
 import java.time.ZoneId
@@ -58,6 +59,7 @@ fun ExchangeCardView(
 ) {
     val t = card.translation
     val done = t as? CardTranslation.Done
+    val onDevice = done?.model == OnDeviceTranslator.MODEL_ID
     val correction = done?.result?.takeIf { it.isCorrection }?.correctionDetail
     Card(
         colors = CardDefaults.cardColors(containerColor = if (correction != null) HablaColors.CorrectionBg else HablaColors.Raised),
@@ -72,7 +74,7 @@ fun ExchangeCardView(
                     style = MaterialTheme.typography.labelSmall,
                     color = HablaColors.TextMuted,
                 )
-                if (done != null) {
+                if (done != null && !onDevice) {
                     Text(
                         "${(done.result.confidence * 100).toInt()}%",
                         style = MaterialTheme.typography.labelSmall,
@@ -94,12 +96,15 @@ fun ExchangeCardView(
                     color = HablaColors.TextMuted,
                     modifier = Modifier.testTag("card_${card.seq}_pending"),
                 )
-                is CardTranslation.Done -> Text(
-                    t.result.translated,
-                    color = HablaColors.AccentText,
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.testTag("card_${card.seq}_translation"),
-                )
+                is CardTranslation.Done -> {
+                    Text(
+                        t.result.translated,
+                        color = HablaColors.AccentText,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.testTag("card_${card.seq}_translation"),
+                    )
+                    if (onDevice) GoogleAttribution()
+                }
                 is CardTranslation.Failed -> Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         failedText ?: CardTexts.failedLine(t.kind, t.message),

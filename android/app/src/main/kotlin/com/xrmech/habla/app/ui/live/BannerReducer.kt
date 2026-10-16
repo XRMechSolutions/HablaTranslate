@@ -5,6 +5,7 @@ import com.xrmech.habla.app.pipeline.LiveState
 import com.xrmech.habla.app.pipeline.SessionNotice
 import com.xrmech.habla.app.pipeline.SessionPhase
 import com.xrmech.habla.app.state.KeyState
+import com.xrmech.habla.app.translate.PackState
 import com.xrmech.habla.asr.ModelState
 import com.xrmech.habla.translate.LlmException
 
@@ -19,6 +20,7 @@ enum class BannerKind(val severity: Severity) {
     KEY_INVALID(Severity.ERROR),
     NO_QUOTA(Severity.ERROR),
     MODEL_UNAVAILABLE(Severity.ERROR),
+    PACK_MISSING(Severity.ERROR),
     ASR_ERROR(Severity.WARNING),
     TRANSLATE_ERROR(Severity.WARNING),
     OFFLINE(Severity.WARNING),
@@ -43,6 +45,8 @@ enum class BannerAction(val label: String) {
     CANCEL_DOWNLOAD("Cancel"),
     OPEN_SETTINGS("Settings"),
     ADD_KEY("Add key"),
+    /** Opens Settings > Translation, where the language pack downloads (with the metered prompt). */
+    GET_PACK("Get pack"),
 }
 
 data class Banner(val kind: BannerKind, val text: String, val action: BannerAction? = null) {
@@ -62,6 +66,11 @@ data class LiveUiInputs(
     val micPermission: MicPermission,
     /** Selected final model id, named by MODEL_UNAVAILABLE. */
     val finalModel: String,
+    /** Finals are translated on the phone (D050): no key needed, the pack is, and offline works. */
+    val translateOnDevice: Boolean = false,
+    /** Finals use the user's own OpenAI key; false for the phone and for Pro (D051). */
+    val keyNeeded: Boolean = true,
+    val packState: PackState = PackState.Ready,
 )
 
 /** Banners to show plus how many more are hidden behind "+N more". */
@@ -124,8 +133,19 @@ object BannerReducer {
             KeyState.NO_QUOTA -> add(
                 Banner(BannerKind.NO_QUOTA, "OpenAI account has no credit - add billing at platform.openai.com", BannerAction.OPEN_SETTINGS),
             )
-            KeyState.ABSENT -> add(Banner(BannerKind.NO_KEY, "Translation off - add your OpenAI key", BannerAction.ADD_KEY))
+            KeyState.ABSENT -> if (inputs.keyNeeded) {
+                add(Banner(BannerKind.NO_KEY, "Translation off - add your OpenAI key", BannerAction.ADD_KEY))
+            }
             else -> Unit
+        }
+        if (inputs.translateOnDevice) {
+            when (val p = inputs.packState) {
+                PackState.Missing -> add(
+                    Banner(BannerKind.PACK_MISSING, "Spanish language pack not downloaded (~30 MB) - needed to translate", BannerAction.GET_PACK),
+                )
+                is PackState.Failed -> add(Banner(BannerKind.PACK_MISSING, "Language pack download failed: ${p.message}", BannerAction.GET_PACK))
+                else -> Unit
+            }
         }
         if (tError != null) {
             when (tError.kind) {
@@ -137,7 +157,10 @@ object BannerReducer {
             }
         }
         live.lastAsrError?.let { add(Banner(BannerKind.ASR_ERROR, "Transcription failed: $it")) }
-        if (!inputs.online) add(Banner(BannerKind.OFFLINE, "Offline - transcribing only; translations fail until back online"))
+        // On-device translation keeps working offline, so there is nothing to warn about then.
+        if (!inputs.online && !inputs.translateOnDevice) {
+            add(Banner(BannerKind.OFFLINE, "Offline - transcribing only; translations fail until back online"))
+        }
         if (live.phase.active && live.audio == AudioCondition.Silenced) {
             add(Banner(BannerKind.MIC_SILENCED, "Microphone in use by another app or muted - paused"))
         }

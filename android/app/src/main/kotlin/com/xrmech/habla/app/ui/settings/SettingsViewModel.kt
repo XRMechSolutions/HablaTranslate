@@ -7,11 +7,14 @@ import com.xrmech.habla.app.pipeline.LiveController
 import com.xrmech.habla.app.state.KeyHealthTracker
 import com.xrmech.habla.app.state.KeyState
 import com.xrmech.habla.app.state.ModelDownloadController
+import com.xrmech.habla.app.translate.LanguagePack
+import com.xrmech.habla.app.translate.PackState
 import com.xrmech.habla.asr.AsrBackend
 import com.xrmech.habla.asr.ModelManager
 import com.xrmech.habla.asr.ModelState
 import com.xrmech.habla.data.ApiKeyStore
 import com.xrmech.habla.data.AppSettings
+import com.xrmech.habla.data.EngineChoice
 import com.xrmech.habla.data.SettingsRepository
 import com.xrmech.habla.data.UsageRepository
 import com.xrmech.habla.shared.AsrModelEntry
@@ -58,6 +61,9 @@ data class SettingsLocal(
     val confirmMeteredDownload: Boolean = false,
     /** The metered-network question is about the live model, not the speech model. */
     val meteredForLive: Boolean = false,
+    /** The metered-network question is about the on-device language pack (D050). */
+    val confirmMeteredPack: Boolean = false,
+    val packMessage: String? = null,
 )
 
 data class SettingsUiState(
@@ -81,6 +87,8 @@ data class SettingsUiState(
     val sessionActive: Boolean = false,
     val costs: CostTotals = CostTotals(),
     val metricsLine: String? = null,
+    /** On-device translation language pack (D050). */
+    val packState: PackState = PackState.Unknown,
     val local: SettingsLocal = SettingsLocal(),
 ) {
     val selectedSpeechModel: SpeechModelOption? get() = speechModels.firstOrNull { it.id == settings?.asrModelId }
@@ -104,6 +112,7 @@ class SettingsViewModel(
     private val downloads: ModelDownloadController,
     private val assets: SharedAssets,
     private val live: LiveController,
+    private val pack: LanguagePack,
 ) : ViewModel() {
     private val local = MutableStateFlow(SettingsLocal())
     private val _effects = Channel<SettingsEffect>(Channel.BUFFERED)
@@ -137,7 +146,9 @@ class SettingsViewModel(
         )
     }
 
-    val ui: StateFlow<SettingsUiState> = combine(base, live.state, costMeter.totals, live.lastMetricsLine, local) { b, l, c, m, loc ->
+    private val withPack = combine(base, pack.state) { b, p -> b.copy(packState = p) }
+
+    val ui: StateFlow<SettingsUiState> = combine(withPack, live.state, costMeter.totals, live.lastMetricsLine, local) { b, l, c, m, loc ->
         b.copy(sessionActive = l.phase.active, costs = c, metricsLine = m, local = loc)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())
 
@@ -147,6 +158,7 @@ class SettingsViewModel(
             val id = settings.settings.first().asrModelId
             if (!downloads.running.value) downloads.refresh(id)
         }
+        viewModelScope.launch { pack.refresh() }
     }
 
     // ---- OpenAI key -------------------------------------------------------------------------
@@ -245,6 +257,32 @@ class SettingsViewModel(
     }
 
     fun setAsrGpu(on: Boolean) = edit { it.copy(asrGpu = on) }
+    fun setFinalEngine(choice: EngineChoice) = edit { it.copy(finalEngine = choice) }
+    fun setOnDevicePreviews(on: Boolean) = edit { it.copy(onDevicePreviews = on) }
+
+    // ---- On-device language pack (D050) -----------------------------------------------------
+
+    /** On a metered network the first call only asks; [confirmed] = the user accepted. */
+    fun downloadPack(confirmed: Boolean = false) {
+        if (pack.state.value == PackState.Downloading) return
+        if (!confirmed && downloads.isMetered()) {
+            local.update { it.copy(confirmMeteredPack = true) }
+            return
+        }
+        local.update { it.copy(confirmMeteredPack = false, packMessage = null) }
+        viewModelScope.launch { pack.download() }
+    }
+
+    fun dismissMeteredPack() = local.update { it.copy(confirmMeteredPack = false) }
+
+    fun deletePack() {
+        if (live.state.value.phase.active) {
+            local.update { it.copy(packMessage = DELETE_PACK_WHILE_LISTENING) }
+            return
+        }
+        local.update { it.copy(packMessage = null) }
+        viewModelScope.launch { pack.delete() }
+    }
 
     private fun edit(transform: (AppSettings) -> AppSettings) {
         viewModelScope.launch { settings.update(transform) }
@@ -293,6 +331,7 @@ class SettingsViewModel(
     companion object {
         const val ENTER_A_KEY = "Enter a key"
         const val DELETE_WHILE_LISTENING = "Stop listening before deleting the speech model"
+        const val DELETE_PACK_WHILE_LISTENING = "Stop listening before deleting the language pack"
 
         fun keyStatusText(k: KeyState): String = when (k) {
             KeyState.UNKNOWN -> "Checking..."

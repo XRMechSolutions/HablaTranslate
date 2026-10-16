@@ -70,6 +70,8 @@ data class PartialLine(
     val language: String,
     val direction: Direction,
     val finalizing: Boolean,
+    /** [translation] came from the phone's engine, so the Google attribution shows beside it (D050). */
+    val translatedOnDevice: Boolean = false,
 )
 
 /**

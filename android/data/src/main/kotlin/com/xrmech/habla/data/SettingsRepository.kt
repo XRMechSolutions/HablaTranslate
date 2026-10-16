@@ -9,7 +9,7 @@ interface SettingsRepository {
     /** Current settings with defaults filled in; re-emits on every distinct change. */
     val settings: Flow<AppSettings>
 
-    /** Atomically reads, applies [transform] (pure, no I/O) and writes all eleven keys. */
+    /** Atomically reads, applies [transform] (pure, no I/O) and writes all thirteen keys. */
     suspend fun update(transform: (AppSettings) -> AppSettings)
 }
 
@@ -27,4 +27,11 @@ data class AppSettings(
     val liveModelId: String = "",
     /** Experimental GPU speech engine (D043/D047); applies from the next app start. */
     val asrGpu: Boolean = false,
+    /** Who translates finals (D050/D051). AUTO = Pro when active, else the OpenAI key, else on-device. */
+    val finalEngine: EngineChoice = EngineChoice.AUTO,
+    /** Previews on the phone whenever the language pack is ready, even with a key (free and faster). */
+    val onDevicePreviews: Boolean = true,
 )
+
+/** The user's translation engine choice; `:app` resolves AUTO per call. PRO is llm-gateway (D051). */
+enum class EngineChoice { AUTO, CLOUD, ON_DEVICE, PRO }

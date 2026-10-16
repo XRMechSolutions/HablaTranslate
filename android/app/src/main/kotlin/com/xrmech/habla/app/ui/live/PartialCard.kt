@@ -32,7 +32,10 @@ fun PartialCard(partial: PartialLine, translationEnabled: Boolean, modifier: Mod
             )
             Text("${partial.text}▍", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.testTag("partial_text"))
             when {
-                partial.translation != null -> Text(partial.translation, color = HablaColors.TextMuted, modifier = Modifier.testTag("partial_translation"))
+                partial.translation != null -> {
+                    Text(partial.translation, color = HablaColors.TextMuted, modifier = Modifier.testTag("partial_translation"))
+                    if (partial.translatedOnDevice) GoogleAttribution()
+                }
                 translationEnabled -> Text("Translating...", color = HablaColors.TextMuted)
             }
         }
