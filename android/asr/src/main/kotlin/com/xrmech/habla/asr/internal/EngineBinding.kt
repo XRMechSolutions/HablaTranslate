@@ -7,8 +7,8 @@ import android.util.Log
  * and mapping run on the JVM with a fake. Only [NativeEngineBinding] reaches [WhisperNative].
  */
 internal interface EngineBinding {
-    /** Loads model + both states; 0 on failure. */
-    fun load(modelPath: String, flashAttn: Boolean): Long
+    /** Loads model + both states (the PARTIAL one on [partialModelPath] if given); 0 on failure. */
+    fun load(modelPath: String, partialModelPath: String?, flashAttn: Boolean): Long
     fun free(handle: Long)
     /** -1 if unknown. */
     fun langId(code: String): Int
@@ -36,9 +36,9 @@ internal class NativeEngineBinding : EngineBinding {
 
     override val variant: String get() = NativeLibraryLoader.load().label
 
-    override fun load(modelPath: String, flashAttn: Boolean): Long {
+    override fun load(modelPath: String, partialModelPath: String?, flashAttn: Boolean): Long {
         NativeLibraryLoader.load()
-        return WhisperNative.init(modelPath, flashAttn)
+        return WhisperNative.init(modelPath, partialModelPath, flashAttn)
     }
 
     override fun free(handle: Long) {

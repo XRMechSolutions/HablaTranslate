@@ -154,7 +154,8 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
 }
 
 JNIEXPORT jlong JNICALL
-Java_com_xrmech_habla_asr_internal_WhisperNative_init(JNIEnv* env, jclass, jstring model_path, jboolean flash_attn) {
+Java_com_xrmech_habla_asr_internal_WhisperNative_init(
+        JNIEnv* env, jclass, jstring model_path, jstring partial_model_path, jboolean flash_attn) {
     if (model_path == nullptr) {
         return 0;
     }
@@ -162,12 +163,21 @@ Java_com_xrmech_habla_asr_internal_WhisperNative_init(JNIEnv* env, jclass, jstri
     if (path == nullptr) {
         return 0;
     }
+    const char* partial = nullptr;
+    if (partial_model_path != nullptr) {
+        partial = env->GetStringUTFChars(partial_model_path, nullptr);
+        if (partial == nullptr) {
+            env->ReleaseStringUTFChars(model_path, path);
+            return 0;
+        }
+    }
     habla::Engine* engine = nullptr;
     try {
-        engine = habla::Engine::create(path, flash_attn == JNI_TRUE);
+        engine = habla::Engine::create(path, partial, flash_attn == JNI_TRUE);
     } catch (...) {
         engine = nullptr;
     }
+    if (partial != nullptr) env->ReleaseStringUTFChars(partial_model_path, partial);
     env->ReleaseStringUTFChars(model_path, path);
     if (engine == nullptr) {
         __android_log_write(ANDROID_LOG_ERROR, kLogTag, "engine init failed (model or state allocation)");

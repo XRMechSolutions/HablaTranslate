@@ -129,6 +129,20 @@ class WhisperCppRecognizerInstrumentedTest {
     }
 
     @Test
+    fun aSeparatePartialModelServesPartialsWhileFinalsKeepTheMainOne() = runBlocking<Unit> {
+        // Same tiny file twice: proves the second context and its state, not a quality difference.
+        val r = WhisperCppRecognizer(model, profile, threads, partialModelFile = model).also { open += it }
+        val u = AsrTestFixtures.utterance(smoke[0].first, smoke[0].second)
+        val single = recognizer()
+        val expectedPartial = single.transcribe(u.samples, AsrRequest(u.language, AsrPass.PARTIAL)).text
+        val expectedFinal = single.transcribe(u.samples, AsrRequest(u.language, AsrPass.FINAL)).text
+
+        assertEquals(u.language, r.detectLanguage(u.samples, candidates).language)
+        assertEquals(expectedFinal, r.transcribe(u.samples, AsrRequest(u.language, AsrPass.FINAL)).text)
+        assertEquals(expectedPartial, r.transcribe(u.samples, AsrRequest(u.language, AsrPass.PARTIAL)).text)
+    }
+
+    @Test
     fun spanishAccentsSurviveWithoutReplacementCharacters() = runBlocking<Unit> {
         val r = recognizer()
         val texts = listOf(2, 3, 8, 9).map { i ->

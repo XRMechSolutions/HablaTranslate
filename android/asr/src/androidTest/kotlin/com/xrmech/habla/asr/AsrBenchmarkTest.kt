@@ -71,6 +71,12 @@ class AsrBenchmarkTest {
     private val context: Context get() = AsrTestFixtures.context
     private val baseProfile: AsrProfile get() = AsrTestFixtures.profile
     private val catalog get() = AsrTestFixtures.appCatalog
+
+    /** `habla.partialModel` (D045): catalog id of a separate PARTIAL-slot model; null shares the main one. */
+    private val partialModelId: String? get() = args.getString("habla.partialModel")
+
+    private fun partialModelFile(): java.io.File? =
+        partialModelId?.let { id -> AsrTestFixtures.installModel(checkNotNull(catalog.byId(id)) { "unknown model $id" }) }
     private val candidates get() = AsrTestFixtures.languages.codes
     private val date get() = LocalDate.now(ZoneOffset.UTC).toString()
 
@@ -241,7 +247,7 @@ class AsrBenchmarkTest {
         )
         for ((level, pad, min) in variants) {
             val name = if (pad == null) level else "$level(pad=$pad,min=$min)"
-            WhisperCppRecognizer(file, profileWith(null, level, pad, min), threads).use { r ->
+            WhisperCppRecognizer(file, profileWith(null, level, pad, min), threads, partialModelFile()).use { r ->
                 r.preload()
                 repeat(3) { r.transcribe(prefixes[it].third, AsrRequest(prefixes[it].first.serverLanguage, AsrPass.PARTIAL)) }
                 val out = mutableMapOf<Pair<String, Int>, String>()
@@ -277,6 +283,7 @@ class AsrBenchmarkTest {
         val report = buildJsonObject {
             putDevice()
             put("model_id", entry.id)
+            put("partial_model_id", partialModelId)
             put("threads", threads)
             putJsonArray("sources") { sources.forEach { add(it.id) } }
             put("levels", JsonArray(levels))
@@ -286,7 +293,7 @@ class AsrBenchmarkTest {
                 put("gate", "<= 0.05")
             }
         }
-        write("d5-ladder-$date.json", report)
+        write("d5-ladder${partialModelId?.let { "-p_$it" }.orEmpty()}-$date.json", report)
     }
 
     // ---- 3. Sustained real-time session -------------------------------------------------------------
@@ -316,7 +323,7 @@ class AsrBenchmarkTest {
         val start = SystemClock.elapsedRealtime()
         fun now() = SystemClock.elapsedRealtime() - start
 
-        WhisperCppRecognizer(file, profile, threads).use { r ->
+        WhisperCppRecognizer(file, profile, threads, partialModelFile()).use { r ->
             r.preload()
             val pipeline = AsrPipeline(r, LanguageVoter(profile), profile, AsrTestFixtures.languages)
             val partials = Channel<FloatArray>(Channel.CONFLATED)
@@ -409,6 +416,7 @@ class AsrBenchmarkTest {
         val report = buildJsonObject {
             putDevice()
             put("model_id", entry.id)
+            put("partial_model_id", partialModelId)
             put("threads", threads)
             put("beam", profile.whisperCpp.final.beamSize ?: profile.whisper.beamSize)
             put("partial_level", profile.whisperCpp.partial.level)
@@ -445,7 +453,8 @@ class AsrBenchmarkTest {
             put("thermal", JsonArray(thermal))
         }
         val level = profile.whisperCpp.partial.level
-        write("d5-sustained-${entry.id}-t$threads-$level-${minutes}m-$date.json", report)
+        val partialTag = partialModelId?.let { "-p_$it" }.orEmpty()
+        write("d5-sustained-${entry.id}$partialTag-t$threads-$level-${minutes}m-$date.json", report)
     }
 
     // ---- helpers -------------------------------------------------------------------------------------

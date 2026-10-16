@@ -311,6 +311,25 @@ class WhisperCppRecognizerTest {
     }
 
     @Test
+    fun `a partial model is loaded alongside the main one, none by default`() = runBlocking {
+        recognizer().use { it.preload() }
+        val partial = File(dir, "ggml-partial.bin").apply { writeBytes(ByteArray(16)) }
+        WhisperCppRecognizer(model, TestAssets.profile, 2, fake, partial).use { it.preload() }
+        assertEquals(listOf(null, partial.absolutePath), fake.partialLoads.toList())
+        assertEquals(listOf(model.absolutePath, model.absolutePath), fake.loads.toList())
+    }
+
+    @Test
+    fun `missing partial model file is MODEL_MISSING without calling load`() = runBlocking {
+        val r = WhisperCppRecognizer(model, TestAssets.profile, 2, fake, File(dir, "absent.bin"))
+        val e = asrFailure { r.transcribe(audio, es) }
+        assertEquals(AsrException.Kind.MODEL_MISSING, e.kind)
+        assertTrue(e.message!!.contains("absent.bin"))
+        assertTrue(fake.loads.isEmpty())
+        r.close()
+    }
+
+    @Test
     fun `library load failure is NATIVE_ERROR with the link error as cause`() = runBlocking {
         val r = recognizer()
         val link = UnsatisfiedLinkError("dlopen failed")

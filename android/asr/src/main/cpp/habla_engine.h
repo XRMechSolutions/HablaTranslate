@@ -65,9 +65,11 @@ struct TranscribeResult {
 
 class Engine {
 public:
-    // Loads the model without a default state and allocates both slot states. Returns nullptr (and
-    // frees everything it allocated) when the model or either state cannot be created.
-    static Engine* create(const char* model_path, bool flash_attn);
+    // Loads the model without a default state and allocates both slot states. partial_model_path,
+    // when non-null, loads a second (smaller) model for the PARTIAL slot only (contract change 9,
+    // D045); it must share the tokenizer (any multilingual Whisper). Returns nullptr (and frees
+    // everything it allocated) when a model or either state cannot be created.
+    static Engine* create(const char* model_path, const char* partial_model_path, bool flash_attn);
 
     ~Engine();
     Engine(const Engine&) = delete;
@@ -87,7 +89,8 @@ private:
 
     static bool valid_slot(int slot) { return slot >= 0 && slot < kSlotCount; }
 
-    whisper_context* ctx_ = nullptr;
+    // Context per slot; both point at one context unless a partial model was given.
+    whisper_context* ctxs_[kSlotCount] = {nullptr, nullptr};
     whisper_state* states_[kSlotCount] = {nullptr, nullptr};
     std::atomic<bool> abort_[kSlotCount] = {false, false};
 

@@ -46,10 +46,15 @@ class WhisperCppRecognizer internal constructor(
     private val profile: AsrProfile,
     threads: Int,
     private val binding: EngineBinding,
+    private val partialModelFile: File? = null,
 ) : SpeechRecognizer {
 
-    constructor(modelFile: File, profile: AsrProfile, threads: Int) :
-        this(modelFile, profile, threads, NativeEngineBinding())
+    /**
+     * [partialModelFile] (contract change 9, D045): a smaller multilingual model that only the PARTIAL
+     * slot uses; null shares [modelFile]. Finals and language detection always use [modelFile].
+     */
+    constructor(modelFile: File, profile: AsrProfile, threads: Int, partialModelFile: File? = null) :
+        this(modelFile, profile, threads, NativeEngineBinding(), partialModelFile)
 
     private val threads: Int = threads.coerceIn(1, maxOf(1, Runtime.getRuntime().availableProcessors()))
 
@@ -285,12 +290,14 @@ class WhisperCppRecognizer internal constructor(
         handle.get().let { if (it != 0L) return it }
         if (closed.get()) throw closedAborted()
         ensureLibrary()
-        if (!modelFile.isFile || !modelFile.canRead()) {
-            throw AsrException("model file missing or unreadable: ${modelFile.name}", AsrException.Kind.MODEL_MISSING)
+        for (file in listOfNotNull(modelFile, partialModelFile)) {
+            if (!file.isFile || !file.canRead()) {
+                throw AsrException("model file missing or unreadable: ${file.name}", AsrException.Kind.MODEL_MISSING)
+            }
         }
         val started = System.nanoTime()
         val h = try {
-            binding.load(modelFile.absolutePath, FLASH_ATTN)
+            binding.load(modelFile.absolutePath, partialModelFile?.absolutePath, FLASH_ATTN)
         } catch (e: LinkageError) {
             throw AsrException("native library failed to load", AsrException.Kind.NATIVE_ERROR, e)
         }
@@ -306,7 +313,8 @@ class WhisperCppRecognizer internal constructor(
             if (synchronized(handleLock) { handle.compareAndSet(h, 0L) }) binding.free(h)
             throw closedAborted()
         }
-        AsrLog.i("model ${modelFile.name} loaded in ${(System.nanoTime() - started) / 1_000_000} ms")
+        val partialNote = partialModelFile?.let { " (partials: ${it.name})" }.orEmpty()
+        AsrLog.i("model ${modelFile.name}$partialNote loaded in ${(System.nanoTime() - started) / 1_000_000} ms")
         return h
     }
 

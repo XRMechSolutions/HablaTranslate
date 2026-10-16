@@ -101,7 +101,7 @@ uint64_t samples_hash(const std::vector<float>& samples) {
 
 }  // namespace
 
-Engine* Engine::create(const char* model_path, bool flash_attn) {
+Engine* Engine::create(const char* model_path, const char* partial_model_path, bool flash_attn) {
     whisper_context_params cparams = whisper_context_default_params();
 #ifdef HABLA_USE_GPU
     // habla_asr_vk (D043): ggml picks the first Vulkan device and falls back to the CPU without one.
@@ -117,9 +117,18 @@ Engine* Engine::create(const char* model_path, bool flash_attn) {
     }
 
     auto* engine = new Engine();
-    engine->ctx_ = ctx;
+    engine->ctxs_[kSlotFinal] = ctx;
+    engine->ctxs_[kSlotPartial] = ctx;
+    if (partial_model_path != nullptr) {
+        whisper_context* partial = whisper_init_from_file_with_params_no_state(partial_model_path, cparams);
+        if (partial == nullptr) {
+            delete engine;
+            return nullptr;
+        }
+        engine->ctxs_[kSlotPartial] = partial;
+    }
     for (int slot = 0; slot < kSlotCount; ++slot) {
-        engine->states_[slot] = whisper_init_state(ctx);
+        engine->states_[slot] = whisper_init_state(engine->ctxs_[slot]);
         if (engine->states_[slot] == nullptr) {
             delete engine;  // frees the other state and the context
             return nullptr;
@@ -135,10 +144,13 @@ Engine::~Engine() {
             state = nullptr;
         }
     }
-    if (ctx_ != nullptr) {
-        whisper_free(ctx_);
-        ctx_ = nullptr;
+    if (ctxs_[kSlotPartial] != nullptr && ctxs_[kSlotPartial] != ctxs_[kSlotFinal]) {
+        whisper_free(ctxs_[kSlotPartial]);
     }
+    if (ctxs_[kSlotFinal] != nullptr) {
+        whisper_free(ctxs_[kSlotFinal]);
+    }
+    ctxs_[kSlotFinal] = ctxs_[kSlotPartial] = nullptr;
 }
 
 TranscribeResult Engine::transcribe(int slot, const std::vector<float>& samples, const DecodeParams& p) {
@@ -148,6 +160,7 @@ TranscribeResult Engine::transcribe(int slot, const std::vector<float>& samples,
         return result;
     }
     whisper_state* state = states_[slot];
+    whisper_context* ctx = ctxs_[slot];
 
     const auto strategy = p.strategy == 1 ? WHISPER_SAMPLING_BEAM_SEARCH : WHISPER_SAMPLING_GREEDY;
     whisper_full_params wp = whisper_full_default_params(strategy);
@@ -201,8 +214,8 @@ TranscribeResult Engine::transcribe(int slot, const std::vector<float>& samples,
     const PerfCoreAffinity affinity;
     wp.n_threads = affinity.threads(p.n_threads);
     const auto start = std::chrono::steady_clock::now();
-    int rc = reuse ? whisper_full_with_state(ctx_, state, wp, nullptr, 0)
-                   : whisper_full_with_state(ctx_, state, wp, samples.data(), static_cast<int>(samples.size()));
+    int rc = reuse ? whisper_full_with_state(ctx, state, wp, nullptr, 0)
+                   : whisper_full_with_state(ctx, state, wp, samples.data(), static_cast<int>(samples.size()));
     result.wall_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - start).count();
     if (rc == 0 && probe.observed) {
@@ -212,14 +225,14 @@ TranscribeResult Engine::transcribe(int slot, const std::vector<float>& samples,
 
     if (rc == kRcKvCacheFailed) {
         // whisper_full_with_state already freed this state; freeing it again would be a double free.
-        states_[slot] = whisper_init_state(ctx_);
+        states_[slot] = whisper_init_state(ctx);
         return result;
     }
     if (rc != 0) {
         return result;
     }
 
-    const whisper_token eot = whisper_token_eot(ctx_);
+    const whisper_token eot = whisper_token_eot(ctx);
     const int n_segments = whisper_full_n_segments_from_state(state);
     result.segments.reserve(static_cast<size_t>(n_segments));
     for (int i = 0; i < n_segments; ++i) {
@@ -260,11 +273,11 @@ int Engine::detect(const std::vector<float>& samples, int n_threads, float* prob
     const PerfCoreAffinity affinity;
     n_threads = affinity.threads(n_threads);
     const int mel_rc = whisper_pcm_to_mel_with_state(
-        ctx_, state, samples.data(), static_cast<int>(samples.size()), n_threads);
+        ctxs_[kSlotFinal], state, samples.data(), static_cast<int>(samples.size()), n_threads);
     if (mel_rc != 0) {
         return mel_rc < 0 ? mel_rc : -1;
     }
-    const int lang = whisper_lang_auto_detect_with_state(ctx_, state, 0, n_threads, probs);
+    const int lang = whisper_lang_auto_detect_with_state(ctxs_[kSlotFinal], state, 0, n_threads, probs);
     if (lang >= 0) {
         detect_mel_valid_ = true;
         detect_n_ = samples.size();

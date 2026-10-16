@@ -15,6 +15,8 @@ internal class FakeEngineBinding : EngineBinding {
     private val lock = Object()
 
     val loads = CopyOnWriteArrayList<String>()
+    /** Partial model path per load (null = the PARTIAL slot shares the main model). */
+    val partialLoads = CopyOnWriteArrayList<String?>()
     val frees = CopyOnWriteArrayList<Long>()
     val transcribeCalls = CopyOnWriteArrayList<Call>()
     val detectCalls = CopyOnWriteArrayList<FloatArray>()
@@ -113,9 +115,10 @@ internal class FakeEngineBinding : EngineBinding {
         return "AVX = 0 | NEON = 0 | SSE3 = 1"
     }
 
-    override fun load(modelPath: String, flashAttn: Boolean): Long {
+    override fun load(modelPath: String, partialModelPath: String?, flashAttn: Boolean): Long {
         linkError?.let { throw it }
         loads += modelPath
+        partialLoads += partialModelPath
         threadNames += Thread.currentThread().name
         return loadResults.removeFirstOrNull() ?: nextHandle++
     }

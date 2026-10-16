@@ -35,8 +35,11 @@ internal object WhisperNative {
     /** Ours: a C++ exception (e.g. allocation failure) was caught at the JNI boundary. */
     const val RC_NATIVE_FAILURE: Int = -102
 
-    /** Loads the model and both slot states; returns an engine handle, 0 on any failure. */
-    @JvmStatic external fun init(modelPath: String, flashAttn: Boolean): Long
+    /**
+     * Loads the model and both slot states; returns an engine handle, 0 on any failure. A non-null
+     * [partialModelPath] loads a second model for the PARTIAL slot only (D045).
+     */
+    @JvmStatic external fun init(modelPath: String, partialModelPath: String?, flashAttn: Boolean): Long
 
     @JvmStatic external fun free(handle: Long)
 
