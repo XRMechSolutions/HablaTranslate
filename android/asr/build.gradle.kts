@@ -23,6 +23,9 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
 
+        // AsrBackend.gpuBuilt: whether this build packages habla_asr_vk (D043).
+        buildConfigField("boolean", "HABLA_VULKAN", (providers.gradleProperty("habla.vulkan").orNull == "true").toString())
+
         ndk {
             // armeabi-v7a and x86 serve no supported device; x86_64 exists for the emulator only.
             abiFilters += listOf("arm64-v8a", "x86_64")

@@ -105,7 +105,8 @@ uint64_t samples_hash(const std::vector<float>& samples) {
 
 }  // namespace
 
-Engine* Engine::create(const char* model_path, const char* partial_model_path, bool flash_attn) {
+Engine* Engine::create(const char* model_path, const char* partial_model_path, bool flash_attn,
+                       bool partial_on_cpu) {
     whisper_context_params cparams = whisper_context_default_params();
 #ifdef HABLA_USE_GPU
     // habla_asr_vk (D043): ggml picks the first Vulkan device and falls back to the CPU without one.
@@ -123,8 +124,15 @@ Engine* Engine::create(const char* model_path, const char* partial_model_path, b
         return nullptr;
     }
     engine->ctxs_[kSlotPartial] = engine->ctxs_[kSlotFinal];
+    whisper_context_params partial_params = cparams;
+    if (partial_on_cpu && cparams.use_gpu) {
+        partial_params.use_gpu = false;
+        if (partial_model_path == nullptr) {
+            partial_model_path = model_path;  // a CPU copy of the main model
+        }
+    }
     if (partial_model_path != nullptr) {
-        whisper_context* partial = whisper_init_from_file_with_params_no_state(partial_model_path, cparams);
+        whisper_context* partial = whisper_init_from_file_with_params_no_state(partial_model_path, partial_params);
         if (partial == nullptr) {
             return nullptr;
         }

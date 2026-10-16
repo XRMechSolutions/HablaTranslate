@@ -16,7 +16,19 @@ internal object NativeLibraryLoader {
     @Volatile
     var preferGpu: Boolean = false
 
+    /**
+     * Experimental (E6): with the vk library, run the PARTIAL slot on the CPU while finals use the
+     * GPU, so the two slots stop sharing one GPU queue. Without a separate partial model the main
+     * model is loaded a second time for it. Read at each engine init; no effect on CPU libraries.
+     */
+    @Volatile
+    var partialOnCpu: Boolean = false
+
+    @Volatile
     private var loaded: CpuVariant? = null
+
+    /** The library this process loaded, or null before the first [load]. */
+    val loadedVariant: CpuVariant? get() = loaded
     private var failure: UnsatisfiedLinkError? = null
 
     /** @throws UnsatisfiedLinkError when neither library can be loaded. */

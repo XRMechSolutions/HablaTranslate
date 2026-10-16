@@ -65,10 +65,14 @@ class AsrBenchmarkTest {
 
     // `habla.gpu=true` (experimental, D043) loads habla_asr_vk when the APK has it. The loader is
     // process-wide, so CPU and GPU are compared across separate `am instrument` runs.
+    // `habla.partialCpu=true` (experimental E6, with habla.gpu): the PARTIAL slot runs on the CPU.
     @org.junit.Before
     fun selectBackend() {
         com.xrmech.habla.asr.internal.NativeLibraryLoader.preferGpu = args.getString("habla.gpu") == "true"
+        com.xrmech.habla.asr.internal.NativeLibraryLoader.partialOnCpu = partialOnCpu
     }
+
+    private val partialOnCpu: Boolean get() = args.getString("habla.partialCpu") == "true"
     private val context: Context get() = AsrTestFixtures.context
     private val baseProfile: AsrProfile get() = AsrTestFixtures.profile
     private val catalog get() = AsrTestFixtures.appCatalog
@@ -308,6 +312,7 @@ class AsrBenchmarkTest {
             put("native_info", nativeInfo)
             put("model_id", entry.id)
             put("partial_model_id", partialModelId)
+            put("partial_on_cpu", partialOnCpu)
             put("threads", threads)
             putJsonArray("sources") { sources.forEach { add(it.id) } }
             put("levels", JsonArray(levels))
@@ -325,7 +330,8 @@ class AsrBenchmarkTest {
                 }
             }
         }
-        write("d5-ladder${partialModelId?.let { "-p_$it" }.orEmpty()}-$date-$runTag.json", report)
+        val partialTag = partialModelId?.let { "-p_$it" }.orEmpty() + if (partialOnCpu) "-pcpu" else ""
+        write("d5-ladder$partialTag-$date-$runTag.json", report)
     }
 
     // ---- 3. Sustained real-time session -------------------------------------------------------------
@@ -494,6 +500,7 @@ class AsrBenchmarkTest {
             putDevice()
             put("model_id", entry.id)
             put("partial_model_id", partialModelId)
+            put("partial_on_cpu", partialOnCpu)
             put("threads", threads)
             put("beam", profile.whisperCpp.final.beamSize ?: profile.whisper.beamSize)
             put("partial_level", profile.whisperCpp.partial.level)
@@ -550,7 +557,7 @@ class AsrBenchmarkTest {
             put("thermal", JsonArray(thermal))
         }
         val level = profile.whisperCpp.partial.level
-        val partialTag = partialModelId?.let { "-p_$it" }.orEmpty()
+        val partialTag = partialModelId?.let { "-p_$it" }.orEmpty() + if (partialOnCpu) "-pcpu" else ""
         write("d5-sustained-${entry.id}$partialTag-t$threads-$level-${minutes}m-$date-$runTag.json", report)
     }
 

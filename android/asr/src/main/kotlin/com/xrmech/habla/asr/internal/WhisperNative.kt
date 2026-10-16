@@ -37,9 +37,10 @@ internal object WhisperNative {
 
     /**
      * Loads the model and both slot states; returns an engine handle, 0 on any failure. A non-null
-     * [partialModelPath] loads a second model for the PARTIAL slot only (D045).
+     * [partialModelPath] loads a second model for the PARTIAL slot only (D045). [partialOnCpu]
+     * (experimental, vk library only) keeps the PARTIAL slot's context on the CPU.
      */
-    @JvmStatic external fun init(modelPath: String, partialModelPath: String?, flashAttn: Boolean): Long
+    @JvmStatic external fun init(modelPath: String, partialModelPath: String?, flashAttn: Boolean, partialOnCpu: Boolean): Long
 
     @JvmStatic external fun free(handle: Long)
 

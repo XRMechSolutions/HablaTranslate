@@ -155,7 +155,8 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
 
 JNIEXPORT jlong JNICALL
 Java_com_xrmech_habla_asr_internal_WhisperNative_init(
-        JNIEnv* env, jclass, jstring model_path, jstring partial_model_path, jboolean flash_attn) {
+        JNIEnv* env, jclass, jstring model_path, jstring partial_model_path, jboolean flash_attn,
+        jboolean partial_on_cpu) {
     if (model_path == nullptr) {
         return 0;
     }
@@ -173,7 +174,7 @@ Java_com_xrmech_habla_asr_internal_WhisperNative_init(
     }
     habla::Engine* engine = nullptr;
     try {
-        engine = habla::Engine::create(path, partial, flash_attn == JNI_TRUE);
+        engine = habla::Engine::create(path, partial, flash_attn == JNI_TRUE, partial_on_cpu == JNI_TRUE);
     } catch (...) {
         engine = nullptr;
     }

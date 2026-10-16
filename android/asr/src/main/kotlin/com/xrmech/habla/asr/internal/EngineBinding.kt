@@ -38,7 +38,7 @@ internal class NativeEngineBinding : EngineBinding {
 
     override fun load(modelPath: String, partialModelPath: String?, flashAttn: Boolean): Long {
         NativeLibraryLoader.load()
-        return WhisperNative.init(modelPath, partialModelPath, flashAttn)
+        return WhisperNative.init(modelPath, partialModelPath, flashAttn, NativeLibraryLoader.partialOnCpu)
     }
 
     override fun free(handle: Long) {
