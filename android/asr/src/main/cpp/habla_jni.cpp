@@ -112,7 +112,8 @@ jobject make_result(JNIEnv* env, const habla::TranscribeResult& r) {
 
     return env->NewObject(g_native_result_class, g_native_result_ctor,
                           static_cast<jint>(r.rc), static_cast<jlong>(r.wall_ms),
-                          texts, t0, t1, no_speech, avg_logprob, text_tokens);
+                          texts, t0, t1, no_speech, avg_logprob, text_tokens,
+                          static_cast<jboolean>(r.reused_detection ? JNI_TRUE : JNI_FALSE));
 }
 
 jobject make_error_result(JNIEnv* env, int rc) {
@@ -136,7 +137,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
     }
     g_native_result_class = static_cast<jclass>(env->NewGlobalRef(local));
     env->DeleteLocalRef(local);
-    g_native_result_ctor = env->GetMethodID(g_native_result_class, "<init>", "(IJ[[B[J[J[F[F[I)V");
+    g_native_result_ctor = env->GetMethodID(g_native_result_class, "<init>", "(IJ[[B[J[J[F[F[IZ)V");
     if (g_native_result_ctor == nullptr) {
         return JNI_ERR;
     }

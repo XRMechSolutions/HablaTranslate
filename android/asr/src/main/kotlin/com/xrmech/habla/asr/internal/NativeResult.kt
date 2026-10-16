@@ -4,7 +4,7 @@ import androidx.annotation.Keep
 
 /**
  * Result of one `whisper_full_with_state` call, constructed only from JNI (constructor descriptor
- * `(IJ[[B[J[J[F[F[I)V`, kept by consumer-rules.pro and [Keep]). Arrays are parallel, one entry per
+ * `(IJ[[B[J[J[F[F[IZ)V`, kept by consumer-rules.pro and [Keep]). Arrays are parallel, one entry per
  * segment, and all empty when [rc] != 0.
  */
 @Keep
@@ -21,4 +21,6 @@ internal class NativeResult(
     /** Mean token log-probability over text tokens; NaN when the segment has none. */
     @JvmField val avgLogprob: FloatArray,
     @JvmField val textTokens: IntArray,
+    /** The FINAL run reused the preceding detection's mel and encoder output (one encoder pass). */
+    @JvmField val reusedDetection: Boolean = false,
 )

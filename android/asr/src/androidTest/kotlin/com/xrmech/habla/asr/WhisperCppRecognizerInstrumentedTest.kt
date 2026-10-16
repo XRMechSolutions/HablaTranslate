@@ -95,6 +95,40 @@ class WhisperCppRecognizerInstrumentedTest {
     }
 
     @Test
+    fun finalAfterDetectionReusesItsEncoderPassWithIdenticalOutput() = runBlocking<Unit> {
+        val r = recognizer()
+        val u = AsrTestFixtures.utterance(smoke[0].first, smoke[0].second)
+        val other = AsrTestFixtures.utterance(smoke[1].first, smoke[1].second)
+
+        // Fresh mel and encoder: transcribe with no detection in front of it.
+        val plain = r.transcribe(u.samples, AsrRequest(u.language, AsrPass.FINAL))
+        assertEquals(0, r.reusedDetections.get())
+
+        r.detectLanguage(u.samples, candidates)
+        val reused = r.transcribe(u.samples, AsrRequest(u.language, AsrPass.FINAL))
+        assertEquals("the final after detection reuses its encoder pass", 1, r.reusedDetections.get())
+        assertEquals(plain.text, reused.text)
+        assertEquals(plain.segments.map { it.startSec to it.endSec }, reused.segments.map { it.startSec to it.endSec })
+
+        // Detection on other audio must not leak into this final.
+        r.detectLanguage(other.samples, candidates)
+        val afterOther = r.transcribe(u.samples, AsrRequest(u.language, AsrPass.FINAL))
+        assertEquals(1, r.reusedDetections.get())
+        assertEquals(plain.text, afterOther.text)
+
+        // A reuse is single-use: a second final on the same samples recomputes.
+        r.detectLanguage(u.samples, candidates)
+        r.transcribe(u.samples, AsrRequest(u.language, AsrPass.FINAL))
+        val again = r.transcribe(u.samples, AsrRequest(u.language, AsrPass.FINAL))
+        assertEquals(2, r.reusedDetections.get())
+        assertEquals(plain.text, again.text)
+        android.util.Log.i(
+            "HablaAsrTest",
+            "reuse plain=${plain.elapsedMs}ms reused=${reused.elapsedMs}ms afterOther=${afterOther.elapsedMs}ms",
+        )
+    }
+
+    @Test
     fun spanishAccentsSurviveWithoutReplacementCharacters() = runBlocking<Unit> {
         val r = recognizer()
         val texts = listOf(2, 3, 8, 9).map { i ->

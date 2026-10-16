@@ -87,6 +87,18 @@ private:
     int cores_ = 0;
 };
 
+// FNV-1a over the raw sample bytes: tells transcribe() whether detect() saw the same audio.
+uint64_t samples_hash(const std::vector<float>& samples) {
+    uint64_t h = 1469598103934665603ULL;
+    const auto* bytes = reinterpret_cast<const unsigned char*>(samples.data());
+    const size_t n = samples.size() * sizeof(float);
+    for (size_t i = 0; i < n; ++i) {
+        h ^= bytes[i];
+        h *= 1099511628211ULL;
+    }
+    return h;
+}
+
 }  // namespace
 
 Engine* Engine::create(const char* model_path, bool flash_attn) {
@@ -174,10 +186,18 @@ TranscribeResult Engine::transcribe(int slot, const std::vector<float>& samples,
     wp.encoder_begin_callback = encoder_may_begin;
     wp.encoder_begin_callback_user_data = &probe;
 
+    // Same samples as the preceding detect(): n_samples = 0 keeps its mel in the state, and the
+    // patched encoder then skips the window it already encoded (same offset 0, same audio_ctx 0).
+    const bool reuse = slot == kSlotFinal && p.audio_ctx == 0 && detect_mel_valid_ &&
+                       samples.size() == detect_n_ && samples_hash(samples) == detect_hash_;
+    if (slot == kSlotFinal) detect_mel_valid_ = false;
+    result.reused_detection = reuse;
+
     const PerfCoreAffinity affinity;
     wp.n_threads = affinity.threads(p.n_threads);
     const auto start = std::chrono::steady_clock::now();
-    int rc = whisper_full_with_state(ctx_, state, wp, samples.data(), static_cast<int>(samples.size()));
+    int rc = reuse ? whisper_full_with_state(ctx_, state, wp, nullptr, 0)
+                   : whisper_full_with_state(ctx_, state, wp, samples.data(), static_cast<int>(samples.size()));
     result.wall_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - start).count();
     if (rc == 0 && probe.observed) {
@@ -231,6 +251,7 @@ int Engine::detect(const std::vector<float>& samples, int n_threads, float* prob
     if (probs == nullptr || n_probs < whisper_lang_max_id() + 1) {
         return kRcBadArgument;
     }
+    detect_mel_valid_ = false;
     const PerfCoreAffinity affinity;
     n_threads = affinity.threads(n_threads);
     const int mel_rc = whisper_pcm_to_mel_with_state(
@@ -238,7 +259,13 @@ int Engine::detect(const std::vector<float>& samples, int n_threads, float* prob
     if (mel_rc != 0) {
         return mel_rc < 0 ? mel_rc : -1;
     }
-    return whisper_lang_auto_detect_with_state(ctx_, state, 0, n_threads, probs);
+    const int lang = whisper_lang_auto_detect_with_state(ctx_, state, 0, n_threads, probs);
+    if (lang >= 0) {
+        detect_mel_valid_ = true;
+        detect_n_ = samples.size();
+        detect_hash_ = samples_hash(samples);
+    }
+    return lang;
 }
 
 void Engine::request_abort(int slot) {

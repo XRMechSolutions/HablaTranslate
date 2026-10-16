@@ -82,6 +82,9 @@ class WhisperCppRecognizer internal constructor(
 
     private val leakWatch: LeakWatch.Watch? = LeakWatch.register(this, handle)
 
+    /** FINAL runs that reused the preceding detection's mel and encoder output (D042); for tests. */
+    internal val reusedDetections = AtomicInteger()
+
     /** `"<variant> | <whisper_print_system_info()>"`; null before the native library is loaded. */
     @Volatile
     var nativeInfo: String? = null
@@ -260,9 +263,10 @@ class WhisperCppRecognizer internal constructor(
             )
         }
         val text = PyText.strip(segments.joinToString(" ") { PyText.strip(it.text) })
+        if (r.reusedDetection) reusedDetections.incrementAndGet()
         AsrLog.i(
             "pass=$pass rc=0 segments=${segments.size} chars=${PyText.length(text)} " +
-                "wallMs=${r.wallMs} audioCtx=${params.audioCtx} threads=${params.threads}",
+                "wallMs=${r.wallMs} audioCtx=${params.audioCtx} threads=${params.threads} reused=${r.reusedDetection}",
         )
         return AsrResult(text, null, null, segments, r.wallMs)
     }

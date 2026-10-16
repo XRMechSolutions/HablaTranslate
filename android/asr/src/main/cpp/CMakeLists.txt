@@ -17,6 +17,9 @@ if (NOT EXISTS ${WHISPER_DIR}/include/whisper.h)
         "whisper.cpp submodule missing: run \"git submodule update --init android/third_party/whisper.cpp\"")
 endif()
 
+# The ExternalProjects build patched copies, never the submodule itself (whisper_patch.cmake, D042).
+include(${CMAKE_CURRENT_SOURCE_DIR}/whisper_patch.cmake)
+
 # Builds whisper.cpp for one CPU variant into ${CMAKE_BINARY_DIR}/whisper-<NAME> and defines the
 # shared JNI library habla_asr_<NAME> linked against it.
 #   NAME        variant suffix (v86 | base)
@@ -26,6 +29,11 @@ function(habla_whisper_variant NAME ARM_ARCH EXTRA_ARGS)
     set(prefix ${CMAKE_BINARY_DIR}/whisper-${NAME})
     set(libdir ${prefix}/lib)
 
+    # One copy per variant: whisper.cpp's configure writes into its source dir, and the variants
+    # configure in parallel.
+    set(WHISPER_SRC ${CMAKE_BINARY_DIR}/whisper.cpp-patched-${NAME})
+    habla_patched_whisper_source(${WHISPER_DIR} ${WHISPER_SRC})
+
     set(arch_args "")
     if (NOT "${ARM_ARCH}" STREQUAL "")
         list(APPEND arch_args -DGGML_CPU_ARM_ARCH=${ARM_ARCH})
@@ -34,8 +42,11 @@ function(habla_whisper_variant NAME ARM_ARCH EXTRA_ARGS)
     # whisper.cpp is always Release: a Debug ggml is 10-50x slower and would make debug builds and
     # instrumented tests unrepresentative. Only the JNI glue below follows the Gradle build type.
     ExternalProject_Add(whisper_${NAME}
-        SOURCE_DIR ${WHISPER_DIR}
-        BINARY_DIR ${CMAKE_BINARY_DIR}/whisper-${NAME}-build
+        SOURCE_DIR ${WHISPER_SRC}
+        # The inner build is incremental; without this a patched or bumped source is never rebuilt.
+        BUILD_ALWAYS ON
+        # Named for the patched source: a cache configured from the submodule path cannot be reused.
+        BINARY_DIR ${CMAKE_BINARY_DIR}/whisper-${NAME}-patched-build
         INSTALL_DIR ${prefix}
         CMAKE_GENERATOR ${CMAKE_GENERATOR}
         CMAKE_ARGS

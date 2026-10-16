@@ -5,6 +5,10 @@
 // One read-only whisper_context plus two whisper_state slots: slot 0 = FINAL (also used for language
 // detection, whose encoder pass relies on the state's audio_ctx staying 0), slot 1 = PARTIAL. All
 // calls except request_abort() must come from the single ASR thread.
+//
+// A FINAL transcribe of exactly the samples the preceding detect() saw reuses that detection's mel
+// and, through the patched whisper.cpp (whisper_patch.cmake), its encoder output: one encoder pass
+// per final instead of two (D042).
 
 #include <atomic>
 #include <cstdint>
@@ -55,6 +59,7 @@ struct Segment {
 struct TranscribeResult {
     int rc = 0;
     int64_t wall_ms = 0;
+    bool reused_detection = false;  // the FINAL run reused detect()'s mel and encoder output
     std::vector<Segment> segments;  // empty when rc != 0
 };
 
@@ -85,6 +90,11 @@ private:
     whisper_context* ctx_ = nullptr;
     whisper_state* states_[kSlotCount] = {nullptr, nullptr};
     std::atomic<bool> abort_[kSlotCount] = {false, false};
+
+    // Samples of the last successful detect() whose mel is still in the FINAL state.
+    bool detect_mel_valid_ = false;
+    size_t detect_n_ = 0;
+    uint64_t detect_hash_ = 0;
 };
 
 }  // namespace habla
