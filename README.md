@@ -1,137 +1,175 @@
-# Habla: live Spanish ⇄ English speech translation
+# Habla: live Spanish–English speech translation
 
-Habla listens to a conversation or a classroom, transcribes each speaker turn, and translates it
-with an LLM that sees the recent conversation, so it can fix speech-recognition mistakes and
-translate idioms by meaning instead of word for word. It flags idioms, slang and false friends as
-it goes and saves them for study.
+Habla turns spoken conversations into live transcripts and translations, with previews while
+someone is speaking and final cards when they pause. It is built for following conversations,
+classes and everyday exchanges between Spanish and English.
 
-I built it because Google Translate's live mode kept failing me in Spanish classes: it passes
-Spanish through untranslated, mangles idioms, and gives up on quiet or noisy speech.
+Choose between a **PC-hosted web application with local LLM support** and a **standalone Android
+application with on-device speech recognition and translation**. The Android app does not need
+the PC server.
 
-There are two parts:
+## Built to follow the conversation
 
-- **Server** (`habla/`, working): a Python/FastAPI service on a PC with an NVIDIA GPU. A phone
-  or browser streams microphone audio to it over WebSocket.
-- **Android app** (`android/`, in progress): the same pipeline running on the phone itself, with
-  no server. Only the translation calls leave the device, using the user's own OpenAI key. See
-  [Android status](#android-status).
+Habla grew out of the difficulty of following real Spanish conversations and classes: quiet
+speech, accents, incomplete sentences and idioms all make translation harder. The aim is to
+preserve what a speaker means while keeping the result fast enough to follow the exchange.
 
-## How it works
+In LLM mode, translation uses recent exchanges and a rolling topic summary alongside the
+current transcript. That gives the model context for interpreting an ambiguous phrase,
+suggesting a correction to a misheard word, or translating an idiom by its meaning. Provisional
+previews help the listener keep up while final processing has more of the utterance to work with.
+The simpler offline Android mode provides on-device translation without this LLM context layer.
 
-```
-mic audio -> Silero VAD (speech segments + ~1 s partial snapshots)
-  partials: bandpass + gain -> Whisper quick pass -> quick translation (small, cheap model)
-  finals:   highpass/lowpass + dynaudnorm -> detect language -> Whisper (beam 5)
-            -> idiom pattern scan + LLM translation (JSON) -> merge -> history
-```
+Better translation depends on the whole path from microphone to displayed result. Habla is
+built so that recordings can become repeatable tests, weaknesses can be traced to a processing
+stage, and changes can be compared for both quality and speed. The goal is an increasingly
+capable translator whose improvements are measured, rather than assumed from a larger model.
 
-- **Two-speed output.** Partial transcripts and rough translations show up while someone is still
-  talking. The final, corrected version replaces them when they pause.
-- **Language per turn.** Each finished segment gets its own language detection (limited to the
-  supported languages), so a back-and-forth conversation that alternates Spanish and English is
-  transcribed correctly turn by turn.
-- **Shared tuning.** Prompts, VAD/ASR constants, idiom patterns, the language list and the cloud
-  model table live in [`shared/`](shared/). The server reads them at startup and the Android app
-  packages the same files, so a tuning change lands on both.
-- **Reference outputs.** `habla/scripts/make_goldens.py` runs public-domain test clips
-  (`shared/testdata/clips/`, LibriVox) through the server and records segment boundaries,
-  transcripts and detected languages. The Android port is tested against those files.
+## Two ways to use Habla
 
-| Part | Server | Android |
+| | PC + web interface | Standalone Android |
 |---|---|---|
-| VAD | Silero (PyTorch) | Silero (ONNX Runtime) |
-| ASR | WhisperX `small`, int8, CUDA | whisper.cpp `small` (q8_0), NDK |
-| Diarization | Pyannote (CPU) | none in v1 |
-| Translation | OpenAI by default; LM Studio, Ollama or Claude also work | OpenAI, user's own key |
-| Storage | SQLite | SQLite (SQLDelight) |
+| Where it runs | Speech processing on your PC; interface in a desktop or phone browser | Speech processing and interface on your phone |
+| Speech recognition | WhisperX, with NVIDIA GPU acceleration | Quantized Whisper through whisper.cpp and the Android NDK |
+| Translation | Local LLM through Ollama or LM Studio; optional cloud providers | On-device Google ML Kit; optional OpenAI with your own key |
+| Connection | Browser connects to your PC over WebSocket | Local mode works offline after model downloads |
+| Speaker labels | Optional Pyannote diarization | Not currently available |
+| Best fit | Local LLM experimentation and a richer PC-backed conversation workspace | Portable translation without a server or per-use cloud inference charges |
 
-## Server quick start
+Both versions support automatic Spanish/English direction, live previews, final translations
+and local history. LLM translation can use recent conversation context to suggest transcription
+corrections, interpret idioms and identify vocabulary. The on-device Android translator provides
+basic translation without those LLM explanations or contextual corrections.
 
-Needs Windows, an NVIDIA GPU (8 GB is enough for the default setup), ffmpeg on `PATH`, and either
-Python 3.12 or [uv](https://docs.astral.sh/uv/).
+## PC + web interface
 
+The browser captures microphone audio and streams it to your PC. The server detects speech,
+transcribes it, translates it and returns results to the web interface. You can use the browser
+on the PC itself or connect from a phone over a secured network connection.
+
+**Local LLM mode:** run Ollama or LM Studio on your own machine. Speech recognition and translation
+then use your hardware, without a paid translation API. Model choice affects memory use, speed
+and translation quality. Cloud translation through OpenAI or Claude is also supported; usage is
+billed by the selected provider.
+
+### Get started on Windows
+
+The supported setup uses Windows, Python 3.12 (or uv), ffmpeg and an NVIDIA GPU for accelerated
+speech recognition. Allow additional GPU memory for a local LLM; requirements depend on the
+model and quantization you choose.
+
+1. Run `setup.bat` from the repository root to prepare the Python environment and dependencies.
+2. Configure a translation provider in `habla/.env`. For a local Ollama setup, pull the model
+   with `ollama pull qwen3:4b`, keep Ollama running, and set:
+
+   ```dotenv
+   LLM_PROVIDER=ollama
+   OLLAMA_MODEL=qwen3:4b
+   ```
+
+   Alternatively, use `LLM_PROVIDER=lmstudio` with a loaded model and the local API enabled.
+   Explicitly choose a local provider: the server configuration otherwise defaults to OpenAI.
+3. Run `start-habla.bat`.
+4. Open the configured server URL. A local HTTP setup uses `http://localhost:8002`; phone access
+   requires HTTPS for browser microphone permission. The setup guide covers Tailscale and HTTPS.
+
+Speaker labels additionally require a Hugging Face token and access to the Pyannote models.
+See [SETUP.md](SETUP.md) for installation and provider configuration. A Docker configuration is
+also included in [habla/](habla/); the documented desktop workflow is Windows-first.
+
+## Standalone Android
+
+The Android application runs its audio pipeline on the phone: microphone capture, speech
+detection, audio preparation and Whisper transcription. It uses quantized models and native
+processing to fit mobile hardware, with separate preview and final processing paths.
+
+- **On-device translation:** download the speech model and Spanish/English translation packs,
+  then select on-device translation in Settings. No API key or PC server is required. Translation
+  is powered by Google Translate through ML Kit.
+- **Optional LLM translation:** enter your own OpenAI key for context-aware translation and
+  explanations. Transcribed text and conversation context are sent to the provider; audio
+  recognition remains on the phone. Provider usage charges apply.
+- **Local history:** transcripts and translations are stored on the device. Preview translation
+  can use the on-device engine even when final translations use an LLM.
+
+Android has been exercised on a **Samsung Galaxy A56**, including CPU/GPU experiments and live
+translation in both directions. In a recorded 42-second mixed-language test on October 16, 2026,
+on-device mode produced six translated final cards with **zero cloud calls**. This demonstrates
+the local path; it is not a guarantee of latency or accuracy on every phone.
+
+CPU inference remains the default. Vulkan acceleration and smaller preview models are
+experimental, device-dependent options. Subscription/gateway integration is in development and
+is not a generally available Pro service.
+
+### Build Android from source
+
+Use JDK 21 and the Android SDK/NDK versions configured by the project:
+
+```powershell
+git submodule update --init --recursive
+cd android
+.\gradlew.bat assemblePublicDebug
 ```
-setup.bat          :: creates habla\.venv, installs the pinned packages, writes habla\.env
-start-habla.bat    :: starts the server
-```
 
-Then put your keys in `habla\.env` (see [`habla/.env.example`](habla/.env.example)):
+Install the resulting public debug APK from `android/app/build/outputs/apk/public/debug/` and
+download the models in Settings. Public builds do not include a developer's provider key.
+For distribution, use a properly signed release build; the debug build is for local evaluation.
 
-- `OPENAI_API_KEY`: translation. Finals use `gpt-5.4-mini` and partials use `gpt-6-luna`. My
-  estimate is about $0.01 per minute of conversation; it hasn't been measured yet. Without a key
-  the server falls back to a local LM Studio or Ollama model if one is running.
-- `HF_TOKEN`: optional, enables speaker labels (Pyannote).
+## How Habla improves over time
 
-Open `https://<your-tailscale-hostname>:8002` on a phone (Tailscale gives you HTTPS, which the
-browser needs for the microphone) or `http://localhost:8002` on the PC.
-[SETUP.md](SETUP.md) has the full walkthrough. A Docker setup is in `habla/docker-compose.yml`.
+The project includes recording, playback, comparison and tuning tools to make development a
+repeatable loop: **capture a problem, inspect it, compare a change, then check for regressions**.
+This is an engineering workflow, not automatic learning from everyone's conversations.
 
-Tests: `cd habla && .venv\Scripts\python.exe -m pytest` (about 1,000 tests, no GPU needed).
-
-## Android status
-
-The app is built and its tests pass on the PC and the emulator. It hasn't been run on a real
-phone yet. What it does:
-
-- Runs fully on the phone: audio capture, VAD, Whisper and history. Only translation goes to
-  OpenAI.
-- **No keys ship in the app.** The user enters their own key in Settings. It's stored encrypted
-  with a key from the Android Keystore. CI scans the built APKs and fails if anything shaped like
-  a key turns up in a public build. A build with a random dummy key proves the scan catches it.
-- Port, don't reinvent: each Kotlin component names the server function it copies and is tested
-  against reference outputs the server writes.
-
-Measured so far (PC and emulator, against the server):
-
-| Check | Result |
+| Stage | What we can investigate and improve |
 |---|---|
-| VAD segment boundaries vs the server | identical on all test sessions |
-| Silero ONNX vs the server's PyTorch model | max probability difference 4e-6 |
-| Final audio prep (filters + dynaudnorm port) vs ffmpeg 8.0.1 | bit-exact on 24 speech clips |
-| Translator port vs the server (279 golden cases) | all match |
-| whisper.cpp `small` q8_0 vs WhisperX, PC, 3 clips | 3.7% WER difference (q5_1: 4.4%) |
-| Tests | about 1,000 JVM tests and 34 emulator tests, all passing except one smoke run that waits on regenerated reference files |
+| Audio capture and preparation | Quiet or noisy input, gain, filtering and preservation of word beginnings |
+| Speech detection and chunking | VAD thresholds, pre-speech padding and pause timing, balancing complete phrases against delay |
+| Whisper recognition | Model and decoding choices, quantization, language selection and differences between recognition engines |
+| Transcript filtering | Empty or noise-like outputs and clipped word beginnings, while checking that genuine speech is preserved |
+| Contextual translation | Prompts, conversation history, topic summaries and idiom handling, with attention to meaning and unsupported corrections |
+| Mobile execution | CPU/GPU behavior, preview workloads, queueing and sustained performance on real hardware |
 
-Not done yet: speed on the reference phone (Samsung Galaxy A56), a live translation run with a
-real key, and the manual checks in [android/ManualTests.md](android/ManualTests.md). If Whisper
-`small` can't keep a ~1 s partial cadence on the phone, the fallback is a lighter partial pass,
-recorded in `shared/asr_profile.json`.
+Saved audio and session metadata support replay and inspection. The
+[evaluation tools](habla/scripts/) include parameter recommendations for VAD and segmentation,
+word-error comparisons, engine comparisons and preparation of labeled recordings for future
+fine-tuning experiments. Preparing a dataset is separate from training and validating a new
+model; model-generated transcripts need review before they can serve as ground truth.
 
-Build: open a shell in `android/` with JDK 21 and run `gradlew assemblePublicDebug`. The
-whisper.cpp source is a git submodule (`git submodule update --init`).
+The Python and Kotlin implementations share model catalogs, language definitions, prompts and
+audio profiles. Reference-based tests help catch differences in audio processing, segmentation
+and translation behavior as the implementations evolve. The public Android implementation
+includes basic transcript filtering and clipped-onset detection. These checks do not establish
+that every accepted transcript is correct or eliminate hallucinations.
 
-## Things I found and fixed while building the port
+The aim is to improve quality without making conversations harder to follow. A change that
+speeds up recognition but clips a word, loses sentence context or degrades after several minutes
+is not an unqualified improvement. [Device benchmarks](android/benchmarks/) and
+[manual Android checks](android/ManualTests.md) let us examine those tradeoffs beyond a single
+successful demo.
 
-Porting forced a careful read of the server, and testing the phone against it turned up real bugs:
+Agreement with another recognizer measures implementation parity, **not accuracy against human
+transcripts**. Recognition accuracy also does not by itself measure translation quality: the
+translated meaning needs separate review. See [ARCHITECTURE.md](ARCHITECTURE.md) for the processing
+flows and module boundaries.
 
-- The VAD fed Silero raw 16-bit sample values instead of [-1, 1]. On a 30-second speech clip it
-  missed 28% of speech frames (51% with background noise), which split sentences and clipped word
-  onsets.
-- WhisperX only detects language on its first call and then reuses it, so automatic direction
-  never switched languages.
-- The `beam_size: 3` setting was never passed to WhisperX, which ran with its default of 5.
-- The reference-file generator recorded segment ends at the end of each audio chunk instead of
-  the exact frame, up to three frames late. The phone's segmenter got it right and the test
-  flagged the reference.
+## Current limits
 
-## Limitations
+- Spanish and English are the supported language pair.
+- Speech recognition and translation can make mistakes; LLM corrections can also be wrong.
+- Phone performance depends on hardware, model size, temperature and conversation length.
+- On-device translation offers a simpler experience than the contextual LLM path.
+- Speaker diarization is currently a server feature.
+- Initial setup needs downloads. Cloud translation needs connectivity; the PC web interface
+  needs a connection to its server even when the LLM itself runs locally.
 
-- The server is Windows-first (batch scripts, LM Studio integration). The Python code itself is
-  portable, but I haven't tested it on Linux.
-- Spanish and English only for now. Adding a language is one entry in `shared/languages.json` plus
-  idiom patterns, but nothing else has been tested.
-- Speaker labels need Pyannote and a Hugging Face token, and they're only on the server.
-- Short utterances (under about 2 s) get almost no loudness normalization; that's how ffmpeg's
-  `dynaudnorm` behaves with the current settings.
+## Documentation and license
 
-## Documentation
+- [Setup guide](SETUP.md): PC installation and configuration.
+- [Architecture](ARCHITECTURE.md): web/server and Android design.
+- [Contributing](CONTRIBUTING.md): development guidance.
+- [Third-party notices](THIRD_PARTY_NOTICES.md): libraries, models and attribution requirements.
 
-- [SETUP.md](SETUP.md): installation walkthrough
-- [ARCHITECTURE.md](ARCHITECTURE.md): file tree, modules, and where to look for a given problem
-- [shared/](shared/): the files both apps read
-
-## License
-
-[MIT](LICENSE), copyright Clinton Campbell. Third-party components and their licences are listed in
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Test clips are public-domain LibriVox recordings
-([sources](shared/testdata/clips/sources.json)).
+The repository is currently licensed under [MIT](LICENSE), copyright Clinton Campbell.
+Third-party components retain their own licenses. Public-domain test recordings are attributed
+in the [test-data sources](shared/testdata/clips/sources.json).

@@ -1,158 +1,148 @@
-# Habla — Architecture
+# Habla architecture
 
-Self-hosted real-time bidirectional speech translator with speaker diarization, idiom detection, and vocabulary capture for language learning. Built to replace Google Translate for live conversation and classroom environments.
+Habla has two independent runtimes for live Spanish–English translation: a **PC-hosted service
+with a browser interface**, and a **standalone Android app**. They share configuration assets
+and evaluation references, but Android does not call the PC server to recognize speech.
 
-## What Makes This Different
+## Runtime overview
 
-Google Translate's pipeline is mechanical: ASR transcribes what it hears, then a separate MT model translates the transcript literally. When the ASR mishears something — which happens constantly with quiet speech, noisy classrooms, mumbling, or accented speakers — the MT model faithfully translates the garbage. Idioms get translated word-for-word. Source language leaks through untranslated. The result is useless for real conversation.
+| Layer | PC + web | Android |
+|---|---|---|
+| Interface | Mobile-friendly HTML/CSS/JavaScript web application | Kotlin and Jetpack Compose |
+| Audio input | Browser microphone, Opus/WebM over WebSocket | Android microphone capture |
+| Speech detection | Silero VAD | Silero VAD through ONNX Runtime |
+| Speech recognition | WhisperX / faster-whisper, normally CUDA | whisper.cpp / ggml through JNI, quantized models |
+| Translation | Ollama, LM Studio, OpenAI or Claude | ML Kit on device, or OpenAI with a user-provided key |
+| Persistence | SQLite on the server | SQLite through SQLDelight on the phone |
+| Speaker attribution | Optional Pyannote and speaker tracking | Not currently implemented |
 
-Habla puts an LLM in the middle. The LLM sees the last 10 exchanges of conversation context plus a rolling topic summary. It uses that context to fix ASR errors (inferring what was *meant*, not what was *heard*), translate idioms by meaning, detect grammar corrections in classroom settings, and flag vocabulary worth studying. The LLM is explicitly instructed to never pass source language through untranslated.
+## PC service and browser interface
 
-## System Overview
-
-```
-Phone (Chrome PWA)                    Windows PC (NVIDIA GPU, 8GB+)  
-┌──────────────┐     Tailscale VPN    ┌─────────────────────────────────┐
-│ Mic → Opus   │ ──── WebSocket ────→ │ ffmpeg → Silero VAD → WhisperX │
-│              │                      │   → Pyannote → LLM → DB        │
-│ UI ← JSON   │ ←─── WebSocket ────  │                                 │
-└──────────────┘                      └─────────────────────────────────┘
-     ~20MB/hr                              ~1GB VRAM (WhisperX small)
-```
-
-The owner accesses the server from an Android phone over Tailscale. The PWA client captures Opus audio and streams it over a single WebSocket. The server decodes, segments, transcribes, diarizes, translates, and returns polished results as JSON. All ML models stay loaded — no per-request loading.
-
-## Pipeline Flow
-
-```
-Browser Audio (Opus/WebM) → WebSocket → AudioDecoder (ffmpeg)
-  → StreamingVADBuffer (Silero VAD) → WhisperX ASR → Pyannote Diarization
-  → LLM Translation (Ollama / LM Studio / OpenAI / Claude) → WebSocket → Browser
-```
-
-**Two-tier streaming**: During speech, partial ASR + quick translation update every ~1s (rough but instant). When speech ends, the full pipeline runs and the partial snaps to a polished final card with speaker attribution, idiom highlights, and correction detection.
-
-## Problem → File Lookup
-
-When fixing a bug or changing a feature, start here to find the right files. All paths relative to `habla/server/`.
-
-| Problem / Feature Area | Primary Files | Architecture Doc |
-|----------------------|---------------|-----------------|
-| **Audio not captured / decode failures** | `pipeline/vad_buffer.py` (AudioDecoder, ffmpeg) | [audio-processing.md](docs/architecture/audio-processing.md) |
-| **Speech not detected / VAD sensitivity** | `pipeline/vad_buffer.py` (StreamingVADBuffer, Silero) | [audio-processing.md](docs/architecture/audio-processing.md) |
-| **Transcription wrong / ASR quality** | `pipeline/audio_processor.py` (WhisperX) | [audio-processing.md](docs/architecture/audio-processing.md) |
-| **Wrong speaker labels / diarization** | `pipeline/audio_processor.py` (Pyannote), `services/speaker_tracker.py` | [annotation.md](docs/architecture/annotation.md) |
-| **Translation wrong / quality issues** | `pipeline/translator.py`, `models/prompts.py` | [translation.md](docs/architecture/translation.md) |
-| **Translation slow / timing out** | `pipeline/translator.py` (rate limit, retry, degraded mode), `pipeline/orchestrator.py` (queue) | [translation.md](docs/architecture/translation.md) |
-| **Source language leaking through** | `pipeline/translator.py` (passthrough detection), `models/prompts.py` | [translation.md](docs/architecture/translation.md) |
-| **LLM provider switching / fallback** | `pipeline/translator.py` (provider config, fallback chain) | [translation.md](docs/architecture/translation.md) |
-| **Idioms not detected** | `services/idiom_scanner.py` (regex DB), `pipeline/translator.py` (LLM prompt), `pipeline/context_manager.py` (merge) | [annotation.md](docs/architecture/annotation.md) |
-| **Corrections not detected** | `models/prompts.py` (classroom prompt), `pipeline/translator.py` | [annotation.md](docs/architecture/annotation.md) |
-| **Conversation context / topic drift** | `pipeline/context_manager.py`, `pipeline/translator.py` (topic summary) | [pipeline-overview.md](docs/architecture/pipeline-overview.md) |
-| **Partial/streaming display issues** | `pipeline/orchestrator.py` (two-tier), `routes/websocket.py` (send), client JS | [pipeline-overview.md](docs/architecture/pipeline-overview.md) |
-| **WebSocket connect/disconnect** | `routes/websocket.py` (ClientSession) | [websocket.md](docs/architecture/websocket.md) |
-| **Session create/close/reset** | `pipeline/session_manager.py`, `pipeline/orchestrator.py` | [pipeline-overview.md](docs/architecture/pipeline-overview.md) |
-| **Exchange not saved to DB** | `pipeline/session_manager.py` (persist), `db/database.py` | [database.md](docs/architecture/database.md) |
-| **Vocab / SRS / Anki** | `services/vocab.py`, `routes/api_vocab.py`, `db/database.py` | [services.md](docs/architecture/services.md) |
-| **Cost tracking wrong** | `pipeline/translator.py` (cost calc), `db/database.py` (persist) | [translation.md](docs/architecture/translation.md) |
-| **LM Studio won't start/connect** | `services/lmstudio_manager.py` | [lmstudio.md](docs/architecture/lmstudio.md) |
-| **TTS not working** | `services/tts.py`, `routes/websocket.py` (TTS trigger) | [tts.md](docs/architecture/tts.md) |
-| **Audio playback / recording** | `services/audio_recorder.py`, `services/playback.py`, `routes/api_playback.py` | [audio-storage.md](docs/architecture/audio-storage.md) |
-| **REST API endpoint issues** | `routes/api_*.py` (domain-split) | [api.md](docs/architecture/api.md) |
-| **Client UI / PWA** | `client/js/*.js`, `client/*.html` | [client.md](docs/architecture/client.md) |
-| **Health checks / startup failures** | `services/health.py`, `main.py` (lifespan) | [services.md](docs/architecture/services.md) |
-| **Config / settings / env vars** | `config.py`, `data/llm_settings.json` | [deployment.md](docs/architecture/deployment.md) |
-| **DB schema / migrations** | `db/database.py`, `models/schemas.py` | [database.md](docs/architecture/database.md) |
-| **Docker / deployment** | `Dockerfile`, `docker-compose.yml`, `config.py` | [deployment.md](docs/architecture/deployment.md) |
-
-## Module Index
-
-Each module has a detailed architecture doc covering current state, design rationale, and planned direction.
-
-### Core Pipeline
-
-| Module | Source | Description | Architecture |
-|--------|--------|-------------|--------------|
-| **Pipeline Overview** | `pipeline/orchestrator.py`, `pipeline/audio_processor.py`, `pipeline/context_manager.py`, `pipeline/session_manager.py` | Thin coordinator pattern — queue-based processing with concurrent ASR and translation | [pipeline-overview.md](docs/architecture/pipeline-overview.md) |
-| **Audio Processing** | `pipeline/vad_buffer.py`, `pipeline/audio_processor.py` | Silero VAD segmentation, ffmpeg decode, WhisperX ASR, Pyannote diarization, audio normalization | [audio-processing.md](docs/architecture/audio-processing.md) |
-| **Translation** | `pipeline/translator.py`, `models/prompts.py` | Multi-provider LLM client with fallback chains, cost tracking, retry, rate limiting, and prompt engineering | [translation.md](docs/architecture/translation.md) |
-| **Annotation** | `services/idiom_scanner.py`, `services/speaker_tracker.py`, `pipeline/context_manager.py` | Dual-layer idiom detection, speaker diarization/tracking, correction detection, context management | [annotation.md](docs/architecture/annotation.md) |
-
-### Communication
-
-| Module | Source | Description | Architecture |
-|--------|--------|-------------|--------------|
-| **WebSocket** | `routes/websocket.py` | Real-time protocol — binary audio frames, JSON control messages, ClientSession lifecycle | [websocket.md](docs/architecture/websocket.md) |
-| **REST API** | `routes/api_*.py` | Domain-split REST endpoints for vocab, sessions, LLM config, system control, corrections, bookmarks | [api.md](docs/architecture/api.md) |
-
-### Services
-
-| Module | Source | Description | Architecture |
-|--------|--------|-------------|--------------|
-| **Core Services** | `services/health.py`, `services/vocab.py` | Health monitoring, vocab CRUD with SM-2 spaced repetition and FTS5 search | [services.md](docs/architecture/services.md) |
-| **LM Studio** | `services/lmstudio_manager.py` | Windows process management, model discovery, background health monitoring, settings persistence | [lmstudio.md](docs/architecture/lmstudio.md) |
-| **Text-to-Speech** | `services/tts.py` | Piper TTS — CPU-based, lazy-loaded, opt-in. Zero VRAM cost | [tts.md](docs/architecture/tts.md) |
-| **Audio Storage** | `services/audio_recorder.py`, `services/playback.py` | Debug recording, clip storage for exchange playback, recording replay through pipeline | [audio-storage.md](docs/architecture/audio-storage.md) |
-
-### Data & Infrastructure
-
-| Module | Source | Description | Architecture |
-|--------|--------|-------------|--------------|
-| **Database** | `db/database.py`, `models/schemas.py` | Async SQLite with WAL mode, FTS5, 6 tables, Pydantic models | [database.md](docs/architecture/database.md) |
-| **Client** | `client/js/*.js`, `client/*.html` | Mobile-first PWA — vanilla JS, dark theme, audio capture, offline audio spooling | [client.md](docs/architecture/client.md) |
-| **Deployment** | `Dockerfile`, `docker-compose.yml`, `config.py` | Docker, Tailscale VPN, VRAM budgeting, hierarchical config with env var overrides | [deployment.md](docs/architecture/deployment.md) |
-
-## Key Technologies
-
-| Component | Technology | Runs On | VRAM |
-|-----------|-----------|---------|------|
-| ASR | WhisperX Small | GPU | ~1GB |
-| Translation | OpenAI (gpt-5.4-mini finals, gpt-6-luna partials) by default; LM Studio / Ollama / Claude optional | Cloud (local LLMs: GPU) | 0 (local: ~2.5GB) |
-| Diarization | Pyannote 3.1 | CPU | 0 |
-| VAD | Silero VAD | CPU | 0 |
-| Idiom detection | Regex pattern DB + LLM | CPU | 0 |
-| TTS | Piper (ONNX voices) | CPU | 0 |
-| Server | FastAPI + uvicorn | CPU | — |
-| Database | SQLite (aiosqlite, WAL, FTS5) | Disk | — |
-| Audio decode | ffmpeg (subprocess) | CPU | — |
-| Client | HTML5 PWA, vanilla JS | Browser | — |
-| Audio codec | Opus/WebM (MediaRecorder) | Browser | — |
-| **Total steady state** | | | **~5GB** |
-
-## Module Dependency Graph
-
-```
-main.py
-  ├── config.py
-  ├── db/database.py
-  ├── services/health.py
-  ├── pipeline/orchestrator.py
-  │     ├── pipeline/audio_processor.py ──→ WhisperX (GPU), Pyannote (CPU), ffmpeg
-  │     ├── pipeline/context_manager.py
-  │     │     ├── pipeline/translator.py ──→ Ollama / LM Studio / OpenAI / Claude
-  │     │     ├── services/idiom_scanner.py ──→ data/idioms/*.json
-  │     │     └── services/speaker_tracker.py
-  │     ├── pipeline/session_manager.py ──→ db/database.py, speaker_tracker.py
-  │     └── pipeline/vad_buffer.py ──→ ffmpeg, Silero VAD
-  ├── routes/websocket.py ──→ orchestrator, vad_buffer, services/tts.py
-  ├── routes/api.py
-  │     ├── api_vocab.py ──→ services/vocab.py ──→ db/database.py
-  │     ├── api_idioms.py ──→ services/idiom_scanner.py
-  │     ├── api_llm.py ──→ services/lmstudio_manager.py, translator
-  │     ├── api_playback.py ──→ services/playback.py
-  │     ├── api_sessions.py ──→ db/database.py
-  │     ├── api_corrections.py ──→ services/audio_recorder.py
-  │     ├── api_bookmarks.py ──→ db/database.py
-  │     └── api_system.py
-  └── client/ (static mount at /)
+```text
+Browser microphone
+  -> Opus/WebM over WebSocket
+  -> ffmpeg decoding and Silero speech segmentation
+  -> audio preparation and WhisperX transcription
+  -> optional speaker attribution
+  -> local or cloud LLM translation + conversation context
+  -> persisted exchange and JSON results
+  -> browser transcript, translation and vocabulary interface
 ```
 
-## Related Documents
+The browser is an audio-capture and presentation client. Recognition, translation coordination
+and storage run on the PC. Local LLMs are reached through Ollama or LM Studio; choosing a cloud
+provider sends translation requests to that provider instead. A local LLM uses the owner's
+compute and avoids per-request cloud translation charges.
 
-| Document | Purpose |
-|----------|---------|
-| [TASKS.md](TASKS.md) | Implementation roadmap by phase |
-| [.dev/docs/SESSION_MEMORY.md](.dev/docs/SESSION_MEMORY.md) | Cross-session architecture facts |
-| [.dev/docs/BUG_REGISTRY.md](.dev/docs/BUG_REGISTRY.md) | Bug tracker |
-| [.dev/docs/Flow-Maps.md](.dev/docs/Flow-Maps.md) | WebSocket protocol, processing flows, session lifecycle |
-| [docs/AUDIO_TUNING_GUIDE.md](docs/AUDIO_TUNING_GUIDE.md) | Audio parameter tuning reference |
+The pipeline separates provisional updates from completed exchanges. During speech, partial
+recognition and quick translation provide previews. Final processing produces the completed
+card with optional speaker attribution, contextual translation and vocabulary annotations.
+Previews are provisional and may change substantially when the final result arrives.
+
+The LLM receives recent conversation context and a rolling topic summary to help interpret
+transcripts and idioms. This is a correction aid, not a guarantee of what was actually spoken.
+Pattern-based idiom detection complements LLM annotations.
+
+The service uses FastAPI, WebSocket audio/control messages and REST endpoints for sessions,
+vocabulary, settings and playback. The coordinator separates audio processing, context,
+translation and persistence. Remote browser microphone access requires HTTPS; the documented
+phone-to-PC setup uses Tailscale rather than exposing the development server publicly.
+
+### Server module map
+
+Paths below are relative to `habla/server/`.
+
+| Area | Source | Detailed reference |
+|---|---|---|
+| Startup and configuration | `main.py`, `config.py` | [Deployment](docs/architecture/deployment.md) |
+| Pipeline coordination | `pipeline/orchestrator.py`, `pipeline/context_manager.py`, `pipeline/session_manager.py` | [Pipeline](docs/architecture/pipeline-overview.md) |
+| Decode, segmentation and recognition | `pipeline/vad_buffer.py`, `pipeline/audio_processor.py` | [Audio](docs/architecture/audio-processing.md) |
+| Translation providers and prompts | `pipeline/translator.py`, `models/prompts.py` | [Translation](docs/architecture/translation.md) |
+| Idioms and speaker tracking | `services/idiom_scanner.py`, `services/speaker_tracker.py` | [Annotations](docs/architecture/annotation.md) |
+| Streaming and REST endpoints | `routes/websocket.py`, `routes/api_*.py` | [WebSocket](docs/architecture/websocket.md), [API](docs/architecture/api.md) |
+| History and vocabulary | `db/database.py`, `services/vocab.py` | [Database](docs/architecture/database.md), [Services](docs/architecture/services.md) |
+| Local LLM management | `services/lmstudio_manager.py` | [LM Studio](docs/architecture/lmstudio.md) |
+| Optional speech output | `services/tts.py` | [Text-to-speech](docs/architecture/tts.md) |
+| Recording and playback | `services/audio_recorder.py`, `services/playback.py` | [Audio storage](docs/architecture/audio-storage.md) |
+| Browser interface | `../client/` (under `habla/`) | [Client](docs/architecture/client.md) |
+
+## Standalone Android pipeline
+
+```text
+Phone microphone
+  -> audio preparation and Silero VAD (ONNX Runtime)
+  -> whisper.cpp recognition (JNI / NDK)
+  -> partial previews and final transcripts
+  -> ML Kit on-device translation OR user-selected cloud LLM
+  -> Compose interface and local SQLDelight history
+```
+
+Audio recognition stays on the phone in both translation modes. Local translation uses
+downloaded Spanish/English ML Kit language packs and does not require an LLM or API key.
+The cloud option sends transcript/context text to OpenAI using the user's key. Local previews
+can remain enabled while final translations use the cloud.
+
+On-device results do not claim LLM-generated corrections, explanations or confidence scores.
+The interface distinguishes these results from the richer contextual translation path.
+Language packs are downloaded explicitly through Settings rather than during a translation.
+
+### Android module map
+
+| Module | Responsibility |
+|---|---|
+| [`:shared-assets`](android/shared-assets/) | Typed access to shared profiles, catalogs and language assets |
+| [`:audio`](android/audio/) | Audio processing and speech-segmentation logic |
+| [`:asr`](android/asr/) | Native speech-recognition integration and model handling |
+| [`:translate`](android/translate/) | Translation orchestration, provider clients and on-device interfaces |
+| [`:data`](android/data/) | Persistent conversation data |
+| [`:app`](android/app/) | Compose UI, microphone lifecycle, pipeline coordination, ML Kit adapter and dependency wiring |
+
+The application module composes the lower layers with Koin. Translation and audio logic are
+separated from Android UI concerns; the native recognition layer is isolated behind Kotlin
+interfaces. ML Kit's Android implementation is supplied by the app through the translation
+module's interface.
+
+### Mobile performance work
+
+The Android implementation uses quantized speech models, native inference and distinct preview
+and final workloads. CPU execution is the default. Vulkan GPU acceleration and alternative
+preview models are experimental: a faster isolated kernel does not necessarily improve the
+whole conversation pipeline or sustained performance.
+
+Galaxy A56 measurements cover device parity, inference sweeps and sustained workloads; see
+[android/benchmarks/](android/benchmarks/). End-to-end translation latency includes speech
+segmentation, language detection, recognition, queueing and translation, so it should not be
+equated with a single inference timing. Results from one device do not establish broad device
+compatibility.
+
+## Shared assets and evaluation
+
+[`shared/`](shared/) contains language definitions, idiom patterns, prompts, provider/model
+catalogs and audio/recognition profiles. Python reads these assets; Android packages them through
+its shared-assets module. The runtimes use different inference libraries but can be compared
+against common recordings and reference outputs.
+
+Evaluation separates processing parity, device performance and recognition quality. Matching
+Python outputs helps detect porting regressions; it does not establish correctness against
+human transcription. [Public-domain test recordings](shared/testdata/clips/sources.json) and
+[manual Android checks](android/ManualTests.md) support reproducible evaluation.
+
+## Data boundaries and deployment
+
+- **PC/local LLM:** microphone audio travels from the browser to the configured PC; recognition,
+  translation and history remain there when local providers are selected.
+- **PC/cloud LLM:** translation text/context additionally travels to the selected provider.
+- **Android/local:** recognition, translation and history run on the phone after model downloads.
+- **Android/cloud:** recognition remains local; translation text/context goes to the provider.
+
+Downloads and optional external services still require network access. Public Android builds
+do not embed provider credentials; user-supplied keys use Android Keystore-backed storage.
+Release minification is enabled, but compiled applications should not be treated as secret
+containers for credentials or algorithms.
+
+Gateway client support exists for future managed access, including on-device fallback, but
+the app's authentication, entitlement and billing integration is not yet a complete released
+service. It is not required for the working local mode.
+
+For installation, start with the [README](README.md) and [PC setup guide](SETUP.md). Library,
+model and attribution obligations are listed in [third-party notices](THIRD_PARTY_NOTICES.md).
